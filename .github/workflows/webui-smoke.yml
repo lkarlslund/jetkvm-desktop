@@ -1,0 +1,50 @@
+name: Web UI Smoke
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  smoke:
+    name: Upstream Web UI
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Install Linux GUI build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libx11-dev \
+            libxcursor-dev \
+            libxrandr-dev \
+            libxinerama-dev \
+            libxi-dev \
+            libgl1-mesa-dev \
+            libxxf86vm-dev
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Clone upstream UI
+        run: git clone --depth 1 https://github.com/jetkvm/kvm.git "${RUNNER_TEMP}/jetkvm-kvm"
+
+      - name: Run upstream web UI smoke
+        env:
+          SMOKE_UI_URL: http://127.0.0.1:4173
+        run: |
+          chmod +x ./scripts/upstream-webui-smoke.sh
+          ./scripts/upstream-webui-smoke.sh \
+            "${RUNNER_TEMP}/jetkvm-kvm/ui" \
+            "http://127.0.0.1:8080" \
+            "${SMOKE_UI_URL}"
