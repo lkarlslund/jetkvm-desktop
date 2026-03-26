@@ -11,14 +11,8 @@ emulator_url="$2"
 ui_url="$3"
 
 cleanup() {
-  if [ -n "${ui_pid:-}" ]; then
-    kill "$ui_pid" >/dev/null 2>&1 || true
-    wait "$ui_pid" >/dev/null 2>&1 || true
-  fi
-  if [ -n "${emu_pid:-}" ]; then
-    kill "$emu_pid" >/dev/null 2>&1 || true
-    wait "$emu_pid" >/dev/null 2>&1 || true
-  fi
+  stop_process "${ui_pid:-}"
+  stop_process "${emu_pid:-}"
 }
 trap cleanup EXIT
 
@@ -33,6 +27,24 @@ dump_logs() {
   fi
 }
 
+stop_process() {
+  local pid="${1:-}"
+  if [ -z "$pid" ]; then
+    return
+  fi
+  kill "$pid" >/dev/null 2>&1 || true
+  for _ in $(seq 1 20); do
+    if ! kill -0 "$pid" >/dev/null 2>&1; then
+      wait "$pid" >/dev/null 2>&1 || true
+      return
+    fi
+    sleep 0.1
+  done
+  kill -9 "$pid" >/dev/null 2>&1 || true
+  wait "$pid" >/dev/null 2>&1 || true
+}
+
+echo "starting emulator"
 go run ./cmd/jetkvm-emulator serve --listen "${emulator_url#http://}" >/tmp/jetkvm-emulator.log 2>&1 &
 emu_pid=$!
 
@@ -52,8 +64,11 @@ if ! curl -fsS "${emulator_url}/healthz" >/dev/null; then
 fi
 
 pushd "$ui_dir" >/dev/null
+echo "installing upstream UI dependencies"
 npm ci
+echo "installing playwright chromium"
 npx playwright install --with-deps chromium
+echo "starting upstream UI dev server"
 JETKVM_PROXY_URL="${emulator_url/http/ws}" npx vite --mode=device --host 127.0.0.1 --port "${ui_url##*:}" >/tmp/jetkvm-webui.log 2>&1 &
 ui_pid=$!
 
@@ -72,6 +87,7 @@ if ! curl -fsS "${ui_url}" >/dev/null; then
   exit 1
 fi
 
+echo "running browser smoke"
 if ! node --input-type=module <<'EOF'
 import { chromium } from '@playwright/test';
 
@@ -122,4 +138,5 @@ then
   dump_logs
   exit 1
 fi
+echo "browser smoke passed"
 popd >/dev/null
