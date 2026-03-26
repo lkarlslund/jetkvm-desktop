@@ -34,6 +34,7 @@ type App struct {
 	lastY       int
 	lastButtons byte
 	lastPhase   session.Phase
+	lastTitle   string
 	relative    bool
 	buttons     []button
 	renderRect  rect
@@ -84,6 +85,7 @@ func (a *App) Update() error {
 		return ebiten.Termination
 	}
 	a.syncSessionState()
+	a.syncWindowTitle()
 	nowFocused := ebiten.IsFocused()
 	if a.focused && !nowFocused {
 		a.releaseAllKeys(true)
@@ -290,6 +292,22 @@ func (a *App) syncSessionState() {
 		a.lastButtons = 0
 	}
 	a.lastPhase = phase
+}
+
+func (a *App) syncWindowTitle() {
+	snap := a.ctrl.Snapshot()
+	title := "jetkvm-client"
+	if snap.DeviceID != "" {
+		title = snap.DeviceID
+	} else if snap.Hostname != "" {
+		title = snap.Hostname
+	}
+	title = fmt.Sprintf("%s [%s]", title, snap.Phase)
+	if title == a.lastTitle {
+		return
+	}
+	ebiten.SetWindowTitle(title)
+	a.lastTitle = title
 }
 
 func (a *App) releaseAllKeys(send bool) {
