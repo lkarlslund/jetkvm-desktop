@@ -53,3 +53,37 @@ func TestKeyboardIgnoresUnknownKeys(t *testing.T) {
 		t.Fatalf("expected unknown key to be ignored, got %+v", events)
 	}
 }
+
+func TestKeyboardSortsPressesDeterministically(t *testing.T) {
+	k := NewKeyboard()
+
+	events := k.Update([]Key{KeyShiftRight, KeyA, KeyControlLeft})
+	if len(events) != 3 {
+		t.Fatalf("expected 3 press events, got %d", len(events))
+	}
+	expected := []KeyEvent{
+		{HID: 4, Press: true},
+		{HID: 224, Press: true},
+		{HID: 229, Press: true},
+	}
+	for i := range expected {
+		if events[i] != expected[i] {
+			t.Fatalf("unexpected event %d: got %+v want %+v", i, events[i], expected[i])
+		}
+	}
+}
+
+func TestKeyboardReleaseAllCoversModifiersAndKeypad(t *testing.T) {
+	k := NewKeyboard()
+	_ = k.Update([]Key{KeyControlLeft, KeyAltRight, KeyNumpadEnter, KeySlash})
+
+	events := k.ReleaseAll()
+	if len(events) != 4 {
+		t.Fatalf("expected 4 release events, got %+v", events)
+	}
+	for _, event := range events {
+		if event.Press {
+			t.Fatalf("expected release event, got %+v", event)
+		}
+	}
+}

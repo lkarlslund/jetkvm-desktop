@@ -304,6 +304,94 @@ func TestClientRPCTimeoutWhenMethodDropped(t *testing.T) {
 	}
 }
 
+func TestKeyboardStateTracksModifiersAndReleases(t *testing.T) {
+	srv, err := NewServer(Config{
+		ListenAddr: "127.0.0.1:0",
+		AuthMode:   AuthModePassword,
+		Password:   "secret",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	errCh := make(chan error, 1)
+	t.Cleanup(func() {
+		cancel()
+		select {
+		case err := <-errCh:
+			if err != nil && ctx.Err() == nil {
+				t.Errorf("server: %v", err)
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatal("server did not shut down")
+		}
+	})
+	go func() {
+		errCh <- srv.ListenAndServe(ctx)
+	}()
+	waitForBaseURL(t, srv)
+
+	c, err := client.New(client.Config{
+		BaseURL:    srv.BaseURL(),
+		Password:   "secret",
+		RPCTimeout: 2 * time.Second,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	if err := c.Connect(ctx); err != nil {
+		t.Fatal(err)
+	}
+	waitCtx, waitCancel := context.WithTimeout(ctx, 2*time.Second)
+	defer waitCancel()
+	if err := c.WaitForHID(waitCtx); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := c.SendKeypress(225, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.SendKeypress(4, true); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(50 * time.Millisecond)
+
+	var state struct {
+		Modifier byte   `json:"modifier"`
+		Keys     []byte `json:"keys"`
+	}
+	if err := c.Call(waitCtx, "getKeysDownState", nil, &state); err != nil {
+		t.Fatal(err)
+	}
+	if state.Modifier != 0x02 {
+		t.Fatalf("expected left shift modifier bit, got %08b", state.Modifier)
+	}
+	if len(state.Keys) < 1 || state.Keys[0] != 4 {
+		t.Fatalf("expected key A in keysDown state, got %+v", state.Keys)
+	}
+
+	if err := c.SendKeypress(4, false); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.SendKeypress(225, false); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(50 * time.Millisecond)
+	if err := c.Call(waitCtx, "getKeysDownState", nil, &state); err != nil {
+		t.Fatal(err)
+	}
+	if state.Modifier != 0 {
+		t.Fatalf("expected modifiers to clear, got %08b", state.Modifier)
+	}
+	for _, key := range state.Keys {
+		if key != 0 {
+			t.Fatalf("expected all keys released, got %+v", state.Keys)
+		}
+	}
+}
+
 func TestForcedDisconnectFaultClosesPeerConnection(t *testing.T) {
 	srv, err := NewServer(Config{
 		ListenAddr: "127.0.0.1:0",

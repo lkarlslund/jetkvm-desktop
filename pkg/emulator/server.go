@@ -51,6 +51,7 @@ type DeviceState struct {
 	VideoState          string
 	StreamQualityFactor float64
 	KeyboardLEDMask     byte
+	KeyboardModifiers   byte
 	KeysDown            []byte
 	Hostname            string
 	CloudURL            string
@@ -103,7 +104,7 @@ func NewServer(cfg Config) (*Server, error) {
 	s := &Server{
 		cfg:    cfg,
 		token:  "jetkvm-native-emulator-token",
-		state:  DeviceState{DeviceID: "emu-jetkvm-001", VideoState: "ready", StreamQualityFactor: 0.75, KeyboardLEDMask: 0, KeysDown: []byte{0, 0, 0, 0, 0, 0}, Hostname: "jetkvm-emulator", KeyboardLayout: "en_US"},
+		state:  DeviceState{DeviceID: "emu-jetkvm-001", VideoState: "ready", StreamQualityFactor: 0.75, KeyboardLEDMask: 0, KeyboardModifiers: 0, KeysDown: []byte{0, 0, 0, 0, 0, 0}, Hostname: "jetkvm-emulator", KeyboardLayout: "en_US"},
 		inputs: make([]InputRecord, 0, 32),
 	}
 	if cfg.Faults.InitialVideoState != "" {
@@ -692,7 +693,7 @@ func (s *session) handleRPC(data []byte) error {
 	case "getKeyboardLedState":
 		resp = jsonrpc.NewResponse(req.ID, map[string]byte{"mask": s.serverRef.state.KeyboardLEDMask})
 	case "getKeyDownState", "getKeysDownState":
-		resp = jsonrpc.NewResponse(req.ID, map[string]any{"modifier": 0, "keys": s.serverRef.state.KeysDown})
+		resp = jsonrpc.NewResponse(req.ID, map[string]any{"modifier": s.serverRef.state.KeyboardModifiers, "keys": s.serverRef.state.KeysDown})
 	case "getStreamQualityFactor":
 		resp = jsonrpc.NewResponse(req.ID, s.serverRef.state.StreamQualityFactor)
 	case "setStreamQualityFactor":
@@ -835,8 +836,8 @@ func (s *session) handleHID(channel string, data []byte) error {
 		}
 		return s.hid.Send(reply)
 	case hidrpc.Keypress:
-		s.serverRef.state.KeysDown = []byte{v.Key, 0, 0, 0, 0, 0}
-		return s.sendEvent("keysDownState", map[string]any{"modifier": 0, "keys": s.serverRef.state.KeysDown})
+		s.serverRef.applyKeypress(v.Key, v.Press)
+		return s.sendEvent("keysDownState", map[string]any{"modifier": s.serverRef.state.KeyboardModifiers, "keys": s.serverRef.state.KeysDown})
 	case hidrpc.Pointer:
 		return s.sendEvent("pointerState", map[string]any{"x": v.X, "y": v.Y, "buttons": v.Buttons})
 	case hidrpc.Mouse:
@@ -849,4 +850,78 @@ func (s *session) handleHID(channel string, data []byte) error {
 
 func TrimBaseURL(addr string) string {
 	return "http://" + strings.TrimPrefix(addr, "http://")
+}
+
+func (s *Server) applyKeypress(key byte, press bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if modifierBit, ok := modifierMask(key); ok {
+		if press {
+			s.state.KeyboardModifiers |= modifierBit
+		} else {
+			s.state.KeyboardModifiers &^= modifierBit
+		}
+		return
+	}
+
+	keys := append([]byte(nil), s.state.KeysDown...)
+	if len(keys) < 6 {
+		padded := make([]byte, 6)
+		copy(padded, keys)
+		keys = padded
+	}
+	if press {
+		for _, existing := range keys {
+			if existing == key {
+				s.state.KeysDown = keys
+				return
+			}
+		}
+		for i, existing := range keys {
+			if existing == 0 {
+				keys[i] = key
+				s.state.KeysDown = keys
+				return
+			}
+		}
+		copy(keys, keys[1:])
+		keys[len(keys)-1] = key
+		s.state.KeysDown = keys
+		return
+	}
+
+	next := make([]byte, 0, len(keys))
+	for _, existing := range keys {
+		if existing != 0 && existing != key {
+			next = append(next, existing)
+		}
+	}
+	for len(next) < 6 {
+		next = append(next, 0)
+	}
+	s.state.KeysDown = next
+}
+
+func modifierMask(key byte) (byte, bool) {
+	switch key {
+	case 224:
+		return 0x01, true
+	case 225:
+		return 0x02, true
+	case 226:
+		return 0x04, true
+	case 227:
+		return 0x08, true
+	case 228:
+		return 0x10, true
+	case 229:
+		return 0x20, true
+	case 230:
+		return 0x40, true
+	case 231:
+		return 0x80, true
+	default:
+		return 0, false
+	}
 }
