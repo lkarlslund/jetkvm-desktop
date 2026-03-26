@@ -410,6 +410,10 @@ func (s *session) handleHID(channel string, data []byte) error {
 		return s.sendEvent("keysDownState", map[string]any{"modifier": 0, "keys": s.serverRef.state.KeysDown})
 	case hidrpc.Pointer:
 		return s.sendEvent("pointerState", map[string]any{"x": v.X, "y": v.Y, "buttons": v.Buttons})
+	case hidrpc.Mouse:
+		return s.sendEvent("relativePointerState", map[string]any{"dx": v.DX, "dy": v.DY, "buttons": v.Buttons})
+	case hidrpc.Wheel:
+		return s.sendEvent("wheelState", map[string]any{"delta": v.Delta})
 	}
 	return nil
 }

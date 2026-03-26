@@ -63,10 +63,33 @@ func TestClientConnectsAndRPCWorks(t *testing.T) {
 		t.Fatalf("expected pong, got %q", pong)
 	}
 
+	var quality float64
+	if err := c.Call(waitCtx, "getStreamQualityFactor", nil, &quality); err != nil {
+		t.Fatal(err)
+	}
+	if quality != 0.75 {
+		t.Fatalf("expected default quality 0.75, got %v", quality)
+	}
+	if err := c.Call(waitCtx, "setStreamQualityFactor", map[string]any{"factor": 0.5}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Call(waitCtx, "getStreamQualityFactor", nil, &quality); err != nil {
+		t.Fatal(err)
+	}
+	if quality != 0.5 {
+		t.Fatalf("expected updated quality 0.5, got %v", quality)
+	}
+
 	if err := c.SendKeypress(4, true); err != nil {
 		t.Fatal(err)
 	}
 	if err := c.SendAbsPointer(1000, 2000, 1); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.SendRelMouse(3, -2, 1); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.SendWheel(-1); err != nil {
 		t.Fatal(err)
 	}
 
@@ -91,13 +114,45 @@ func TestClientConnectsAndRPCWorks(t *testing.T) {
 	}
 
 	foundPointer := false
+	foundRelative := false
+	foundWheel := false
 	for _, input := range srv.Inputs() {
 		if input.Channel == "hidrpc-unreliable-ordered" {
 			foundPointer = true
-			break
+		}
+		if input.Type == "hidrpc.Mouse" {
+			foundRelative = true
+		}
+		if input.Type == "hidrpc.Wheel" {
+			foundWheel = true
 		}
 	}
 	if !foundPointer {
 		t.Fatal("expected pointer input on hidrpc-unreliable-ordered channel")
+	}
+	if !foundRelative {
+		t.Fatal("expected relative mouse input on hidrpc channel")
+	}
+	if !foundWheel {
+		t.Fatal("expected wheel input on hidrpc channel")
+	}
+
+	if err := c.Call(waitCtx, "reboot", map[string]any{"force": false}, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	deadline = time.Now().Add(2 * time.Second)
+	foundRebootEvent := false
+	for time.Now().Before(deadline) && !foundRebootEvent {
+		select {
+		case evt := <-c.Events():
+			if evt.Method == "videoInputState" {
+				foundRebootEvent = true
+			}
+		case <-time.After(25 * time.Millisecond):
+		}
+	}
+	if !foundRebootEvent {
+		t.Fatal("expected reboot-driven videoInputState event")
 	}
 }

@@ -212,6 +212,30 @@ func (c *Client) SendAbsPointer(x, y uint16, buttons byte) error {
 	return c.hidUnreliable.Send(data)
 }
 
+func (c *Client) SendRelMouse(dx, dy int8, buttons byte) error {
+	if c.hidDC == nil {
+		return fmt.Errorf("hid channel not ready")
+	}
+	msg := hidrpc.Mouse{DX: dx, DY: dy, Buttons: buttons}
+	data, err := msg.MarshalBinary()
+	if err != nil {
+		return err
+	}
+	return c.hidDC.Send(data)
+}
+
+func (c *Client) SendWheel(delta int8) error {
+	if c.hidDC == nil {
+		return fmt.Errorf("hid channel not ready")
+	}
+	msg := hidrpc.Wheel{Delta: delta}
+	data, err := msg.MarshalBinary()
+	if err != nil {
+		return err
+	}
+	return c.hidDC.Send(data)
+}
+
 func (c *Client) VideoStream() *video.Stream {
 	return c.videoStream
 }

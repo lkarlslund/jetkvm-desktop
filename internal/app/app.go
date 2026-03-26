@@ -25,10 +25,15 @@ type App struct {
 	cfg    Config
 	client *client.Client
 
-	mu      sync.RWMutex
-	status  string
-	lastImg *ebiten.Image
-	keys    map[ebiten.Key]bool
+	mu       sync.RWMutex
+	status   string
+	deviceID string
+	quality  float64
+	lastImg  *ebiten.Image
+	keys     map[ebiten.Key]bool
+	lastX    int
+	lastY    int
+	relative bool
 }
 
 func New(cfg Config) (*App, error) {
@@ -64,6 +69,14 @@ func (a *App) Connect(ctx context.Context) error {
 	if err := a.client.Call(ctx, "getDeviceID", nil, &deviceID); err != nil {
 		return err
 	}
+	var quality float64
+	if err := a.client.Call(ctx, "getStreamQualityFactor", nil, &quality); err != nil {
+		return err
+	}
+	a.mu.Lock()
+	a.deviceID = deviceID
+	a.quality = quality
+	a.mu.Unlock()
 	a.SetStatus(fmt.Sprintf("connected to %s", deviceID))
 
 	go func() {
@@ -107,6 +120,28 @@ func (a *App) Update() error {
 	if ebiten.IsKeyPressed(ebiten.KeyEscape) {
 		return ebiten.Termination
 	}
+	if inpututil.IsKeyJustPressed(ebiten.KeyF8) {
+		a.relative = !a.relative
+		if a.relative {
+			ebiten.SetCursorMode(ebiten.CursorModeCaptured)
+			a.SetStatus("relative mouse enabled")
+		} else {
+			ebiten.SetCursorMode(ebiten.CursorModeVisible)
+			a.SetStatus("absolute mouse enabled")
+		}
+	}
+	if inpututil.IsKeyJustPressed(ebiten.KeyF5) {
+		go func() {
+			_ = a.client.Call(context.Background(), "reboot", map[string]any{"force": false}, nil)
+		}()
+		a.SetStatus("reboot requested")
+	}
+	if inpututil.IsKeyJustPressed(ebiten.KeyEqual) {
+		a.adjustStreamQuality(+0.05)
+	}
+	if inpututil.IsKeyJustPressed(ebiten.KeyMinus) {
+		a.adjustStreamQuality(-0.05)
+	}
 
 	a.syncKeyboard()
 	a.syncMouse()
@@ -127,7 +162,24 @@ func (a *App) Draw(screen *ebiten.Image) {
 		op.GeoM.Translate((float64(sw)-float64(w)*scale)/2, (float64(sh)-float64(h)*scale)/2)
 		screen.DrawImage(img, op)
 	}
-	ebitenutil.DebugPrint(screen, "jetkvm-native\n"+a.statusLine()+"\nEsc to quit")
+	mode := "absolute"
+	if a.relative {
+		mode = "relative"
+	}
+	a.mu.RLock()
+	deviceID := a.deviceID
+	quality := a.quality
+	a.mu.RUnlock()
+	ebitenutil.DebugPrint(
+		screen,
+		fmt.Sprintf(
+			"jetkvm-native\n%s\ndevice: %s\nquality: %.2f (+/-)\nmouse: %s (F8 toggles)\nF5 reboot\nEsc to quit",
+			a.statusLine(),
+			deviceID,
+			quality,
+			mode,
+		),
+	)
 }
 
 func (a *App) Layout(outsideWidth, outsideHeight int) (int, int) {
@@ -159,13 +211,6 @@ func (a *App) syncKeyboard() {
 
 func (a *App) syncMouse() {
 	x, y := ebiten.CursorPosition()
-	sw, sh := ebiten.WindowSize()
-	if sw == 0 || sh == 0 {
-		return
-	}
-
-	nx := uint16(clamp(float64(x)/float64(sw)*32767.0, 0, 32767))
-	ny := uint16(clamp(float64(y)/float64(sh)*32767.0, 0, 32767))
 	buttons := byte(0)
 	if ebiten.IsMouseButtonPressed(ebiten.MouseButtonLeft) {
 		buttons |= 1
@@ -173,7 +218,27 @@ func (a *App) syncMouse() {
 	if ebiten.IsMouseButtonPressed(ebiten.MouseButtonRight) {
 		buttons |= 2
 	}
-	_ = a.client.SendAbsPointer(nx, ny, buttons)
+	if a.relative {
+		dx := int8(clamp(float64(x-a.lastX), -127, 127))
+		dy := int8(clamp(float64(y-a.lastY), -127, 127))
+		if dx != 0 || dy != 0 || buttons != 0 {
+			_ = a.client.SendRelMouse(dx, dy, buttons)
+		}
+	} else {
+		sw, sh := ebiten.WindowSize()
+		if sw == 0 || sh == 0 {
+			return
+		}
+		nx := uint16(clamp(float64(x)/float64(sw)*32767.0, 0, 32767))
+		ny := uint16(clamp(float64(y)/float64(sh)*32767.0, 0, 32767))
+		_ = a.client.SendAbsPointer(nx, ny, buttons)
+	}
+	_, wheelY := ebiten.Wheel()
+	if wheelY != 0 {
+		_ = a.client.SendWheel(int8(clamp(-wheelY, -127, 127)))
+	}
+	a.lastX = x
+	a.lastY = y
 }
 
 func keyToHID(key ebiten.Key) (byte, bool) {
@@ -308,6 +373,24 @@ func keyToHID(key ebiten.Key) (byte, bool) {
 		return 68, true
 	case ebiten.KeyF12:
 		return 69, true
+	case ebiten.KeyPrintScreen:
+		return 70, true
+	case ebiten.KeyScrollLock:
+		return 71, true
+	case ebiten.KeyPause:
+		return 72, true
+	case ebiten.KeyInsert:
+		return 73, true
+	case ebiten.KeyHome:
+		return 74, true
+	case ebiten.KeyPageUp:
+		return 75, true
+	case ebiten.KeyDelete:
+		return 76, true
+	case ebiten.KeyEnd:
+		return 77, true
+	case ebiten.KeyPageDown:
+		return 78, true
 	case ebiten.KeyRight:
 		return 79, true
 	case ebiten.KeyLeft:
@@ -316,6 +399,56 @@ func keyToHID(key ebiten.Key) (byte, bool) {
 		return 81, true
 	case ebiten.KeyUp:
 		return 82, true
+	case ebiten.KeyNumLock:
+		return 83, true
+	case ebiten.KeyNumpadDivide:
+		return 84, true
+	case ebiten.KeyNumpadMultiply:
+		return 85, true
+	case ebiten.KeyNumpadSubtract:
+		return 86, true
+	case ebiten.KeyNumpadAdd:
+		return 87, true
+	case ebiten.KeyNumpadEnter:
+		return 88, true
+	case ebiten.KeyNumpad1:
+		return 89, true
+	case ebiten.KeyNumpad2:
+		return 90, true
+	case ebiten.KeyNumpad3:
+		return 91, true
+	case ebiten.KeyNumpad4:
+		return 92, true
+	case ebiten.KeyNumpad5:
+		return 93, true
+	case ebiten.KeyNumpad6:
+		return 94, true
+	case ebiten.KeyNumpad7:
+		return 95, true
+	case ebiten.KeyNumpad8:
+		return 96, true
+	case ebiten.KeyNumpad9:
+		return 97, true
+	case ebiten.KeyNumpad0:
+		return 98, true
+	case ebiten.KeyNumpadDecimal:
+		return 99, true
+	case ebiten.KeyControlLeft:
+		return 224, true
+	case ebiten.KeyShiftLeft:
+		return 225, true
+	case ebiten.KeyAltLeft:
+		return 226, true
+	case ebiten.KeyMetaLeft:
+		return 227, true
+	case ebiten.KeyControlRight:
+		return 228, true
+	case ebiten.KeyShiftRight:
+		return 229, true
+	case ebiten.KeyAltRight:
+		return 230, true
+	case ebiten.KeyMetaRight:
+		return 231, true
 	default:
 		return 0, false
 	}
@@ -336,4 +469,21 @@ func min(a, b float64) float64 {
 		return a
 	}
 	return b
+}
+
+func (a *App) adjustStreamQuality(delta float64) {
+	a.mu.RLock()
+	next := clamp(a.quality+delta, 0.1, 1.0)
+	a.mu.RUnlock()
+
+	go func(value float64) {
+		if err := a.client.Call(context.Background(), "setStreamQualityFactor", map[string]any{"factor": value}, nil); err != nil {
+			a.SetStatus("quality update failed")
+			return
+		}
+		a.mu.Lock()
+		a.quality = value
+		a.mu.Unlock()
+		a.SetStatus(fmt.Sprintf("quality set to %.2f", value))
+	}(next)
 }
