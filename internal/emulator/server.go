@@ -21,6 +21,7 @@ import (
 type AuthMode string
 
 const (
+	AuthModeUnset      AuthMode = ""
 	AuthModeNoPassword AuthMode = "noPassword"
 	AuthModePassword   AuthMode = "password"
 )
@@ -40,6 +41,10 @@ type DeviceState struct {
 	StreamQualityFactor float64
 	KeyboardLEDMask     byte
 	KeysDown            []byte
+	Hostname            string
+	CloudURL            string
+	CloudAppURL         string
+	KeyboardLayout      string
 }
 
 type InputRecord struct {
@@ -87,12 +92,19 @@ func NewServer(cfg Config) (*Server, error) {
 	s := &Server{
 		cfg:    cfg,
 		token:  "jetkvm-native-emulator-token",
-		state:  DeviceState{DeviceID: "emu-jetkvm-001", VideoState: "ok", StreamQualityFactor: 0.75, KeyboardLEDMask: 0, KeysDown: []byte{0, 0, 0, 0, 0, 0}},
+		state:  DeviceState{DeviceID: "emu-jetkvm-001", VideoState: "ok", StreamQualityFactor: 0.75, KeyboardLEDMask: 0, KeysDown: []byte{0, 0, 0, 0, 0, 0}, Hostname: "jetkvm-emulator", KeyboardLayout: "en_US"},
 		inputs: make([]InputRecord, 0, 32),
 	}
 
 	mux := http.NewServeMux()
+	mux.HandleFunc("/device/status", s.handleDeviceStatus)
+	mux.HandleFunc("/device/setup", s.handleSetup)
+	mux.HandleFunc("/device", s.handleDevice)
 	mux.HandleFunc("/auth/login-local", s.handleLogin)
+	mux.HandleFunc("/auth/logout", s.handleLogout)
+	mux.HandleFunc("/auth/password-local", s.handlePasswordLocal)
+	mux.HandleFunc("/auth/local-password", s.handleDeletePassword)
+	mux.HandleFunc("/cloud/state", s.handleCloudState)
 	mux.HandleFunc("/webrtc/session", s.handleSession)
 	mux.HandleFunc("/healthz", s.handleHealth)
 
@@ -142,10 +154,14 @@ func (s *Server) Inputs() []InputRecord {
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
+	s.writeCORS(w, r)
 	_ = json.NewEncoder(w).Encode(map[string]bool{"ok": true})
 }
 
 func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
+	if s.handlePreflight(w, r) {
+		return
+	}
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -173,11 +189,11 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		Path:     "/",
 		HttpOnly: true,
 	})
-	_ = json.NewEncoder(w).Encode(map[string]bool{"ok": true})
+	_ = json.NewEncoder(w).Encode(map[string]string{"message": "Login successful"})
 }
 
 func (s *Server) authorized(r *http.Request) bool {
-	if s.cfg.AuthMode == AuthModeNoPassword {
+	if s.cfg.AuthMode == AuthModeNoPassword || s.cfg.AuthMode == AuthModeUnset {
 		return true
 	}
 	cookie, err := r.Cookie("authToken")
@@ -185,6 +201,9 @@ func (s *Server) authorized(r *http.Request) bool {
 }
 
 func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
+	if s.handlePreflight(w, r) {
+		return
+	}
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -207,6 +226,198 @@ func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
 	}
 
 	_ = json.NewEncoder(w).Encode(signaling.ExchangeResponse{SD: answer})
+}
+
+func (s *Server) handleDeviceStatus(w http.ResponseWriter, r *http.Request) {
+	if s.handlePreflight(w, r) {
+		return
+	}
+	_ = json.NewEncoder(w).Encode(map[string]bool{"isSetup": s.cfg.AuthMode != AuthModeUnset})
+}
+
+func (s *Server) handleDevice(w http.ResponseWriter, r *http.Request) {
+	if s.handlePreflight(w, r) {
+		return
+	}
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !s.authorized(r) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	authMode := string(s.cfg.AuthMode)
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"authMode":     &authMode,
+		"deviceId":     s.state.DeviceID,
+		"loopbackOnly": false,
+	})
+}
+
+func (s *Server) handleSetup(w http.ResponseWriter, r *http.Request) {
+	if s.handlePreflight(w, r) {
+		return
+	}
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if s.cfg.AuthMode != AuthModeUnset {
+		http.Error(w, "Device is already set up", http.StatusBadRequest)
+		return
+	}
+	var req struct {
+		LocalAuthMode string `json:"localAuthMode"`
+		Password      string `json:"password"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+	switch AuthMode(req.LocalAuthMode) {
+	case AuthModeNoPassword:
+		s.cfg.AuthMode = AuthModeNoPassword
+	case AuthModePassword:
+		if req.Password == "" {
+			http.Error(w, "Password is required for password mode", http.StatusBadRequest)
+			return
+		}
+		s.cfg.AuthMode = AuthModePassword
+		s.cfg.Password = req.Password
+		http.SetCookie(w, &http.Cookie{Name: "authToken", Value: s.token, Path: "/", HttpOnly: true})
+	default:
+		http.Error(w, "Invalid localAuthMode", http.StatusBadRequest)
+		return
+	}
+	_ = json.NewEncoder(w).Encode(map[string]string{"message": "Device setup completed successfully"})
+}
+
+func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
+	if s.handlePreflight(w, r) {
+		return
+	}
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	http.SetCookie(w, &http.Cookie{Name: "authToken", Value: "", Path: "/", MaxAge: -1, HttpOnly: true})
+	_ = json.NewEncoder(w).Encode(map[string]string{"message": "Logout successful"})
+}
+
+func (s *Server) handlePasswordLocal(w http.ResponseWriter, r *http.Request) {
+	if s.handlePreflight(w, r) {
+		return
+	}
+	switch r.Method {
+	case http.MethodPost:
+		if s.cfg.AuthMode != AuthModeNoPassword {
+			http.Error(w, "Password mode is not enabled", http.StatusBadRequest)
+			return
+		}
+		var req struct {
+			Password string `json:"password"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Password == "" {
+			http.Error(w, "Invalid request", http.StatusBadRequest)
+			return
+		}
+		s.cfg.AuthMode = AuthModePassword
+		s.cfg.Password = req.Password
+		http.SetCookie(w, &http.Cookie{Name: "authToken", Value: s.token, Path: "/", HttpOnly: true})
+		w.WriteHeader(http.StatusCreated)
+		_ = json.NewEncoder(w).Encode(map[string]string{"message": "Password set successfully"})
+	case http.MethodPut:
+		if s.cfg.AuthMode != AuthModePassword {
+			http.Error(w, "Password mode is not enabled", http.StatusBadRequest)
+			return
+		}
+		var req struct {
+			OldPassword string `json:"oldPassword"`
+			NewPassword string `json:"newPassword"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.NewPassword == "" {
+			http.Error(w, "Invalid request", http.StatusBadRequest)
+			return
+		}
+		if s.cfg.Password != "" && req.OldPassword != s.cfg.Password {
+			http.Error(w, "Incorrect old password", http.StatusUnauthorized)
+			return
+		}
+		s.cfg.Password = req.NewPassword
+		http.SetCookie(w, &http.Cookie{Name: "authToken", Value: s.token, Path: "/", HttpOnly: true})
+		_ = json.NewEncoder(w).Encode(map[string]string{"message": "Password updated successfully"})
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+func (s *Server) handleDeletePassword(w http.ResponseWriter, r *http.Request) {
+	if s.handlePreflight(w, r) {
+		return
+	}
+	if r.Method != http.MethodDelete {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if s.cfg.AuthMode != AuthModePassword {
+		http.Error(w, "Password mode is not enabled", http.StatusBadRequest)
+		return
+	}
+	var req struct {
+		Password string `json:"password"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request", http.StatusBadRequest)
+		return
+	}
+	if req.Password != s.cfg.Password {
+		http.Error(w, "Incorrect password", http.StatusUnauthorized)
+		return
+	}
+	s.cfg.Password = ""
+	s.cfg.AuthMode = AuthModeNoPassword
+	http.SetCookie(w, &http.Cookie{Name: "authToken", Value: "", Path: "/", MaxAge: -1, HttpOnly: true})
+	_ = json.NewEncoder(w).Encode(map[string]string{"message": "Password disabled successfully"})
+}
+
+func (s *Server) handleCloudState(w http.ResponseWriter, r *http.Request) {
+	if s.handlePreflight(w, r) {
+		return
+	}
+	if !s.authorized(r) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"connected": s.state.CloudURL != "",
+		"url":       s.state.CloudURL,
+		"appUrl":    s.state.CloudAppURL,
+	})
+}
+
+func (s *Server) handlePreflight(w http.ResponseWriter, r *http.Request) bool {
+	s.writeCORS(w, r)
+	if r.Method == http.MethodOptions {
+		w.WriteHeader(http.StatusNoContent)
+		return true
+	}
+	return false
+}
+
+func (s *Server) writeCORS(w http.ResponseWriter, r *http.Request) {
+	origin := r.Header.Get("Origin")
+	if origin == "" {
+		origin = "*"
+	}
+	w.Header().Set("Access-Control-Allow-Origin", origin)
+	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+	w.Header().Set("Access-Control-Allow-Credentials", "true")
+	if origin != "*" {
+		w.Header().Set("Vary", "Origin")
+	}
+	w.Header().Set("Content-Type", "application/json")
 }
 
 func (s *Server) exchangeOffer(encoded string) (string, error) {
@@ -237,6 +448,9 @@ func (s *Server) exchangeOffer(encoded string) (string, error) {
 			dc.OnOpen(func() {
 				_ = sess.sendEvent("videoInputState", map[string]string{"state": s.state.VideoState})
 				_ = sess.sendEvent("keyboardLedState", map[string]byte{"mask": s.state.KeyboardLEDMask})
+				_ = sess.sendEvent("networkState", map[string]any{"hostname": s.state.Hostname, "ip": "127.0.0.1"})
+				_ = sess.sendEvent("usbState", map[string]any{"keyboard": true, "mouse": true, "massStorage": false})
+				_ = sess.sendEvent("failsafeMode", map[string]any{"active": false, "reason": ""})
 			})
 			dc.OnMessage(func(msg webrtc.DataChannelMessage) {
 				if !msg.IsString {
@@ -362,9 +576,20 @@ func (s *session) handleRPC(data []byte) error {
 	case "getVideoState":
 		resp = jsonrpc.NewResponse(req.ID, s.serverRef.state.VideoState)
 	case "getNetworkSettings":
-		resp = jsonrpc.NewResponse(req.ID, map[string]any{"hostname": "jetkvm-emulator", "ip": "127.0.0.1"})
+		resp = jsonrpc.NewResponse(req.ID, map[string]any{"hostname": s.serverRef.state.Hostname, "ip": "127.0.0.1"})
+	case "getNetworkState":
+		resp = jsonrpc.NewResponse(req.ID, map[string]any{"hostname": s.serverRef.state.Hostname, "ip": "127.0.0.1", "dhcp": true})
+	case "setNetworkSettings":
+		if settings, ok := req.Params["settings"].(map[string]any); ok {
+			if hostname, ok := settings["hostname"].(string); ok && hostname != "" {
+				s.serverRef.state.Hostname = hostname
+			}
+		}
+		resp = jsonrpc.NewResponse(req.ID, true)
 	case "getKeyboardLedState":
 		resp = jsonrpc.NewResponse(req.ID, map[string]byte{"mask": s.serverRef.state.KeyboardLEDMask})
+	case "getKeyDownState", "getKeysDownState":
+		resp = jsonrpc.NewResponse(req.ID, map[string]any{"modifier": 0, "keys": s.serverRef.state.KeysDown})
 	case "getStreamQualityFactor":
 		resp = jsonrpc.NewResponse(req.ID, s.serverRef.state.StreamQualityFactor)
 	case "setStreamQualityFactor":
@@ -380,6 +605,73 @@ func (s *session) handleRPC(data []byte) error {
 			time.Sleep(100 * time.Millisecond)
 			_ = s.sendEvent("videoInputState", map[string]string{"state": "rebooting"})
 		}()
+	case "getKeyboardLayout":
+		resp = jsonrpc.NewResponse(req.ID, s.serverRef.state.KeyboardLayout)
+	case "setKeyboardLayout":
+		if layout, ok := req.Params["layout"].(string); ok && layout != "" {
+			s.serverRef.state.KeyboardLayout = layout
+		}
+		resp = jsonrpc.NewResponse(req.ID, true)
+	case "getAutoUpdateState":
+		resp = jsonrpc.NewResponse(req.ID, false)
+	case "getBacklightSettings":
+		resp = jsonrpc.NewResponse(req.ID, map[string]any{"max_brightness": 100, "dim_after": 60, "off_after": 300})
+	case "getVideoSleepMode":
+		resp = jsonrpc.NewResponse(req.ID, map[string]any{"duration": 0})
+	case "getDisplayRotation":
+		resp = jsonrpc.NewResponse(req.ID, map[string]any{"rotation": "0"})
+	case "getEDID":
+		resp = jsonrpc.NewResponse(req.ID, "")
+	case "getVideoLogStatus":
+		resp = jsonrpc.NewResponse(req.ID, "disabled")
+	case "getDevModeState":
+		resp = jsonrpc.NewResponse(req.ID, map[string]any{"enabled": false})
+	case "getSSHKeyState":
+		resp = jsonrpc.NewResponse(req.ID, "")
+	case "getUsbEmulationState":
+		resp = jsonrpc.NewResponse(req.ID, true)
+	case "getDevChannelState":
+		resp = jsonrpc.NewResponse(req.ID, false)
+	case "getLocalLoopbackOnly":
+		resp = jsonrpc.NewResponse(req.ID, false)
+	case "getCloudState":
+		resp = jsonrpc.NewResponse(req.ID, map[string]any{"connected": s.serverRef.state.CloudURL != "", "url": s.serverRef.state.CloudURL, "appUrl": s.serverRef.state.CloudAppURL})
+	case "getTLSState":
+		resp = jsonrpc.NewResponse(req.ID, map[string]any{"enabled": false})
+	case "getMqttSettings":
+		resp = jsonrpc.NewResponse(req.ID, map[string]any{"enabled": false})
+	case "getMqttStatus":
+		resp = jsonrpc.NewResponse(req.ID, map[string]any{"connected": false})
+	case "getActiveExtension":
+		resp = jsonrpc.NewResponse(req.ID, "")
+	case "getVirtualMediaState":
+		resp = jsonrpc.NewResponse(req.ID, map[string]any{"mounted": false, "uploading": false})
+	case "getStorageSpace":
+		resp = jsonrpc.NewResponse(req.ID, map[string]any{"free": 1024 * 1024 * 1024, "total": 2 * 1024 * 1024 * 1024})
+	case "getJigglerState":
+		resp = jsonrpc.NewResponse(req.ID, false)
+	case "getJigglerConfig":
+		resp = jsonrpc.NewResponse(req.ID, map[string]any{"enabled": false})
+	case "getTimezones":
+		resp = jsonrpc.NewResponse(req.ID, []string{"UTC", "Europe/Copenhagen"})
+	case "getSerialCommandHistory":
+		resp = jsonrpc.NewResponse(req.ID, []string{})
+	case "getWakeOnLanDevices":
+		resp = jsonrpc.NewResponse(req.ID, []any{})
+	case "getPublicIPAddresses":
+		resp = jsonrpc.NewResponse(req.ID, []string{"127.0.0.1"})
+	case "getTailscaleStatus":
+		resp = jsonrpc.NewResponse(req.ID, map[string]any{"connected": false})
+	case "getSerialSettings":
+		resp = jsonrpc.NewResponse(req.ID, map[string]any{"baudRate": 115200, "dataBits": 8, "stopBits": 1, "parity": "none"})
+	case "getDCPowerState":
+		resp = jsonrpc.NewResponse(req.ID, true)
+	case "getATXState":
+		resp = jsonrpc.NewResponse(req.ID, map[string]any{"power": "on", "hdd": false})
+	case "getUsbConfig":
+		resp = jsonrpc.NewResponse(req.ID, map[string]any{"vendor_id": "0xCafe", "product_id": "0x4000"})
+	case "getUsbDevices":
+		resp = jsonrpc.NewResponse(req.ID, []any{})
 	default:
 		resp = jsonrpc.NewErrorResponse(req.ID, -32601, "method not found", req.Method)
 	}

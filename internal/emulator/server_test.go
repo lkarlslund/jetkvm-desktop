@@ -2,11 +2,83 @@ package emulator
 
 import (
 	"context"
+	"encoding/json"
+	"net/http"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/lkarlslund/jetkvm-native/internal/client"
 )
+
+func TestHTTPBootstrapFlow(t *testing.T) {
+	srv, err := NewServer(Config{
+		ListenAddr: "127.0.0.1:0",
+		AuthMode:   AuthModeUnset,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() {
+		if err := srv.ListenAndServe(ctx); err != nil {
+			t.Errorf("server: %v", err)
+		}
+	}()
+
+	deadline := time.Now().Add(2 * time.Second)
+	for srv.BaseURL() == "" && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if srv.BaseURL() == "" {
+		t.Fatal("server did not start")
+	}
+
+	httpClient := &http.Client{}
+
+	resp, err := httpClient.Get(srv.BaseURL() + "/device/status")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var status struct {
+		IsSetup bool `json:"isSetup"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&status); err != nil {
+		t.Fatal(err)
+	}
+	if status.IsSetup {
+		t.Fatal("expected device to start unconfigured")
+	}
+
+	setupReq, err := http.NewRequest(http.MethodPost, srv.BaseURL()+"/device/setup", strings.NewReader(`{"localAuthMode":"password","password":"secret"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	setupReq.Header.Set("Content-Type", "application/json")
+	setupResp, err := httpClient.Do(setupReq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer setupResp.Body.Close()
+	if setupResp.StatusCode != http.StatusOK {
+		t.Fatalf("unexpected setup status %s", setupResp.Status)
+	}
+
+	resp, err = httpClient.Get(srv.BaseURL() + "/device/status")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if err := json.NewDecoder(resp.Body).Decode(&status); err != nil {
+		t.Fatal(err)
+	}
+	if !status.IsSetup {
+		t.Fatal("expected device to be configured after setup")
+	}
+}
 
 func TestClientConnectsAndRPCWorks(t *testing.T) {
 	srv, err := NewServer(Config{
