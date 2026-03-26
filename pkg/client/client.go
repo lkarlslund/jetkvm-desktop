@@ -11,11 +11,11 @@ import (
 
 	"github.com/pion/webrtc/v4"
 
-	"github.com/lkarlslund/jetkvm-native/internal/protocol/auth"
-	"github.com/lkarlslund/jetkvm-native/internal/protocol/hidrpc"
-	"github.com/lkarlslund/jetkvm-native/internal/protocol/jsonrpc"
-	"github.com/lkarlslund/jetkvm-native/internal/protocol/signaling"
-	"github.com/lkarlslund/jetkvm-native/internal/video"
+	"github.com/lkarlslund/jetkvm-native/pkg/protocol/auth"
+	"github.com/lkarlslund/jetkvm-native/pkg/protocol/hidrpc"
+	"github.com/lkarlslund/jetkvm-native/pkg/protocol/jsonrpc"
+	"github.com/lkarlslund/jetkvm-native/pkg/protocol/signaling"
+	"github.com/lkarlslund/jetkvm-native/pkg/video"
 )
 
 type Config struct {

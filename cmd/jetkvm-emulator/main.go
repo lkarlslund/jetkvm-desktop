@@ -7,7 +7,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/lkarlslund/jetkvm-native/internal/emulator"
+	"github.com/lkarlslund/jetkvm-native/pkg/emulator"
 )
 
 func main() {

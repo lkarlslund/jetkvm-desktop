@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lkarlslund/jetkvm-native/internal/client"
+	"github.com/lkarlslund/jetkvm-native/pkg/client"
 )
 
 func TestHTTPBootstrapFlow(t *testing.T) {

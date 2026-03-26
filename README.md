@@ -12,7 +12,7 @@ GitHub Actions builds native release artifacts on:
 
 Each release contains:
 
-- `jetkvm-native`
+- `jetkvm-client`
 - `jetkvm-emulator`
 
 The release pipeline uses native runners per OS instead of simple Go cross-compilation, because the in-process OpenH264 path uses CGO-backed static libraries.

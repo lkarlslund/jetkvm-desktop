@@ -12,7 +12,7 @@ import (
 	"github.com/hajimehoshi/ebiten/v2/ebitenutil"
 	"github.com/hajimehoshi/ebiten/v2/inpututil"
 
-	"github.com/lkarlslund/jetkvm-native/internal/client"
+	"github.com/lkarlslund/jetkvm-native/pkg/client"
 )
 
 type Config struct {
