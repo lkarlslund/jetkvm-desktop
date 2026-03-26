@@ -35,6 +35,15 @@ type Config struct {
 	Width      int
 	Height     int
 	FPS        int
+	Faults     FaultConfig
+}
+
+type FaultConfig struct {
+	RPCDelay          time.Duration
+	DropRPCMethod     string
+	DisconnectAfter   time.Duration
+	HIDHandshakeDelay time.Duration
+	InitialVideoState string
 }
 
 type DeviceState struct {
@@ -96,6 +105,9 @@ func NewServer(cfg Config) (*Server, error) {
 		token:  "jetkvm-native-emulator-token",
 		state:  DeviceState{DeviceID: "emu-jetkvm-001", VideoState: "ok", StreamQualityFactor: 0.75, KeyboardLEDMask: 0, KeysDown: []byte{0, 0, 0, 0, 0, 0}, Hostname: "jetkvm-emulator", KeyboardLayout: "en_US"},
 		inputs: make([]InputRecord, 0, 32),
+	}
+	if cfg.Faults.InitialVideoState != "" {
+		s.state.VideoState = cfg.Faults.InitialVideoState
 	}
 
 	mux := http.NewServeMux()
@@ -574,8 +586,12 @@ func (s *Server) exchangeOffer(encoded string) (string, error) {
 
 	s.mu.Lock()
 	if s.session != nil && s.session.rpc != nil {
-		_ = s.session.sendEvent("otherSessionConnected", nil)
-		_ = s.session.pc.Close()
+		prev := s.session
+		go func() {
+			_ = prev.sendEvent("otherSessionConnected", nil)
+			time.Sleep(100 * time.Millisecond)
+			_ = prev.pc.Close()
+		}()
 	}
 	s.session = sess
 	s.mu.Unlock()
@@ -588,6 +604,17 @@ func (s *Server) exchangeOffer(encoded string) (string, error) {
 			cancel()
 		}
 	})
+	if s.cfg.Faults.DisconnectAfter > 0 {
+		go func() {
+			timer := time.NewTimer(s.cfg.Faults.DisconnectAfter)
+			defer timer.Stop()
+			select {
+			case <-streamCtx.Done():
+			case <-timer.C:
+				_ = pc.Close()
+			}
+		}()
+	}
 	if err := video.StartTestPattern(streamCtx, s.cfg.Width, s.cfg.Height, s.cfg.FPS, videoTrack); err != nil {
 		cancel()
 		return "", err
@@ -629,6 +656,12 @@ func (s *session) handleRPC(data []byte) error {
 	}
 	req, ok := decoded.(jsonrpc.Request)
 	if !ok {
+		return nil
+	}
+	if delay := s.serverRef.cfg.Faults.RPCDelay; delay > 0 {
+		time.Sleep(delay)
+	}
+	if method := s.serverRef.cfg.Faults.DropRPCMethod; method != "" && method == req.Method {
 		return nil
 	}
 
@@ -780,6 +813,9 @@ func (s *session) handleHID(channel string, data []byte) error {
 
 	switch v := msg.(type) {
 	case hidrpc.Handshake:
+		if delay := s.serverRef.cfg.Faults.HIDHandshakeDelay; delay > 0 {
+			time.Sleep(delay)
+		}
 		reply, err := hidrpc.Handshake{Version: v.Version}.MarshalBinary()
 		if err != nil {
 			return err

@@ -53,6 +53,32 @@ func TestControllerReconnectsAfterDisconnect(t *testing.T) {
 	waitForPhase(t, controller, PhaseConnected, 5*time.Second)
 }
 
+func TestControllerTransitionsToOtherSession(t *testing.T) {
+	srv, ctx, cancel := startEmulator(t)
+	defer cancel()
+
+	first := New(Config{
+		BaseURL:    srv.BaseURL(),
+		Password:   "secret",
+		RPCTimeout: 2 * time.Second,
+		Reconnect:  true,
+	})
+	second := New(Config{
+		BaseURL:    srv.BaseURL(),
+		Password:   "secret",
+		RPCTimeout: 2 * time.Second,
+		Reconnect:  true,
+	})
+	first.Start(ctx)
+	defer first.Stop()
+	waitForPhase(t, first, PhaseConnected, 5*time.Second)
+
+	second.Start(ctx)
+	defer second.Stop()
+	waitForPhase(t, second, PhaseConnected, 5*time.Second)
+	waitForPhase(t, first, PhaseOtherSession, 5*time.Second)
+}
+
 func startEmulator(t *testing.T) (*emulator.Server, context.Context, context.CancelFunc) {
 	t.Helper()
 	srv, err := emulator.NewServer(emulator.Config{
