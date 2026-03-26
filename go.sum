@@ -1,3 +1,5 @@
+github.com/Azunyan1111/openh264-go v0.2.0 h1:6PUoNUrsLRMJiwZID8KMEPi6rx266Z4u08ecYatu8x8=
+github.com/Azunyan1111/openh264-go v0.2.0/go.mod h1:21m/6vqiu54Xpxq8e2Y9RSoTjYoYFyRqEfnxECE6dp8=
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/ebitengine/gomobile v0.0.0-20250923094054-ea854a63cce1 h1:+kz5iTT3L7uU+VhlMfTb8hHcxLO3TlaELlX8wa4XjA0=

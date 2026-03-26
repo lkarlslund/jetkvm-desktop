@@ -1,21 +1,18 @@
 package video
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"fmt"
 	"image"
-	"image/png"
-	"io"
-	"os/exec"
+	"image/color"
 	"sync"
 	"time"
 
+	openh264 "github.com/Azunyan1111/openh264-go"
 	"github.com/pion/rtp/codecs"
 	"github.com/pion/webrtc/v4"
 	"github.com/pion/webrtc/v4/pkg/media"
-	"github.com/pion/webrtc/v4/pkg/media/h264reader"
 	"github.com/pion/webrtc/v4/pkg/media/samplebuilder"
 )
 
@@ -30,12 +27,11 @@ type Stream struct {
 	frameCh    chan Frame
 	closeOnce  sync.Once
 	cancelFunc context.CancelFunc
+	onClose    func() error
 }
 
 func NewStream() *Stream {
-	return &Stream{
-		frameCh: make(chan Frame, 4),
-	}
+	return &Stream{frameCh: make(chan Frame, 4)}
 }
 
 func (s *Stream) Latest() *Frame {
@@ -64,6 +60,9 @@ func (s *Stream) Close() {
 		if s.cancelFunc != nil {
 			s.cancelFunc()
 		}
+		if s.onClose != nil {
+			_ = s.onClose()
+		}
 		close(s.frameCh)
 	})
 }
@@ -77,33 +76,15 @@ func AttachRemoteTrack(parent context.Context, track *webrtc.TrackRemote) (*Stre
 	stream := NewStream()
 	stream.cancelFunc = cancel
 
-	ffmpegCmd := exec.CommandContext(ctx,
-		"ffmpeg",
-		"-loglevel", "error",
-		"-fflags", "nobuffer",
-		"-flags", "low_delay",
-		"-f", "h264",
-		"-i", "pipe:0",
-		"-f", "image2pipe",
-		"-vcodec", "png",
-		"pipe:1",
-	)
-
-	stdin, err := ffmpegCmd.StdinPipe()
+	decoder, err := openh264.NewDecoder(bytes.NewReader(nil))
 	if err != nil {
+		cancel()
 		return nil, err
 	}
-	stdout, err := ffmpegCmd.StdoutPipe()
-	if err != nil {
-		return nil, err
-	}
-	if err := ffmpegCmd.Start(); err != nil {
-		return nil, err
-	}
+	stream.onClose = decoder.Close
 
 	go func() {
 		defer stream.Close()
-		defer stdin.Close()
 
 		sb := samplebuilder.New(32, &codecs.H264Packet{}, track.Codec().ClockRate)
 		for {
@@ -127,31 +108,14 @@ func AttachRemoteTrack(parent context.Context, track *webrtc.TrackRemote) (*Stre
 				if len(payload) == 0 {
 					continue
 				}
-				if _, err := stdin.Write(payload); err != nil {
+				img, err := decoder.Decode(payload)
+				if err != nil {
 					return
 				}
-			}
-		}
-	}()
-
-	go func() {
-		defer stream.Close()
-		reader := bufio.NewReader(stdout)
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			default:
-			}
-
-			img, err := png.Decode(reader)
-			if err != nil {
-				if err == io.EOF || ctx.Err() != nil {
-					return
+				if img != nil {
+					stream.publish(Frame{Image: img, At: time.Now()})
 				}
-				return
 			}
-			stream.publish(Frame{Image: img, At: time.Now()})
 		}
 	}()
 
@@ -159,74 +123,88 @@ func AttachRemoteTrack(parent context.Context, track *webrtc.TrackRemote) (*Stre
 }
 
 func StartTestPattern(ctx context.Context, width, height, fps int, track *webrtc.TrackLocalStaticSample) error {
-	cmd := exec.CommandContext(ctx,
-		"ffmpeg",
-		"-loglevel", "error",
-		"-f", "lavfi",
-		"-i", fmt.Sprintf("testsrc=size=%dx%d:rate=%d", width, height, fps),
-		"-pix_fmt", "yuv420p",
-		"-an",
-		"-c:v", "libx264",
-		"-preset", "ultrafast",
-		"-tune", "zerolatency",
-		"-x264-params", "repeat-headers=1:aud=1:keyint=30:min-keyint=30:scenecut=0",
-		"-f", "h264",
-		"pipe:1",
-	)
+	params := openh264.NewEncoderParams()
+	params.Width = width
+	params.Height = height
+	params.BitRate = width * height * 4
+	params.MaxFrameRate = float32(fps)
+	params.UsageType = openh264.ScreenContentRealTime
+	params.EnableFrameSkip = false
+	params.IntraPeriod = uint(fps * 2)
 
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		return err
-	}
-	if err := cmd.Start(); err != nil {
-		return err
-	}
-
-	reader, err := h264reader.NewReader(stdout)
+	encoder, err := openh264.NewEncoder(params)
 	if err != nil {
 		return err
 	}
 
-	frameDuration := time.Second / time.Duration(fps)
+	ticker := time.NewTicker(time.Second / time.Duration(fps))
 	go func() {
-		defer cmd.Wait()
+		defer ticker.Stop()
+		defer encoder.Close()
 
-		var au bytes.Buffer
-		flush := func() bool {
-			if au.Len() == 0 {
-				return true
-			}
-			err := track.WriteSample(media.Sample{
-				Data:     append([]byte(nil), au.Bytes()...),
-				Duration: frameDuration,
-			})
-			au.Reset()
-			return err == nil
-		}
-
+		frameIndex := 0
 		for {
 			select {
 			case <-ctx.Done():
 				return
-			default:
-			}
-
-			nal, readErr := reader.NextNAL()
-			if readErr != nil {
-				return
-			}
-
-			if nal.UnitType == h264reader.NalUnitTypeAUD && au.Len() > 0 {
-				if !flush() {
+			case <-ticker.C:
+				if frameIndex%(fps*2) == 0 {
+					_ = encoder.ForceKeyFrame()
+				}
+				img := newPatternFrame(width, height, frameIndex)
+				payload, err := encoder.Encode(img)
+				if err != nil {
 					return
 				}
+				if len(payload) == 0 {
+					frameIndex++
+					continue
+				}
+				if err := track.WriteSample(media.Sample{
+					Data:     payload,
+					Duration: time.Second / time.Duration(fps),
+				}); err != nil {
+					return
+				}
+				frameIndex++
 			}
-			au.Write([]byte{0x00, 0x00, 0x00, 0x01})
-			au.Write(nal.Data)
 		}
 	}()
 
 	return nil
+}
+
+func newPatternFrame(width, height, frameIndex int) *image.YCbCr {
+	img := image.NewYCbCr(image.Rect(0, 0, width, height), image.YCbCrSubsampleRatio420)
+	phase := frameIndex % 255
+
+	for y := 0; y < height; y++ {
+		for x := 0; x < width; x++ {
+			yy := uint8((x + y + phase) % 256)
+			img.Y[y*img.YStride+x] = yy
+		}
+	}
+
+	for y := 0; y < height/2; y++ {
+		for x := 0; x < width/2; x++ {
+			img.Cb[y*img.CStride+x] = uint8((x*2 + phase*3) % 256)
+			img.Cr[y*img.CStride+x] = uint8((y*2 + phase*5) % 256)
+		}
+	}
+
+	drawBox(img, 20+(frameIndex*7)%(max(1, width-120)), 20+(frameIndex*5)%(max(1, height-80)), 100, 60, color.RGBA{R: 255, G: 255, B: 255, A: 255})
+	return img
+}
+
+func drawBox(img *image.YCbCr, x0, y0, w, h int, c color.Color) {
+	ycbcr := color.YCbCrModel.Convert(c).(color.YCbCr)
+	for y := max(0, y0); y < minInt(img.Rect.Dy(), y0+h); y++ {
+		for x := max(0, x0); x < minInt(img.Rect.Dx(), x0+w); x++ {
+			img.Y[y*img.YStride+x] = ycbcr.Y
+			img.Cb[(y/2)*img.CStride+(x/2)] = ycbcr.Cb
+			img.Cr[(y/2)*img.CStride+(x/2)] = ycbcr.Cr
+		}
+	}
 }
 
 func ensureAnnexB(data []byte) []byte {
@@ -237,4 +215,18 @@ func ensureAnnexB(data []byte) []byte {
 		return data
 	}
 	return append([]byte{0x00, 0x00, 0x00, 0x01}, data...)
+}
+
+func max(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}
+
+func minInt(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }

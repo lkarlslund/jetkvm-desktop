@@ -3,7 +3,9 @@ module github.com/lkarlslund/jetkvm-native
 go 1.26.1
 
 require (
+	github.com/Azunyan1111/openh264-go v0.2.0
 	github.com/hajimehoshi/ebiten/v2 v2.9.9
+	github.com/pion/rtp v1.10.1
 	github.com/pion/webrtc/v4 v4.2.11
 )
 
@@ -21,7 +23,6 @@ require (
 	github.com/pion/mdns/v2 v2.1.0 // indirect
 	github.com/pion/randutil v0.1.0 // indirect
 	github.com/pion/rtcp v1.2.16 // indirect
-	github.com/pion/rtp v1.10.1 // indirect
 	github.com/pion/sctp v1.9.4 // indirect
 	github.com/pion/sdp/v3 v3.0.18 // indirect
 	github.com/pion/srtp/v3 v3.0.10 // indirect
