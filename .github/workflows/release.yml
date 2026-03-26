@@ -35,7 +35,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Install Linux GUI build dependencies
         if: runner.os == 'Linux'
@@ -71,7 +71,7 @@ jobs:
           "$env:MSYS2_LOCATION\mingw64\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
 
@@ -99,7 +99,7 @@ jobs:
           Compress-Archive -Path dist/pkg/* -DestinationPath "dist/${{ matrix.archive_name }}"
 
       - name: Upload packaged artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: ${{ matrix.name }}
           path: dist/${{ matrix.archive_name }}
@@ -112,7 +112,7 @@ jobs:
 
     steps:
       - name: Download artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v6
         with:
           path: dist
 
