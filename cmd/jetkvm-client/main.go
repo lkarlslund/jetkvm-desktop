@@ -14,9 +14,9 @@ import (
 func main() {
 	cfg := app.Config{}
 
-	rootCmd := &cobra.Command{
-		Use:   "jetkvm-client",
-		Short: "Native JetKVM client",
+	connectCmd := &cobra.Command{
+		Use:   "connect",
+		Short: "Connect to a JetKVM device or emulator",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			clientApp, err := app.New(cfg)
 			if err != nil {
@@ -33,9 +33,18 @@ func main() {
 		},
 	}
 
-	rootCmd.Flags().StringVar(&cfg.BaseURL, "base-url", "http://127.0.0.1:8080", "JetKVM device or emulator base URL")
-	rootCmd.Flags().StringVar(&cfg.Password, "password", "", "Password for local auth mode")
-	rootCmd.Flags().DurationVar(&cfg.RPCTimeout, "rpc-timeout", 5*time.Second, "Timeout for JSON-RPC requests")
+	connectCmd.Flags().StringVar(&cfg.BaseURL, "base-url", "http://127.0.0.1:8080", "JetKVM device or emulator base URL")
+	connectCmd.Flags().StringVar(&cfg.Password, "password", "", "Password for local auth mode")
+	connectCmd.Flags().DurationVar(&cfg.RPCTimeout, "rpc-timeout", 5*time.Second, "Timeout for JSON-RPC requests")
+
+	rootCmd := &cobra.Command{
+		Use:   "jetkvm-client",
+		Short: "Native JetKVM client",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return connectCmd.RunE(cmd, args)
+		},
+	}
+	rootCmd.AddCommand(connectCmd)
 
 	if err := rootCmd.Execute(); err != nil {
 		log.Fatal(err)

@@ -2,6 +2,18 @@
 
 Native Go client for JetKVM.
 
+## Commands
+
+Run the native client:
+
+- `jetkvm-client connect --base-url http://127.0.0.1:8080`
+
+Run the emulator:
+
+- `jetkvm-emulator serve --listen 127.0.0.1:8080`
+
+For backward compatibility, both binaries still default to those subcommands when invoked without one.
+
 ## Release Builds
 
 GitHub Actions builds native release artifacts on:
