@@ -22,12 +22,23 @@ cleanup() {
 }
 trap cleanup EXIT
 
+dump_logs() {
+  if [ -f /tmp/jetkvm-emulator.log ]; then
+    echo "=== emulator log ===" >&2
+    cat /tmp/jetkvm-emulator.log >&2 || true
+  fi
+  if [ -f /tmp/jetkvm-webui.log ]; then
+    echo "=== webui log ===" >&2
+    cat /tmp/jetkvm-webui.log >&2 || true
+  fi
+}
+
 go run ./cmd/jetkvm-emulator serve --listen "${emulator_url#http://}" >/tmp/jetkvm-emulator.log 2>&1 &
 emu_pid=$!
 
 for _ in $(seq 1 60); do
   if ! kill -0 "$emu_pid" >/dev/null 2>&1; then
-    cat /tmp/jetkvm-emulator.log >&2 || true
+    dump_logs
     exit 1
   fi
   if curl -fsS "${emulator_url}/healthz" >/dev/null; then
@@ -36,19 +47,19 @@ for _ in $(seq 1 60); do
   sleep 1
 done
 if ! curl -fsS "${emulator_url}/healthz" >/dev/null; then
-  cat /tmp/jetkvm-emulator.log >&2 || true
+  dump_logs
   exit 1
 fi
 
 pushd "$ui_dir" >/dev/null
 npm ci
 npx playwright install --with-deps chromium
-JETKVM_PROXY_URL="${emulator_url/http/ws}" npx vite dev --mode=device --host 127.0.0.1 --port "${ui_url##*:}" >/tmp/jetkvm-webui.log 2>&1 &
+JETKVM_PROXY_URL="${emulator_url/http/ws}" npx vite --mode=device --host 127.0.0.1 --port "${ui_url##*:}" >/tmp/jetkvm-webui.log 2>&1 &
 ui_pid=$!
 
 for _ in $(seq 1 60); do
   if ! kill -0 "$ui_pid" >/dev/null 2>&1; then
-    cat /tmp/jetkvm-webui.log >&2 || true
+    dump_logs
     exit 1
   fi
   if curl -fsS "${ui_url}" >/dev/null; then
@@ -57,18 +68,23 @@ for _ in $(seq 1 60); do
   sleep 1
 done
 if ! curl -fsS "${ui_url}" >/dev/null; then
-  cat /tmp/jetkvm-webui.log >&2 || true
+  dump_logs
   exit 1
 fi
 
-node --input-type=module <<'EOF'
+if ! node --input-type=module <<'EOF'
 import { chromium } from '@playwright/test';
 
 const url = process.env.SMOKE_UI_URL;
 
 const browser = await chromium.launch({ headless: true });
-const page = await browser.newPage({
-  permissions: ['autoplay'],
+const page = await browser.newPage();
+
+page.on('console', (message) => {
+  console.log(`browser:${message.type()}: ${message.text()}`);
+});
+page.on('pageerror', (error) => {
+  console.error(`browser:pageerror: ${error.stack ?? error.message}`);
 });
 
 try {
@@ -86,4 +102,8 @@ try {
   await browser.close();
 }
 EOF
+then
+  dump_logs
+  exit 1
+fi
 popd >/dev/null
