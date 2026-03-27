@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
-	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -185,11 +184,7 @@ func TestClientConnectsAndRPCWorks(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	frameWait := 5 * time.Second
-	if runtime.GOOS == "windows" {
-		frameWait = 10 * time.Second
-	}
-	deadline = time.Now().Add(frameWait)
+	deadline = time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
 		stream := c.VideoStream()
 		if stream != nil && stream.Latest() != nil {
@@ -197,15 +192,8 @@ func TestClientConnectsAndRPCWorks(t *testing.T) {
 		}
 		time.Sleep(25 * time.Millisecond)
 	}
-	if c.VideoStream() == nil {
-		t.Fatal("expected video stream to be attached")
-	}
-	if c.VideoStream().Latest() == nil {
-		if runtime.GOOS == "windows" {
-			t.Log("decoder did not yield a frame before timeout on Windows; continuing with transport-level assertions")
-		} else {
-			t.Fatal("expected at least one decoded video frame")
-		}
+	if c.VideoStream() == nil || c.VideoStream().Latest() == nil {
+		t.Fatal("expected at least one decoded video frame")
 	}
 
 	deadline = time.Now().Add(2 * time.Second)

@@ -87,7 +87,11 @@ func AttachRemoteTrack(parent context.Context, track *webrtc.TrackRemote) (*Stre
 	go func() {
 		defer stream.Close()
 
-		sb := samplebuilder.New(32, &codecs.H264Packet{}, track.Codec().ClockRate)
+		// Screen-content H.264 keyframes can span far more than 32 RTP packets.
+		// A too-small samplebuilder buffer drops fragmented access units before the
+		// decoder ever sees a complete frame, which showed up as intermittent
+		// "no first frame" failures on slower CI runners.
+		sb := samplebuilder.New(512, &codecs.H264Packet{}, track.Codec().ClockRate)
 		for {
 			select {
 			case <-ctx.Done():
