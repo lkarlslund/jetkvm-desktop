@@ -15,13 +15,14 @@ import (
 type iconKind string
 
 const (
-	iconReconnect iconKind = "reconnect"
-	iconMouse     iconKind = "mouse"
-	iconMinus     iconKind = "minus"
-	iconPlus      iconKind = "plus"
-	iconPower     iconKind = "power"
-	iconSettings  iconKind = "settings"
-	iconClose     iconKind = "close"
+	iconReconnect  iconKind = "reconnect"
+	iconMouse      iconKind = "mouse"
+	iconMinus      iconKind = "minus"
+	iconPlus       iconKind = "plus"
+	iconPower      iconKind = "power"
+	iconSettings   iconKind = "settings"
+	iconFullscreen iconKind = "fullscreen"
+	iconClose      iconKind = "close"
 )
 
 type chromeButton struct {
@@ -217,6 +218,9 @@ func fallbackLabel(values ...string) string {
 }
 
 func (a *App) uiAlpha() float64 {
+	if a.prefs.PinChrome {
+		return 1
+	}
 	if a.settingsOpen {
 		return 1
 	}
@@ -244,6 +248,7 @@ func (a *App) layoutChromeButtons(width int, snap session.Snapshot) []chromeButt
 		{id: "mouse", hint: mouseButtonLabel(a.relative), icon: iconMouse, enabled: snap.Phase == session.PhaseConnected, active: a.relative},
 		{id: "quality_down", hint: "Lower stream quality", icon: iconMinus, enabled: snap.Phase == session.PhaseConnected},
 		{id: "quality_up", hint: "Raise stream quality", icon: iconPlus, enabled: snap.Phase == session.PhaseConnected},
+		{id: "fullscreen", hint: "Toggle fullscreen", icon: iconFullscreen, enabled: true, active: ebiten.IsFullscreen()},
 		{id: "reboot", hint: "Reboot device", icon: iconPower, enabled: canAct},
 		{id: "settings", hint: "Settings", icon: iconSettings, enabled: true, active: a.settingsOpen},
 	}
@@ -327,6 +332,15 @@ func drawIcon(screen *ebiten.Image, kind iconKind, r rect, clr color.Color, alph
 		vector.FillCircle(screen, cx-4, top+2, 2.5, clr, true)
 		vector.FillCircle(screen, cx+5, cy, 2.5, clr, true)
 		vector.FillCircle(screen, cx-1, bottom-2, 2.5, clr, true)
+	case iconFullscreen:
+		vector.StrokeLine(screen, left, top+4, left, top, 1.6, clr, true)
+		vector.StrokeLine(screen, left, top, left+4, top, 1.6, clr, true)
+		vector.StrokeLine(screen, right, top+4, right, top, 1.6, clr, true)
+		vector.StrokeLine(screen, right-4, top, right, top, 1.6, clr, true)
+		vector.StrokeLine(screen, left, bottom-4, left, bottom, 1.6, clr, true)
+		vector.StrokeLine(screen, left, bottom, left+4, bottom, 1.6, clr, true)
+		vector.StrokeLine(screen, right, bottom-4, right, bottom, 1.6, clr, true)
+		vector.StrokeLine(screen, right-4, bottom, right, bottom, 1.6, clr, true)
 	case iconClose:
 		vector.StrokeLine(screen, left, top, right, bottom, 1.8, clr, true)
 		vector.StrokeLine(screen, right, top, left, bottom, 1.8, clr, true)
@@ -752,10 +766,13 @@ func (a *App) drawSettingsAccess(screen *ebiten.Image, x, y, w float64) {
 }
 
 func (a *App) drawSettingsAppearance(screen *ebiten.Image, x, y, w float64) {
-	a.drawSettingsCard(screen, x, y, w, 154, "Appearance", "The web UI only exposes theme selection here. In the native client this section is where chrome density and auto-hide behavior belong.")
-	drawText(screen, "Current behavior", x+16, y+78, 13, color.RGBA{R: 166, G: 178, B: 190, A: 255})
-	drawText(screen, "Top icon bar fades away when idle and returns when the pointer moves near the top edge.", x+136, y+78, 13, color.RGBA{R: 236, G: 241, B: 245, A: 255})
-	drawText(screen, "Planned next: density presets and optional persistent chrome mode.", x+16, y+112, 13, color.RGBA{R: 166, G: 178, B: 190, A: 255})
+	a.drawSettingsCard(screen, x, y, w, 188, "Appearance", "The web UI only exposes theme selection here. In the native client this section controls how much chrome stays visible while you work.")
+	drawText(screen, "Chrome mode", x+16, y+78, 13, color.RGBA{R: 166, G: 178, B: 190, A: 255})
+	a.drawSettingsAction(screen, "pin_chrome_off", "Auto-hide", x+136, y+66, 96, true, !a.prefs.PinChrome)
+	a.drawSettingsAction(screen, "pin_chrome_on", "Pinned", x+244, y+66, 84, true, a.prefs.PinChrome)
+	drawText(screen, "Fullscreen", x+16, y+118, 13, color.RGBA{R: 166, G: 178, B: 190, A: 255})
+	a.drawSettingsAction(screen, "fullscreen", "Toggle Fullscreen", x+136, y+106, 160, true, ebiten.IsFullscreen())
+	drawText(screen, "The pinned setting is saved locally and keeps the top action bar visible even when the pointer is away from the edge.", x+16, y+154, 13, color.RGBA{R: 166, G: 178, B: 190, A: 255})
 }
 
 func boolWord(v bool) string {

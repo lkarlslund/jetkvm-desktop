@@ -563,6 +563,9 @@ func (a *App) invokeAction(id string) {
 		_ = a.ctrl.Reboot()
 	case "settings":
 		a.settingsOpen = !a.settingsOpen
+		if a.settingsOpen {
+			a.refreshSettingsSection(a.settingsSection)
+		}
 		a.applyCursorMode()
 		a.revealUIFor(1200 * time.Millisecond)
 	case "settings_close":
@@ -590,6 +593,14 @@ func (a *App) invokeAction(id string) {
 	case "toggle_pressed_keys":
 		a.showPressedKeys = !a.showPressedKeys
 		a.savePreferences()
+	case "pin_chrome_on":
+		a.prefs.PinChrome = true
+		a.savePreferences()
+	case "pin_chrome_off":
+		a.prefs.PinChrome = false
+		a.savePreferences()
+	case "fullscreen":
+		ebiten.SetFullscreen(!ebiten.IsFullscreen())
 	case "layout:en_US":
 		_ = a.ctrl.SetKeyboardLayout("en_US")
 	case "layout:en_UK":
