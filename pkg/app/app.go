@@ -505,9 +505,13 @@ func (a *App) adjustStreamQuality(delta float64) {
 	snap := a.ctrl.Snapshot()
 	next := clamp(snap.Quality+delta, 0.1, 1.0)
 
-	go func(value float64) {
-		_ = a.ctrl.SetQuality(value)
-	}(next)
+	a.runAsync(func() {
+		_ = a.ctrl.SetQuality(next)
+	})
+}
+
+func (a *App) runAsync(fn func()) {
+	go fn()
 }
 
 func (a *App) setMouseRelative(relative bool) {
@@ -595,7 +599,9 @@ func (a *App) invokeAction(id string) {
 	case "paste_send":
 		go a.submitPaste()
 	case "paste_cancel":
-		_ = a.ctrl.CancelPaste()
+		a.runAsync(func() {
+			_ = a.ctrl.CancelPaste()
+		})
 		a.pasteOpen = false
 		a.applyCursorMode()
 	case "mouse_absolute":
@@ -603,13 +609,21 @@ func (a *App) invokeAction(id string) {
 	case "mouse_relative":
 		a.setMouseRelative(true)
 	case "quality_preset_high":
-		_ = a.ctrl.SetQuality(1.0)
+		a.runAsync(func() {
+			_ = a.ctrl.SetQuality(1.0)
+		})
 	case "quality_preset_medium":
-		_ = a.ctrl.SetQuality(0.5)
+		a.runAsync(func() {
+			_ = a.ctrl.SetQuality(0.5)
+		})
 	case "quality_preset_low":
-		_ = a.ctrl.SetQuality(0.1)
+		a.runAsync(func() {
+			_ = a.ctrl.SetQuality(0.1)
+		})
 	case "reboot":
-		_ = a.ctrl.Reboot()
+		a.runAsync(func() {
+			_ = a.ctrl.Reboot()
+		})
 	case "settings":
 		a.settingsOpen = !a.settingsOpen
 		if a.settingsOpen {
@@ -652,39 +666,67 @@ func (a *App) invokeAction(id string) {
 	case "fullscreen":
 		ebiten.SetFullscreen(!ebiten.IsFullscreen())
 	case "tls_disabled":
-		_ = a.ctrl.SetTLSMode("disabled")
-		a.refreshSettingsSection(sectionAccess)
+		a.runAsync(func() {
+			_ = a.ctrl.SetTLSMode("disabled")
+			a.refreshSettingsSection(sectionAccess)
+		})
 	case "tls_self_signed":
-		_ = a.ctrl.SetTLSMode("self-signed")
-		a.refreshSettingsSection(sectionAccess)
+		a.runAsync(func() {
+			_ = a.ctrl.SetTLSMode("self-signed")
+			a.refreshSettingsSection(sectionAccess)
+		})
 	case "rotate_normal":
-		_ = a.ctrl.SetDisplayRotation("270")
-		a.refreshSettingsSection(sectionHardware)
+		a.runAsync(func() {
+			_ = a.ctrl.SetDisplayRotation("270")
+			a.refreshSettingsSection(sectionHardware)
+		})
 	case "rotate_inverted":
-		_ = a.ctrl.SetDisplayRotation("90")
-		a.refreshSettingsSection(sectionHardware)
+		a.runAsync(func() {
+			_ = a.ctrl.SetDisplayRotation("90")
+			a.refreshSettingsSection(sectionHardware)
+		})
 	case "usb_emulation_on":
-		_ = a.ctrl.SetUSBEmulation(true)
-		a.refreshSettingsSection(sectionHardware)
+		a.runAsync(func() {
+			_ = a.ctrl.SetUSBEmulation(true)
+			a.refreshSettingsSection(sectionHardware)
+		})
 	case "usb_emulation_off":
-		_ = a.ctrl.SetUSBEmulation(false)
-		a.refreshSettingsSection(sectionHardware)
+		a.runAsync(func() {
+			_ = a.ctrl.SetUSBEmulation(false)
+			a.refreshSettingsSection(sectionHardware)
+		})
 	case "layout:en_US":
-		_ = a.ctrl.SetKeyboardLayout("en_US")
+		a.runAsync(func() {
+			_ = a.ctrl.SetKeyboardLayout("en_US")
+		})
 	case "layout:en_UK":
-		_ = a.ctrl.SetKeyboardLayout("en_UK")
+		a.runAsync(func() {
+			_ = a.ctrl.SetKeyboardLayout("en_UK")
+		})
 	case "layout:da_DK":
-		_ = a.ctrl.SetKeyboardLayout("da_DK")
+		a.runAsync(func() {
+			_ = a.ctrl.SetKeyboardLayout("da_DK")
+		})
 	case "layout:de_DE":
-		_ = a.ctrl.SetKeyboardLayout("de_DE")
+		a.runAsync(func() {
+			_ = a.ctrl.SetKeyboardLayout("de_DE")
+		})
 	case "layout:fr_FR":
-		_ = a.ctrl.SetKeyboardLayout("fr_FR")
+		a.runAsync(func() {
+			_ = a.ctrl.SetKeyboardLayout("fr_FR")
+		})
 	case "layout:es_ES":
-		_ = a.ctrl.SetKeyboardLayout("es_ES")
+		a.runAsync(func() {
+			_ = a.ctrl.SetKeyboardLayout("es_ES")
+		})
 	case "layout:it_IT":
-		_ = a.ctrl.SetKeyboardLayout("it_IT")
+		a.runAsync(func() {
+			_ = a.ctrl.SetKeyboardLayout("it_IT")
+		})
 	case "layout:ja_JP":
-		_ = a.ctrl.SetKeyboardLayout("ja_JP")
+		a.runAsync(func() {
+			_ = a.ctrl.SetKeyboardLayout("ja_JP")
+		})
 	default:
 		if len(id) > 8 && id[:8] == "section:" {
 			a.settingsSection = settingsSection(id[8:])
