@@ -21,16 +21,43 @@ jobs:
       runner: ${{ matrix.os }}
 
   build:
-    name: Build (${{ matrix.os }})
+    name: Build (${{ matrix.name }})
     needs: test
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        os:
-          - ubuntu-latest
-          - macos-latest
-          - windows-latest
+        include:
+          - os: ubuntu-24.04
+            name: linux-amd64
+            archive_name: jetkvm-desktop-linux-amd64.tar.gz
+            client_bin: jetkvm-desktop
+            goos: linux
+            goarch: amd64
+          - os: ubuntu-24.04-arm
+            name: linux-aarch64
+            archive_name: jetkvm-desktop-linux-aarch64.tar.gz
+            client_bin: jetkvm-desktop
+            goos: linux
+            goarch: arm64
+          - os: macos-15-intel
+            name: macos-amd64
+            archive_name: jetkvm-desktop-macos-amd64.tar.gz
+            client_bin: jetkvm-desktop
+            goos: darwin
+            goarch: amd64
+          - os: macos-15
+            name: macos-aarch64
+            archive_name: jetkvm-desktop-macos-aarch64.tar.gz
+            client_bin: jetkvm-desktop
+            goos: darwin
+            goarch: arm64
+          - os: windows-latest
+            name: windows-amd64
+            archive_name: jetkvm-desktop-windows-amd64.zip
+            client_bin: jetkvm-desktop.exe
+            goos: windows
+            goarch: amd64
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -73,5 +100,32 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - name: Build
-        run: go build ./...
+      - name: Build release binaries (Unix)
+        if: runner.os != 'Windows'
+        shell: bash
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          mkdir -p dist/pkg
+          go build -trimpath -ldflags="-s -w" -o "dist/pkg/${{ matrix.client_bin }}" ./cmd/jetkvm-desktop
+          cp README.md dist/pkg/
+          tar -C dist/pkg -czf "dist/${{ matrix.archive_name }}" .
+
+      - name: Build release binaries (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          New-Item -ItemType Directory -Force -Path dist/pkg | Out-Null
+          go build -trimpath -ldflags="-s -w" -o "dist/pkg/${{ matrix.client_bin }}" ./cmd/jetkvm-desktop
+          Copy-Item README.md dist/pkg/README.md
+          Compress-Archive -Path dist/pkg/* -DestinationPath "dist/${{ matrix.archive_name }}"
+
+      - name: Upload packaged artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: ${{ matrix.name }}
+          path: dist/${{ matrix.archive_name }}
