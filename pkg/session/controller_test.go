@@ -82,6 +82,9 @@ func TestControllerTransitionsToOtherSession(t *testing.T) {
 	defer second.Stop()
 	waitForPhase(t, second, PhaseConnected, 5*time.Second)
 	waitForPhase(t, first, PhaseOtherSession, 5*time.Second)
+
+	first.ReconnectNow()
+	waitForPhase(t, first, PhaseConnected, 5*time.Second)
 }
 
 func TestControllerReceivesVideoAndForwardsInput(t *testing.T) {

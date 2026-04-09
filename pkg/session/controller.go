@@ -65,7 +65,9 @@ type Controller struct {
 	mu        sync.RWMutex
 	snapshot  Snapshot
 	current   *client.Client
+	runParent context.Context
 	cancelRun context.CancelFunc
+	running   bool
 }
 
 func New(cfg Config) *Controller {
@@ -89,25 +91,31 @@ func New(cfg Config) *Controller {
 }
 
 func (c *Controller) Start(parent context.Context) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	if c.cancelRun != nil {
 		return
 	}
 	ctx, cancel := context.WithCancel(parent)
+	c.runParent = ctx
 	c.cancelRun = cancel
+	c.running = true
 	go c.run(ctx)
 }
 
 func (c *Controller) Stop() {
+	c.mu.Lock()
 	if c.cancelRun != nil {
 		c.cancelRun()
 		c.cancelRun = nil
 	}
-	c.mu.Lock()
-	defer c.mu.Unlock()
+	c.running = false
+	c.runParent = nil
 	if c.current != nil {
 		_ = c.current.Close()
 		c.current = nil
 	}
+	c.mu.Unlock()
 }
 
 func (c *Controller) Snapshot() Snapshot {
@@ -139,9 +147,17 @@ func (c *Controller) LatestFrameInfo() (image.Image, time.Time) {
 func (c *Controller) ReconnectNow() {
 	c.mu.Lock()
 	current := c.current
+	parent := c.runParent
+	shouldStart := !c.running && c.cancelRun != nil && parent != nil
+	if shouldStart {
+		c.running = true
+	}
 	c.mu.Unlock()
 	if current != nil {
 		_ = current.Close()
+	}
+	if shouldStart {
+		go c.run(parent)
 	}
 }
 
@@ -287,6 +303,11 @@ func (c *Controller) Stats() client.StatsSnapshot {
 }
 
 func (c *Controller) run(ctx context.Context) {
+	defer func() {
+		c.mu.Lock()
+		c.running = false
+		c.mu.Unlock()
+	}()
 	var attempt int
 	for {
 		select {

@@ -50,6 +50,7 @@ type App struct {
 	statsOpen       bool
 	settingsSection settingsSection
 	chromeButtons   []chromeButton
+	overlayButtons  []chromeButton
 	settingsButtons []chromeButton
 	settingsPanel   rect
 	pasteButtons    []chromeButton
@@ -545,6 +546,13 @@ func (a *App) savePreferences() {
 
 func (a *App) handleClick() {
 	x, y := ebiten.CursorPosition()
+	for _, btn := range a.overlayButtons {
+		if !btn.enabled || !btn.rect.contains(x, y) {
+			continue
+		}
+		a.invokeAction(btn.id)
+		return
+	}
 	for _, btn := range a.pasteButtons {
 		if !btn.enabled || !btn.rect.contains(x, y) {
 			continue
@@ -583,6 +591,10 @@ func (a *App) invokeAction(id string) {
 	case "reconnect":
 		a.releaseAllKeys(true)
 		a.ctrl.ReconnectNow()
+	case "take_back_control":
+		a.releaseAllKeys(true)
+		a.ctrl.ReconnectNow()
+		a.revealUIFor(2 * time.Second)
 	case "mouse":
 		a.setMouseRelative(!a.relative)
 	case "paste":
@@ -817,6 +829,7 @@ func (a *App) releasePointerState() {
 }
 
 func (a *App) drawOverlay(screen *ebiten.Image, snap session.Snapshot, hasVideo bool) {
+	a.overlayButtons = nil
 	title := ""
 	detail := ""
 	switch snap.Phase {
@@ -857,6 +870,20 @@ func (a *App) drawOverlay(screen *ebiten.Image, snap session.Snapshot, hasVideo 
 	}
 	if detail != "" {
 		drawText(screen, detail, 42, 132, 14, color.RGBA{R: 178, G: 188, B: 198, A: 255})
+	}
+	if snap.Phase == session.PhaseOtherSession {
+		btn := chromeButton{
+			id:      "take_back_control",
+			label:   "Take Back Control",
+			enabled: true,
+			rect:    rect{x: 42, y: 148, w: 170, h: 32},
+		}
+		a.overlayButtons = append(a.overlayButtons, btn)
+		fill := color.RGBA{R: 28, G: 66, B: 116, A: 255}
+		stroke := color.RGBA{R: 134, G: 186, B: 248, A: 180}
+		vector.DrawFilledRect(screen, float32(btn.rect.x), float32(btn.rect.y), float32(btn.rect.w), float32(btn.rect.h), fill, false)
+		vector.StrokeRect(screen, float32(btn.rect.x), float32(btn.rect.y), float32(btn.rect.w), float32(btn.rect.h), 1, stroke, false)
+		drawText(screen, btn.label, btn.rect.x+12, btn.rect.y+9, 13, color.RGBA{R: 240, G: 244, B: 248, A: 255})
 	}
 }
 
