@@ -730,62 +730,12 @@ func (s *session) handleRPC(data []byte) error {
 			s.serverRef.state.KeyboardLayout = layout
 		}
 		resp = jsonrpc.NewResponse(req.ID, true)
-	case "getAutoUpdateState":
-		resp = jsonrpc.NewResponse(req.ID, false)
-	case "getBacklightSettings":
-		resp = jsonrpc.NewResponse(req.ID, map[string]any{"max_brightness": 100, "dim_after": 60, "off_after": 300})
-	case "getVideoSleepMode":
-		resp = jsonrpc.NewResponse(req.ID, map[string]any{"duration": 0})
-	case "getDisplayRotation":
-		resp = jsonrpc.NewResponse(req.ID, map[string]any{"rotation": "0"})
 	case "getEDID":
-		resp = jsonrpc.NewResponse(req.ID, "")
-	case "getVideoLogStatus":
-		resp = jsonrpc.NewResponse(req.ID, "disabled")
-	case "getDevModeState":
-		resp = jsonrpc.NewResponse(req.ID, map[string]any{"enabled": false})
-	case "getSSHKeyState":
 		resp = jsonrpc.NewResponse(req.ID, "")
 	case "getUsbEmulationState":
 		resp = jsonrpc.NewResponse(req.ID, true)
-	case "getDevChannelState":
-		resp = jsonrpc.NewResponse(req.ID, false)
-	case "getLocalLoopbackOnly":
-		resp = jsonrpc.NewResponse(req.ID, false)
 	case "getCloudState":
 		resp = jsonrpc.NewResponse(req.ID, map[string]any{"connected": s.serverRef.state.CloudURL != "", "url": s.serverRef.state.CloudURL, "appUrl": s.serverRef.state.CloudAppURL})
-	case "getTLSState":
-		resp = jsonrpc.NewResponse(req.ID, map[string]any{"enabled": false})
-	case "getMqttSettings":
-		resp = jsonrpc.NewResponse(req.ID, map[string]any{"enabled": false})
-	case "getMqttStatus":
-		resp = jsonrpc.NewResponse(req.ID, map[string]any{"connected": false})
-	case "getActiveExtension":
-		resp = jsonrpc.NewResponse(req.ID, "")
-	case "getVirtualMediaState":
-		resp = jsonrpc.NewResponse(req.ID, map[string]any{"mounted": false, "uploading": false})
-	case "getStorageSpace":
-		resp = jsonrpc.NewResponse(req.ID, map[string]any{"free": 1024 * 1024 * 1024, "total": 2 * 1024 * 1024 * 1024})
-	case "getJigglerState":
-		resp = jsonrpc.NewResponse(req.ID, false)
-	case "getJigglerConfig":
-		resp = jsonrpc.NewResponse(req.ID, map[string]any{"enabled": false})
-	case "getTimezones":
-		resp = jsonrpc.NewResponse(req.ID, []string{"UTC", "Europe/Copenhagen"})
-	case "getSerialCommandHistory":
-		resp = jsonrpc.NewResponse(req.ID, []string{})
-	case "getWakeOnLanDevices":
-		resp = jsonrpc.NewResponse(req.ID, []any{})
-	case "getPublicIPAddresses":
-		resp = jsonrpc.NewResponse(req.ID, []string{"127.0.0.1"})
-	case "getTailscaleStatus":
-		resp = jsonrpc.NewResponse(req.ID, map[string]any{"connected": false})
-	case "getSerialSettings":
-		resp = jsonrpc.NewResponse(req.ID, map[string]any{"baudRate": 115200, "dataBits": 8, "stopBits": 1, "parity": "none"})
-	case "getDCPowerState":
-		resp = jsonrpc.NewResponse(req.ID, true)
-	case "getATXState":
-		resp = jsonrpc.NewResponse(req.ID, map[string]any{"power": "on", "hdd": false})
 	case "getUsbConfig":
 		resp = jsonrpc.NewResponse(req.ID, map[string]any{"vendor_id": "0xCafe", "product_id": "0x4000"})
 	case "getUsbDevices":
@@ -838,12 +788,6 @@ func (s *session) handleHID(channel string, data []byte) error {
 	case hidrpc.Keypress:
 		s.serverRef.applyKeypress(v.Key, v.Press)
 		return s.sendEvent("keysDownState", map[string]any{"modifier": s.serverRef.state.KeyboardModifiers, "keys": s.serverRef.state.KeysDown})
-	case hidrpc.Pointer:
-		return s.sendEvent("pointerState", map[string]any{"x": v.X, "y": v.Y, "buttons": v.Buttons})
-	case hidrpc.Mouse:
-		return s.sendEvent("relativePointerState", map[string]any{"dx": v.DX, "dy": v.DY, "buttons": v.Buttons})
-	case hidrpc.Wheel:
-		return s.sendEvent("wheelState", map[string]any{"delta": v.Delta})
 	}
 	return nil
 }
