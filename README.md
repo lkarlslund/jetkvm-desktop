@@ -1,51 +1,48 @@
 # jetkvm-desktop
 
-Desktop Go client for JetKVM.
+A native desktop client for JetKVM with local discovery, direct connect, remote control, and core settings in one window.
 
-## Keyboard Policy
+![jetkvm-desktop launcher](docs/launcher.png)
 
-The desktop client sends physical HID usages over `hidrpc`.
+## What It Does
 
-- The current client is intentionally physical-key-first, not character-first.
-- Letters, modifiers, navigation keys, function keys, and keypad keys are the supported core path.
-- Punctuation and non-US layouts are still best-effort in this phase.
-- No browser code is reused; protocol behavior is implemented clean-room in this repo.
+- Finds JetKVM devices on your local network
+- Connects directly by hostname, mDNS name, or IP
+- Shows the remote video feed in a native desktop window
+- Sends keyboard and mouse input to the target machine
+- Prompts for a password when the device requires it
+- Exposes the main settings and connection stats without opening the browser UI
 
-## Commands
+## Getting Started
 
-Run the desktop client launcher:
+Open the launcher:
 
-- `jetkvm-desktop`
+```bash
+jetkvm-desktop
+```
 
-Connect directly to a known device:
+Connect straight to a known device:
 
-- `jetkvm-desktop http://127.0.0.1:8080`
+```bash
+jetkvm-desktop jetkvm.local
+jetkvm-desktop 192.168.1.50
+jetkvm-desktop http://192.168.1.50
+```
 
-You can also pass a bare host or IP:
+If the device requires a password, the app will ask for it.
 
-- `jetkvm-desktop jetkvm.local`
-- `jetkvm-desktop 192.168.1.50`
+## Inside the App
 
-For local testing, run the emulator harness separately:
+![jetkvm-desktop settings](docs/settings.png)
 
-- `go run ./test/emulator-serve serve --listen 127.0.0.1:8080`
+Once connected, the app keeps video, input, stats, and the core device settings in the same window, so the common JetKVM workflow stays fast and desktop-native.
 
-## Release Builds
+## JetKVM
 
-GitHub Actions builds native release artifacts on:
+This is a separate desktop client for the JetKVM ecosystem. For the upstream JetKVM repositories, see `github.com/jetkvm`.
 
-- Linux amd64
-- Linux aarch64
-- macOS amd64
-- macOS aarch64
-- Windows amd64
+## Downloads
 
-Each release contains:
+Prebuilt releases are published on GitHub Releases:
 
-- `jetkvm-desktop`
-
-The release pipeline uses native runners per OS instead of simple Go cross-compilation, because the in-process OpenH264 path uses CGO-backed static libraries.
-
-Create a tag like `v0.1.0` and push it to trigger a combined multi-OS release build.
-
-For a release candidate, use a prerelease tag such as `v0.1.0-rc1`.
+`https://github.com/lkarlslund/jetkvm-desktop/releases`
