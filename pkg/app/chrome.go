@@ -472,7 +472,7 @@ func (a *App) drawSettingsOverlay(screen *ebiten.Image, snap session.Snapshot) {
 	vector.DrawFilledRect(screen, float32(panelX), float32(panelY), float32(sidebarW), float32(panelH), color.RGBA{R: 18, G: 28, B: 40, A: 255}, false)
 
 	drawText(screen, "Settings", panelX+22, panelY+18, 22, color.RGBA{R: 240, G: 244, B: 248, A: 255})
-	drawText(screen, "Mirrors the web UI structure, starting with the controls the native client already supports.", panelX+22, panelY+46, 12, color.RGBA{R: 166, G: 178, B: 190, A: 255})
+	drawWrappedText(screen, "Mirrors the web UI structure, starting with the controls the native client already supports.", panelX+22, panelY+46, panelW-80, 12, color.RGBA{R: 166, G: 178, B: 190, A: 255})
 
 	closeBtn := chromeButton{
 		id:      "settings_close",
@@ -514,7 +514,7 @@ func (a *App) drawSettingsOverlay(screen *ebiten.Image, snap session.Snapshot) {
 	contentW := panelW - sidebarW - 44
 	section := a.currentSection(sections)
 	drawText(screen, section.label, contentX, contentY, 20, color.RGBA{R: 240, G: 244, B: 248, A: 255})
-	drawText(screen, section.description, contentX, contentY+28, 13, color.RGBA{R: 166, G: 178, B: 190, A: 255})
+	drawWrappedText(screen, section.description, contentX, contentY+28, contentW, 13, color.RGBA{R: 166, G: 178, B: 190, A: 255})
 
 	switch section.id {
 	case sectionGeneral:
@@ -691,7 +691,7 @@ func (a *App) drawSettingsCard(screen *ebiten.Image, x, y, w, h float64, title, 
 	vector.DrawFilledRect(screen, float32(x), float32(y), float32(w), float32(h), color.RGBA{R: 18, G: 28, B: 40, A: 255}, false)
 	vector.StrokeRect(screen, float32(x), float32(y), float32(w), float32(h), 1, color.RGBA{R: 54, G: 68, B: 84, A: 180}, false)
 	drawText(screen, title, x+16, y+14, 16, color.RGBA{R: 240, G: 244, B: 248, A: 255})
-	drawText(screen, desc, x+16, y+40, 13, color.RGBA{R: 166, G: 178, B: 190, A: 255})
+	drawWrappedText(screen, desc, x+16, y+40, w-32, 13, color.RGBA{R: 166, G: 178, B: 190, A: 255})
 	return rect{x: x, y: y, w: w, h: h}
 }
 
@@ -748,7 +748,7 @@ func (a *App) drawSettingsMouse(screen *ebiten.Image, snap session.Snapshot, x, 
 	a.drawSettingsAction(screen, "scroll_25", "Medium", x+168, y+176, 84, true, a.scrollThrottle == 25*time.Millisecond)
 	a.drawSettingsAction(screen, "scroll_50", "High", x+264, y+176, 72, true, a.scrollThrottle == 50*time.Millisecond)
 	a.drawSettingsAction(screen, "scroll_100", "Very High", x+348, y+176, 108, true, a.scrollThrottle == 100*time.Millisecond)
-	drawText(screen, "Jiggler remains planned until the native client has a dedicated UI for scheduling and safety confirmations.", x+16, y+212, 13, color.RGBA{R: 166, G: 178, B: 190, A: 255})
+	drawWrappedText(screen, "Jiggler remains planned until the native client has a dedicated UI for scheduling and safety confirmations.", x+16, y+212, w-32, 13, color.RGBA{R: 166, G: 178, B: 190, A: 255})
 }
 
 func (a *App) drawSettingsKeyboard(screen *ebiten.Image, snap session.Snapshot, x, y, w float64) {
@@ -788,7 +788,7 @@ func (a *App) drawSettingsKeyboard(screen *ebiten.Image, snap session.Snapshot, 
 			rowY += 38
 		}
 	}
-	drawText(screen, "The native client still uses physical-HID semantics first. Non-US punctuation remains best-effort until a deeper layout pass lands.", x+16, y+220, 13, color.RGBA{R: 166, G: 178, B: 190, A: 255})
+	drawWrappedText(screen, "The native client still uses physical-HID semantics first. Non-US punctuation remains best-effort until a deeper layout pass lands.", x+16, y+220, w-32, 13, color.RGBA{R: 166, G: 178, B: 190, A: 255})
 }
 
 func (a *App) drawSettingsVideo(screen *ebiten.Image, snap session.Snapshot, x, y, w float64) {
@@ -804,8 +804,8 @@ func (a *App) drawSettingsVideo(screen *ebiten.Image, snap session.Snapshot, x, 
 	} else if len(edid) > 60 {
 		edid = edid[:60] + "..."
 	}
-	drawText(screen, edid, x+72, y+176, 13, color.RGBA{R: 236, G: 241, B: 245, A: 255})
-	drawText(screen, "EDID write support and image tuning controls remain planned for a later native pass.", x+16, y+202, 13, color.RGBA{R: 166, G: 178, B: 190, A: 255})
+	drawWrappedText(screen, edid, x+72, y+176, w-88, 13, color.RGBA{R: 236, G: 241, B: 245, A: 255})
+	drawWrappedText(screen, "EDID write support and image tuning controls remain planned for a later native pass.", x+16, y+202, w-32, 13, color.RGBA{R: 166, G: 178, B: 190, A: 255})
 }
 
 func (a *App) drawSettingsHardware(screen *ebiten.Image, x, y, w float64) {
@@ -918,7 +918,7 @@ func (a *App) drawSettingsAppearance(screen *ebiten.Image, x, y, w float64) {
 	a.drawSettingsAction(screen, "pin_chrome_on", "Pinned", x+244, y+66, 84, true, a.prefs.PinChrome)
 	drawText(screen, "Fullscreen", x+16, y+118, 13, color.RGBA{R: 166, G: 178, B: 190, A: 255})
 	a.drawSettingsAction(screen, "fullscreen", "Toggle Fullscreen", x+136, y+106, 160, true, ebiten.IsFullscreen())
-	drawText(screen, "The pinned setting is saved locally and keeps the top action bar visible even when the pointer is away from the edge.", x+16, y+154, 13, color.RGBA{R: 166, G: 178, B: 190, A: 255})
+	drawWrappedText(screen, "The pinned setting is saved locally and keeps the top action bar visible even when the pointer is away from the edge.", x+16, y+154, w-32, 13, color.RGBA{R: 166, G: 178, B: 190, A: 255})
 }
 
 func boolWord(v bool) string {
@@ -942,5 +942,5 @@ func (a *App) drawSettingsPlanned(screen *ebiten.Image, section settingsSectionD
 		drawText(screen, "• "+item, x+24, lineY, 13, color.RGBA{R: 236, G: 241, B: 245, A: 255})
 		lineY += 24
 	}
-	drawText(screen, "This section is listed so the native settings map stays aligned with the upstream web interface as features land.", x+16, y+194, 13, color.RGBA{R: 166, G: 178, B: 190, A: 255})
+	drawWrappedText(screen, "This section is listed so the native settings map stays aligned with the upstream web interface as features land.", x+16, y+194, w-32, 13, color.RGBA{R: 166, G: 178, B: 190, A: 255})
 }
