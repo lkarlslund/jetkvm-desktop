@@ -211,3 +211,23 @@ func TestArmOverlayDismissSuppression(t *testing.T) {
 		t.Fatalf("expected local keyboard state to clear, got %v", pressed)
 	}
 }
+
+func TestCloseSettingsOverlayArmsDismissSuppression(t *testing.T) {
+	app, err := New(Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	app.settingsOpen = true
+	app.closeSettingsOverlay()
+
+	if app.settingsOpen {
+		t.Fatal("expected settings overlay to close")
+	}
+	if !app.suppressMouseUntilUp {
+		t.Fatal("expected mouse suppression after closing settings")
+	}
+	if !app.suppressKeysUntilClear {
+		t.Fatal("expected keyboard suppression after closing settings")
+	}
+}

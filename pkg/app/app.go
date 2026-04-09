@@ -150,15 +150,12 @@ func (a *App) Start(ctx context.Context) {
 func (a *App) Update() error {
 	if inpututil.IsKeyJustPressed(ebiten.KeyEscape) {
 		if a.pasteOpen {
-			a.pasteOpen = false
-			a.armOverlayDismissSuppression()
-			a.applyCursorMode()
+			a.closePasteOverlay()
 			a.revealUIFor(1200 * time.Millisecond)
 			return nil
 		}
 		if a.settingsOpen {
-			a.settingsOpen = false
-			a.armOverlayDismissSuppression()
+			a.closeSettingsOverlay()
 			a.revealUIFor(1200 * time.Millisecond)
 			return nil
 		}
@@ -738,9 +735,7 @@ func (a *App) handleClick() {
 		return
 	}
 	if a.pasteOpen && !a.pastePanel.contains(x, y) {
-		a.pasteOpen = false
-		a.armOverlayDismissSuppression()
-		a.applyCursorMode()
+		a.closePasteOverlay()
 		return
 	}
 	for _, btn := range a.settingsButtons {
@@ -751,9 +746,7 @@ func (a *App) handleClick() {
 		return
 	}
 	if a.settingsOpen && !a.settingsPanel.contains(x, y) {
-		a.settingsOpen = false
-		a.armOverlayDismissSuppression()
-		a.applyCursorMode()
+		a.closeSettingsOverlay()
 		return
 	}
 	for _, btn := range a.chromeButtons {
@@ -784,12 +777,14 @@ func (a *App) invokeAction(id string) {
 	case "mouse":
 		a.setMouseRelative(!a.relative)
 	case "paste":
-		a.pasteOpen = !a.pasteOpen
 		if a.pasteOpen {
+			a.closePasteOverlay()
+		} else {
+			a.pasteOpen = true
 			a.loadClipboardText()
 			a.settingsOpen = false
+			a.applyCursorMode()
 		}
-		a.applyCursorMode()
 	case "stats":
 		a.statsOpen = !a.statsOpen
 	case "paste_load_clipboard":
@@ -800,8 +795,7 @@ func (a *App) invokeAction(id string) {
 		a.runAsync(func() {
 			_ = a.ctrl.CancelPaste()
 		})
-		a.pasteOpen = false
-		a.applyCursorMode()
+		a.closePasteOverlay()
 	case "mouse_absolute":
 		a.setMouseRelative(false)
 	case "mouse_relative":
@@ -832,16 +826,17 @@ func (a *App) invokeAction(id string) {
 			_ = a.ctrl.Reboot()
 		})
 	case "settings":
-		a.settingsOpen = !a.settingsOpen
 		if a.settingsOpen {
+			a.closeSettingsOverlay()
+		} else {
+			a.settingsOpen = true
 			a.pasteOpen = false
 			a.refreshSettingsSection(a.settingsSection)
+			a.applyCursorMode()
 		}
-		a.applyCursorMode()
 		a.revealUIFor(1200 * time.Millisecond)
 	case "settings_close":
-		a.settingsOpen = false
-		a.applyCursorMode()
+		a.closeSettingsOverlay()
 	case "mouse_hide_cursor":
 		a.hideCursor = !a.hideCursor
 		a.applyCursorMode()
@@ -1100,6 +1095,24 @@ func (a *App) armOverlayDismissSuppression() {
 	a.suppressMouseUntilUp = true
 	a.lastButtons = 0
 	a.lastX, a.lastY = ebiten.CursorPosition()
+}
+
+func (a *App) closePasteOverlay() {
+	if !a.pasteOpen {
+		return
+	}
+	a.pasteOpen = false
+	a.armOverlayDismissSuppression()
+	a.applyCursorMode()
+}
+
+func (a *App) closeSettingsOverlay() {
+	if !a.settingsOpen {
+		return
+	}
+	a.settingsOpen = false
+	a.armOverlayDismissSuppression()
+	a.applyCursorMode()
 }
 
 func (a *App) releasePointerState() {
