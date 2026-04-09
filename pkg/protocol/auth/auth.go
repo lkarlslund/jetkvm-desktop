@@ -5,9 +5,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"net/http/cookiejar"
 	"strings"
+	"time"
 )
 
 type Client struct {
@@ -20,7 +22,20 @@ func NewClient() (*Client, error) {
 		return nil, err
 	}
 	return &Client{
-		httpClient: &http.Client{Jar: jar},
+		httpClient: &http.Client{
+			Jar: jar,
+			Transport: &http.Transport{
+				Proxy:                 http.ProxyFromEnvironment,
+				DialContext:           (&net.Dialer{Timeout: 5 * time.Second, KeepAlive: 30 * time.Second}).DialContext,
+				ForceAttemptHTTP2:     false,
+				MaxIdleConns:          0,
+				MaxIdleConnsPerHost:   -1,
+				IdleConnTimeout:       0,
+				TLSHandshakeTimeout:   5 * time.Second,
+				ExpectContinueTimeout: time.Second,
+				DisableKeepAlives:     true,
+			},
+		},
 	}, nil
 }
 
