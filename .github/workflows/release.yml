@@ -10,8 +10,41 @@ permissions:
   contents: write
 
 jobs:
+  test:
+    name: Test (${{ matrix.name }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            name: linux-amd64
+            goos: linux
+            goarch: amd64
+          - os: ubuntu-24.04-arm
+            name: linux-aarch64
+            goos: linux
+            goarch: arm64
+          - os: macos-15-intel
+            name: macos-amd64
+            goos: darwin
+            goarch: amd64
+          - os: macos-15
+            name: macos-aarch64
+            goos: darwin
+            goarch: arm64
+          - os: windows-latest
+            name: windows-amd64
+            goos: windows
+            goarch: amd64
+    uses: ./.github/workflows/reusable-go-test.yml
+    with:
+      runner: ${{ matrix.os }}
+      goos: ${{ matrix.goos }}
+      goarch: ${{ matrix.goarch }}
+
   build:
     name: Build (${{ matrix.name }})
+    needs: test
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -89,12 +122,6 @@ jobs:
         uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
-
-      - name: Run tests
-        run: go test ./...
-        env:
-          GOOS: ${{ matrix.goos }}
-          GOARCH: ${{ matrix.goarch }}
 
       - name: Build release binaries (Unix)
         if: runner.os != 'Windows'
