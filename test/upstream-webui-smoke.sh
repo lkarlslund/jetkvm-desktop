@@ -45,11 +45,11 @@ stop_process() {
 }
 
 echo "starting emulator"
-go run ./cmd/jetkvm-emulator serve --listen "${emulator_url#http://}" >/tmp/jetkvm-emulator.log 2>&1 &
+go run ./test/emulator-serve serve --listen "${emulator_url#http://}" >/tmp/jetkvm-emulator.log 2>&1 &
 emu_pid=$!
 
 for _ in $(seq 1 60); do
-  if ! kill -0 "$emu_pid" >/dev/null 2>&1; then
+  if ! kill -0 "$emu_pid" >/dev/null; then
     dump_logs
     exit 1
   fi
@@ -73,7 +73,7 @@ JETKVM_PROXY_URL="${emulator_url/http/ws}" npx vite --mode=device --host 127.0.0
 ui_pid=$!
 
 for _ in $(seq 1 60); do
-  if ! kill -0 "$ui_pid" >/dev/null 2>&1; then
+  if ! kill -0 "$ui_pid" >/dev/null; then
     dump_logs
     exit 1
   fi

@@ -16,7 +16,7 @@ func main() {
 
 	serveCmd := &cobra.Command{
 		Use:   "serve",
-		Short: "Run the JetKVM emulator",
+		Short: "Run the JetKVM emulator test server",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if cfg.AuthMode == "" {
 				cfg.AuthMode = emulator.AuthModeNoPassword
@@ -48,8 +48,8 @@ func main() {
 	serveCmd.Flags().IntVar(&cfg.FPS, "fps", 15, "Emulated video frame rate")
 
 	rootCmd := &cobra.Command{
-		Use:   "jetkvm-emulator",
-		Short: "JetKVM protocol emulator",
+		Use:   "emulator-serve",
+		Short: "JetKVM emulator test harness",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return serveCmd.RunE(cmd, args)
 		},

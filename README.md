@@ -17,11 +17,11 @@ Run the desktop client:
 
 - `jetkvm-desktop connect --base-url http://127.0.0.1:8080`
 
-Run the emulator:
+For local testing, run the emulator harness:
 
-- `jetkvm-emulator serve --listen 127.0.0.1:8080`
+- `go run ./test/emulator-serve serve --listen 127.0.0.1:8080`
 
-For backward compatibility, both binaries still default to those subcommands when invoked without one.
+The desktop client still defaults to `connect` when invoked without a subcommand.
 
 ## Release Builds
 
@@ -34,7 +34,6 @@ GitHub Actions builds native release artifacts on:
 Each release contains:
 
 - `jetkvm-desktop`
-- `jetkvm-emulator`
 
 The release pipeline uses native runners per OS instead of simple Go cross-compilation, because the in-process OpenH264 path uses CGO-backed static libraries.
 
