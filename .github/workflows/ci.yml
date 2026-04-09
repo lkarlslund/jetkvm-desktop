@@ -62,12 +62,12 @@ jobs:
           go-version-file: go.mod
 
       - name: Test
-        run: |
-          if [ "${{ runner.os }}" = "Linux" ]; then
-            xvfb-run -a go test ./...
-          else
-            go test ./...
-          fi
+        if: runner.os == 'Linux'
+        run: xvfb-run -a go test ./...
+
+      - name: Test
+        if: runner.os != 'Linux'
+        run: go test ./...
 
       - name: Build
         run: go build ./...
