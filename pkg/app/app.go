@@ -847,6 +847,30 @@ func (a *App) invokeAction(id string) {
 	case "pin_chrome_off":
 		a.prefs.PinChrome = false
 		a.savePreferences()
+	case "chrome_anchor:top_left":
+		a.prefs.ChromeAnchor = "top_left"
+		a.savePreferences()
+	case "chrome_anchor:top_center":
+		a.prefs.ChromeAnchor = "top_center"
+		a.savePreferences()
+	case "chrome_anchor:top_right":
+		a.prefs.ChromeAnchor = "top_right"
+		a.savePreferences()
+	case "chrome_anchor:left_center":
+		a.prefs.ChromeAnchor = "left_center"
+		a.savePreferences()
+	case "chrome_anchor:right_center":
+		a.prefs.ChromeAnchor = "right_center"
+		a.savePreferences()
+	case "chrome_anchor:bottom_left":
+		a.prefs.ChromeAnchor = "bottom_left"
+		a.savePreferences()
+	case "chrome_anchor:bottom_center":
+		a.prefs.ChromeAnchor = "bottom_center"
+		a.savePreferences()
+	case "chrome_anchor:bottom_right":
+		a.prefs.ChromeAnchor = "bottom_right"
+		a.savePreferences()
 	case "fullscreen":
 		ebiten.SetFullscreen(!ebiten.IsFullscreen())
 	case "tls_disabled":

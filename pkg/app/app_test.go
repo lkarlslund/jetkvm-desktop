@@ -133,3 +133,26 @@ func TestSectionLoadSeqMonotonic(t *testing.T) {
 		t.Fatal("expected section to be marked loading")
 	}
 }
+
+func TestPreferencesNormalizeChromeAnchor(t *testing.T) {
+	prefs := Preferences{ChromeAnchor: "bad_anchor"}
+	prefs.normalize()
+	if prefs.ChromeAnchor != "top_right" {
+		t.Fatalf("chrome anchor = %q, want top_right", prefs.ChromeAnchor)
+	}
+}
+
+func TestChromeAnchorOrigin(t *testing.T) {
+	x, y := chromeAnchorOrigin("top_left", 1280, 720, 200, 34)
+	if x != 18 || y != 18 {
+		t.Fatalf("top_left origin = (%v,%v), want (18,18)", x, y)
+	}
+	x, y = chromeAnchorOrigin("bottom_center", 1280, 720, 200, 34)
+	if x != 540 || y != 668 {
+		t.Fatalf("bottom_center origin = (%v,%v), want (540,668)", x, y)
+	}
+	x, y = chromeAnchorOrigin("right_center", 1280, 720, 200, 34)
+	if x != 1062 || y != 343 {
+		t.Fatalf("right_center origin = (%v,%v), want (1062,343)", x, y)
+	}
+}
