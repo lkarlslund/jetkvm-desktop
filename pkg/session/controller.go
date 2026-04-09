@@ -150,7 +150,13 @@ func (c *Controller) Reboot() error {
 }
 
 func (c *Controller) SetQuality(value float64) error {
-	return c.call(context.Background(), "setStreamQualityFactor", map[string]any{"factor": value}, nil)
+	if err := c.call(context.Background(), "setStreamQualityFactor", map[string]any{"factor": value}, nil); err != nil {
+		return err
+	}
+	c.setState(func(s *Snapshot) {
+		s.Quality = value
+	})
+	return nil
 }
 
 func (c *Controller) SetKeyboardLayout(layout string) error {
