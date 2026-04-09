@@ -513,15 +513,25 @@ func (a *App) drawSettingsAction(screen *ebiten.Image, id, label string, x, y, w
 }
 
 func (a *App) drawSettingsGeneral(screen *ebiten.Image, snap session.Snapshot, x, y, w float64) {
-	a.drawSettingsCard(screen, x, y, w, 154, "Connection", "The native client already exposes the core general controls from the web UI.")
+	a.drawSettingsCard(screen, x, y, w, 238, "Connection", "The native client now mirrors the web UI's general section for connection state, versions, updates, and reboot.")
 	drawText(screen, "Base URL", x+16, y+72, 13, color.RGBA{R: 166, G: 178, B: 190, A: 255})
 	drawText(screen, snap.BaseURL, x+128, y+72, 13, color.RGBA{R: 236, G: 241, B: 245, A: 255})
 	drawText(screen, "Phase", x+16, y+96, 13, color.RGBA{R: 166, G: 178, B: 190, A: 255})
 	drawText(screen, string(snap.Phase), x+128, y+96, 13, color.RGBA{R: 236, G: 241, B: 245, A: 255})
 	drawText(screen, "Signaling", x+16, y+120, 13, color.RGBA{R: 166, G: 178, B: 190, A: 255})
 	drawText(screen, signalingLabel(snap.SignalingMode), x+128, y+120, 13, color.RGBA{R: 236, G: 241, B: 245, A: 255})
-	a.drawSettingsAction(screen, "reconnect", reconnectLabel(snap.Phase), x+w-214, y+108, 92, true, false)
-	a.drawSettingsAction(screen, "reboot", "Reboot", x+w-110, y+108, 92, snap.Phase != session.PhaseConnecting, false)
+	drawText(screen, "App Version", x+16, y+152, 13, color.RGBA{R: 166, G: 178, B: 190, A: 255})
+	drawText(screen, fallbackLabel(snap.AppVersion, "Unavailable"), x+128, y+152, 13, color.RGBA{R: 236, G: 241, B: 245, A: 255})
+	drawText(screen, "System Version", x+16, y+176, 13, color.RGBA{R: 166, G: 178, B: 190, A: 255})
+	drawText(screen, fallbackLabel(snap.SystemVersion, "Unavailable"), x+128, y+176, 13, color.RGBA{R: 236, G: 241, B: 245, A: 255})
+	updateLabel := "No updates reported"
+	if snap.AppUpdateAvailable || snap.SystemUpdateAvailable {
+		updateLabel = "Updates available"
+	}
+	drawText(screen, "Updates", x+16, y+200, 13, color.RGBA{R: 166, G: 178, B: 190, A: 255})
+	drawText(screen, updateLabel, x+128, y+200, 13, color.RGBA{R: 236, G: 241, B: 245, A: 255})
+	a.drawSettingsAction(screen, "reconnect", reconnectLabel(snap.Phase), x+w-214, y+192, 92, true, false)
+	a.drawSettingsAction(screen, "reboot", "Reboot", x+w-110, y+192, 92, snap.Phase != session.PhaseConnecting, false)
 }
 
 func (a *App) drawSettingsMouse(screen *ebiten.Image, snap session.Snapshot, x, y, w float64) {

@@ -38,19 +38,23 @@ type Config struct {
 }
 
 type Snapshot struct {
-	Phase          Phase
-	Status         string
-	BaseURL        string
-	DeviceID       string
-	Hostname       string
-	Quality        float64
-	KeyboardLayout string
-	EDID           string
-	HIDReady       bool
-	VideoReady     bool
-	LastError      string
-	RTCState       webrtc.PeerConnectionState
-	SignalingMode  client.SignalingMode
+	Phase                 Phase
+	Status                string
+	BaseURL               string
+	DeviceID              string
+	Hostname              string
+	Quality               float64
+	KeyboardLayout        string
+	EDID                  string
+	AppVersion            string
+	SystemVersion         string
+	AppUpdateAvailable    bool
+	SystemUpdateAvailable bool
+	HIDReady              bool
+	VideoReady            bool
+	LastError             string
+	RTCState              webrtc.PeerConnectionState
+	SignalingMode         client.SignalingMode
 }
 
 type Controller struct {
@@ -281,6 +285,14 @@ func (c *Controller) bootstrap(ctx context.Context, cl *client.Client) error {
 	var quality float64
 	var keyboardLayout string
 	var edid string
+	var version struct {
+		AppVersion    string `json:"appVersion"`
+		SystemVersion string `json:"systemVersion"`
+	}
+	var updateStatus struct {
+		AppUpdateAvailable    bool `json:"appUpdateAvailable"`
+		SystemUpdateAvailable bool `json:"systemUpdateAvailable"`
+	}
 	var network struct {
 		Hostname string `json:"hostname"`
 	}
@@ -296,6 +308,18 @@ func (c *Controller) bootstrap(ctx context.Context, cl *client.Client) error {
 	}
 	if err := cl.Call(ctx, "getEDID", nil, &edid); err == nil {
 		c.setState(func(s *Snapshot) { s.EDID = edid })
+	}
+	if err := cl.Call(ctx, "getLocalVersion", nil, &version); err == nil {
+		c.setState(func(s *Snapshot) {
+			s.AppVersion = version.AppVersion
+			s.SystemVersion = version.SystemVersion
+		})
+	}
+	if err := cl.Call(ctx, "getUpdateStatus", nil, &updateStatus); err == nil {
+		c.setState(func(s *Snapshot) {
+			s.AppUpdateAvailable = updateStatus.AppUpdateAvailable
+			s.SystemUpdateAvailable = updateStatus.SystemUpdateAvailable
+		})
 	}
 	if err := cl.Call(ctx, "getNetworkSettings", nil, &network); err == nil {
 		c.setState(func(s *Snapshot) { s.Hostname = network.Hostname })
