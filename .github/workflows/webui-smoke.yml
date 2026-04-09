@@ -43,8 +43,8 @@ jobs:
         env:
           SMOKE_UI_URL: http://127.0.0.1:4173
         run: |
-          chmod +x ./scripts/upstream-webui-smoke.sh
-          ./scripts/upstream-webui-smoke.sh \
+          chmod +x ./test/upstream-webui-smoke.sh
+          ./test/upstream-webui-smoke.sh \
             "${RUNNER_TEMP}/jetkvm-kvm/ui" \
             "http://127.0.0.1:8080" \
             "${SMOKE_UI_URL}"
