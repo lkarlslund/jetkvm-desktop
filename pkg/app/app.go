@@ -49,6 +49,7 @@ type App struct {
 	chromeButtons   []chromeButton
 	settingsButtons []chromeButton
 	settingsPanel   rect
+	prefs           Preferences
 	hideCursor      bool
 	showPressedKeys bool
 	scrollThrottle  time.Duration
@@ -62,6 +63,7 @@ func New(cfg Config) (*App, error) {
 		RPCTimeout: cfg.RPCTimeout,
 		Reconnect:  true,
 	})
+	prefs := loadPreferences()
 	return &App{
 		cfg:             cfg,
 		ctrl:            ctrl,
@@ -70,6 +72,10 @@ func New(cfg Config) (*App, error) {
 		focused:         true,
 		uiVisibleUntil:  time.Now().Add(3 * time.Second),
 		settingsSection: sectionGeneral,
+		prefs:           prefs,
+		hideCursor:      prefs.HideCursor,
+		showPressedKeys: prefs.ShowPressedKeys,
+		scrollThrottle:  scrollThrottleFromPref(prefs.ScrollThrottle),
 	}, nil
 }
 
@@ -501,6 +507,13 @@ func (a *App) applyCursorMode() {
 	}
 }
 
+func (a *App) savePreferences() {
+	a.prefs.HideCursor = a.hideCursor
+	a.prefs.ShowPressedKeys = a.showPressedKeys
+	a.prefs.ScrollThrottle = scrollThrottlePref(a.scrollThrottle)
+	_ = savePreferences(a.prefs)
+}
+
 func (a *App) handleClick() {
 	x, y := ebiten.CursorPosition()
 	for _, btn := range a.settingsButtons {
@@ -557,18 +570,25 @@ func (a *App) invokeAction(id string) {
 	case "mouse_hide_cursor":
 		a.hideCursor = !a.hideCursor
 		a.applyCursorMode()
+		a.savePreferences()
 	case "scroll_0":
 		a.scrollThrottle = 0
+		a.savePreferences()
 	case "scroll_10":
 		a.scrollThrottle = 10 * time.Millisecond
+		a.savePreferences()
 	case "scroll_25":
 		a.scrollThrottle = 25 * time.Millisecond
+		a.savePreferences()
 	case "scroll_50":
 		a.scrollThrottle = 50 * time.Millisecond
+		a.savePreferences()
 	case "scroll_100":
 		a.scrollThrottle = 100 * time.Millisecond
+		a.savePreferences()
 	case "toggle_pressed_keys":
 		a.showPressedKeys = !a.showPressedKeys
+		a.savePreferences()
 	case "layout:en_US":
 		_ = a.ctrl.SetKeyboardLayout("en_US")
 	case "layout:en_UK":
