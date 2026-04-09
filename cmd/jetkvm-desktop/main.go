@@ -14,10 +14,15 @@ import (
 func main() {
 	cfg := app.Config{}
 
-	connectCmd := &cobra.Command{
-		Use:   "connect",
-		Short: "Connect to a JetKVM device or emulator",
+	rootCmd := &cobra.Command{
+		Use:   "jetkvm-desktop [base-url-or-host]",
+		Short: "Desktop JetKVM client",
+		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if len(args) == 1 {
+				cfg.BaseURL = args[0]
+			}
+
 			clientApp, err := app.New(cfg)
 			if err != nil {
 				return err
@@ -34,19 +39,8 @@ func main() {
 			return ebiten.RunGame(clientApp)
 		},
 	}
-
-	connectCmd.Flags().StringVar(&cfg.BaseURL, "base-url", "http://127.0.0.1:8080", "JetKVM device or emulator base URL")
-	connectCmd.Flags().StringVar(&cfg.Password, "password", "", "Password for local auth mode")
-	connectCmd.Flags().DurationVar(&cfg.RPCTimeout, "rpc-timeout", 5*time.Second, "Timeout for JSON-RPC requests")
-
-	rootCmd := &cobra.Command{
-		Use:   "jetkvm-desktop",
-		Short: "Desktop JetKVM client",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return connectCmd.RunE(cmd, args)
-		},
-	}
-	rootCmd.AddCommand(connectCmd)
+	rootCmd.Flags().StringVar(&cfg.Password, "password", "", "Password for local auth mode")
+	rootCmd.Flags().DurationVar(&cfg.RPCTimeout, "rpc-timeout", 5*time.Second, "Timeout for JSON-RPC requests")
 
 	if err := rootCmd.Execute(); err != nil {
 		log.Fatal(err)

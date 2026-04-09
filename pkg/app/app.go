@@ -2,10 +2,13 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"image"
 	"image/color"
 	"math"
+	"net/url"
+	"strings"
 	"sync"
 	"time"
 
@@ -14,6 +17,7 @@ import (
 	"github.com/hajimehoshi/ebiten/v2/vector"
 
 	"github.com/lkarlslund/jetkvm-desktop/pkg/client"
+	"github.com/lkarlslund/jetkvm-desktop/pkg/discovery"
 	"github.com/lkarlslund/jetkvm-desktop/pkg/input"
 	"github.com/lkarlslund/jetkvm-desktop/pkg/session"
 )
@@ -27,6 +31,7 @@ type Config struct {
 type App struct {
 	cfg  Config
 	ctrl *session.Controller
+	ctx  context.Context
 
 	mu              sync.RWMutex
 	lastImg         *ebiten.Image
@@ -56,6 +61,7 @@ type App struct {
 	settingsPanel   rect
 	pasteButtons    []chromeButton
 	pastePanel      rect
+	launcherButtons []chromeButton
 	prefs           Preferences
 	hideCursor      bool
 	showPressedKeys bool
@@ -69,6 +75,11 @@ type App struct {
 	stats           client.StatsSnapshot
 	statsHistory    []statsPoint
 	lastStatsPoll   time.Time
+	launcherOpen    bool
+	launcherInput   string
+	launcherError   string
+	discovery       *discovery.Scanner
+	discovered      []discovery.Device
 }
 
 type statsPoint struct {
@@ -80,16 +91,10 @@ type statsPoint struct {
 }
 
 func New(cfg Config) (*App, error) {
-	ctrl := session.New(session.Config{
-		BaseURL:    cfg.BaseURL,
-		Password:   cfg.Password,
-		RPCTimeout: cfg.RPCTimeout,
-		Reconnect:  true,
-	})
 	prefs := loadPreferences()
+	launcherOpen := strings.TrimSpace(cfg.BaseURL) == ""
 	return &App{
 		cfg:             cfg,
-		ctrl:            ctrl,
 		keyboard:        input.NewKeyboard(),
 		lastPhase:       session.PhaseIdle,
 		focused:         true,
@@ -100,15 +105,26 @@ func New(cfg Config) (*App, error) {
 		showPressedKeys: prefs.ShowPressedKeys,
 		scrollThrottle:  scrollThrottleFromPref(prefs.ScrollThrottle),
 		pasteDelay:      100,
+		launcherOpen:    launcherOpen,
+		discovery:       discovery.NewScanner(),
 	}, nil
 }
 
 func (a *App) Start(ctx context.Context) {
-	a.ctrl.Start(ctx)
+	a.ctx = ctx
+	if a.discovery != nil {
+		a.discovery.Start(ctx)
+	}
+	if strings.TrimSpace(a.cfg.BaseURL) != "" {
+		a.connectTo(a.cfg.BaseURL)
+	}
 }
 
 func (a *App) Update() error {
 	if inpututil.IsKeyJustPressed(ebiten.KeyEscape) {
+		if a.launcherOpen {
+			return ebiten.Termination
+		}
 		if a.pasteOpen {
 			a.pasteOpen = false
 			a.applyCursorMode()
@@ -121,6 +137,17 @@ func (a *App) Update() error {
 			return nil
 		}
 		return ebiten.Termination
+	}
+	if a.launcherOpen {
+		a.syncDiscovery()
+		a.syncLauncherInput()
+		if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) {
+			a.handleClick()
+		}
+		return nil
+	}
+	if a.ctrl == nil {
+		return nil
 	}
 	a.syncSessionState()
 	a.syncWindowTitle()
@@ -172,6 +199,14 @@ func (a *App) syncVideoFrame() {
 }
 
 func (a *App) Draw(screen *ebiten.Image) {
+	if a.launcherOpen {
+		a.drawLauncher(screen)
+		return
+	}
+	if a.ctrl == nil {
+		screen.Fill(color.RGBA{R: 9, G: 14, B: 22, A: 255})
+		return
+	}
 	snap := a.ctrl.Snapshot()
 	screen.Fill(color.RGBA{R: 9, G: 14, B: 22, A: 255})
 	videoArea := image.Rect(8, 8, screen.Bounds().Dx()-8, screen.Bounds().Dy()-8)
@@ -575,6 +610,16 @@ func (a *App) savePreferences() {
 
 func (a *App) handleClick() {
 	x, y := ebiten.CursorPosition()
+	if a.launcherOpen {
+		for _, btn := range a.launcherButtons {
+			if !btn.enabled || !btn.rect.contains(x, y) {
+				continue
+			}
+			a.invokeAction(btn.id)
+			return
+		}
+		return
+	}
 	for _, btn := range a.overlayButtons {
 		if !btn.enabled || !btn.rect.contains(x, y) {
 			continue
@@ -617,7 +662,12 @@ func (a *App) handleClick() {
 
 func (a *App) invokeAction(id string) {
 	switch id {
+	case "launcher_connect":
+		a.connectFromLauncher(a.launcherInput)
 	case "reconnect":
+		if a.ctrl == nil {
+			return
+		}
 		a.releaseAllKeys(true)
 		a.ctrl.ReconnectNow()
 	case "take_back_control":
@@ -769,6 +819,10 @@ func (a *App) invokeAction(id string) {
 			_ = a.ctrl.SetKeyboardLayout("ja_JP")
 		})
 	default:
+		if strings.HasPrefix(id, "discover:") {
+			a.connectFromLauncher(strings.TrimPrefix(id, "discover:"))
+			return
+		}
 		if len(id) > 8 && id[:8] == "section:" {
 			a.settingsSection = settingsSection(id[8:])
 			a.refreshSettingsSection(a.settingsSection)
@@ -777,6 +831,9 @@ func (a *App) invokeAction(id string) {
 }
 
 func (a *App) syncChromeVisibility() {
+	if a.ctrl == nil {
+		return
+	}
 	x, y := ebiten.CursorPosition()
 	if x != a.lastUIX || y != a.lastUIY {
 		if y <= 72 || a.settingsOpen || a.pasteOpen {
@@ -792,6 +849,9 @@ func (a *App) syncChromeVisibility() {
 }
 
 func (a *App) syncSessionState() {
+	if a.ctrl == nil {
+		return
+	}
 	snap := a.ctrl.Snapshot()
 	phase := snap.Phase
 	if phase == a.lastPhase {
@@ -818,6 +878,17 @@ func (a *App) syncSessionState() {
 }
 
 func (a *App) syncWindowTitle() {
+	if a.launcherOpen {
+		title := "jetkvm-desktop"
+		if title != a.lastTitle {
+			ebiten.SetWindowTitle(title)
+			a.lastTitle = title
+		}
+		return
+	}
+	if a.ctrl == nil {
+		return
+	}
 	snap := a.ctrl.Snapshot()
 	title := "jetkvm-desktop"
 	if snap.DeviceID != "" {
@@ -1005,6 +1076,66 @@ func reconnectLabel(phase session.Phase) string {
 		return "Retry"
 	default:
 		return "Connect"
+	}
+}
+
+func normalizeBaseURL(raw string) (string, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return "", errors.New("host or URL is required")
+	}
+	if !strings.Contains(raw, "://") {
+		raw = "http://" + raw
+	}
+	parsed, err := url.Parse(raw)
+	if err != nil {
+		return "", err
+	}
+	if parsed.Scheme == "" || parsed.Host == "" {
+		return "", errors.New("invalid target")
+	}
+	parsed.Path = ""
+	parsed.RawQuery = ""
+	parsed.Fragment = ""
+	return parsed.String(), nil
+}
+
+func (a *App) connectFromLauncher(target string) {
+	baseURL, err := normalizeBaseURL(target)
+	if err != nil {
+		a.launcherError = err.Error()
+		return
+	}
+	a.launcherError = ""
+	a.launcherOpen = false
+	a.launcherInput = baseURL
+	a.connectTo(baseURL)
+}
+
+func (a *App) connectTo(target string) {
+	baseURL, err := normalizeBaseURL(target)
+	if err != nil {
+		a.launcherError = err.Error()
+		a.launcherOpen = true
+		return
+	}
+	if a.ctrl != nil {
+		a.ctrl.Stop()
+	}
+	a.cfg.BaseURL = baseURL
+	a.lastImg = nil
+	a.lastFrameAt = time.Time{}
+	a.lastPhase = session.PhaseIdle
+	a.stats = client.StatsSnapshot{}
+	a.statsHistory = nil
+	a.ctrl = session.New(session.Config{
+		BaseURL:    baseURL,
+		Password:   a.cfg.Password,
+		RPCTimeout: a.cfg.RPCTimeout,
+		Reconnect:  true,
+	})
+	if a.ctx != nil {
+		a.ctrl.Start(a.ctx)
 	}
 }
 

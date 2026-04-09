@@ -13,15 +13,22 @@ The desktop client sends physical HID usages over `hidrpc`.
 
 ## Commands
 
-Run the desktop client:
+Run the desktop client launcher:
 
-- `jetkvm-desktop connect --base-url http://127.0.0.1:8080`
+- `jetkvm-desktop`
 
-For local testing, run the emulator harness:
+Connect directly to a known device:
+
+- `jetkvm-desktop http://127.0.0.1:8080`
+
+You can also pass a bare host or IP:
+
+- `jetkvm-desktop jetkvm.local`
+- `jetkvm-desktop 192.168.1.50`
+
+For local testing, run the emulator harness separately:
 
 - `go run ./test/emulator-serve serve --listen 127.0.0.1:8080`
-
-The desktop client still defaults to `connect` when invoked without a subcommand.
 
 ## Release Builds
 
