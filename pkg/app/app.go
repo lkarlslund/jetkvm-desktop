@@ -34,53 +34,56 @@ type App struct {
 	ctrl *session.Controller
 	ctx  context.Context
 
-	mu              sync.RWMutex
-	lastImg         *ebiten.Image
-	lastFrameAt     time.Time
-	keyboard        *input.Keyboard
-	lastX           int
-	lastY           int
-	lastButtons     byte
-	lastPhase       session.Phase
-	lastTitle       string
-	relative        bool
-	renderRect      rect
-	focused         bool
-	lastWidth       int
-	lastHeight      int
-	resizeUntil     time.Time
-	lastUIX         int
-	lastUIY         int
-	uiVisibleUntil  time.Time
-	settingsOpen    bool
-	pasteOpen       bool
-	statsOpen       bool
-	settingsSection settingsSection
-	chromeButtons   []chromeButton
-	overlayButtons  []chromeButton
-	settingsButtons []chromeButton
-	settingsPanel   rect
-	pasteButtons    []chromeButton
-	pastePanel      rect
-	launcherButtons []chromeButton
-	prefs           Preferences
-	hideCursor      bool
-	showPressedKeys bool
-	scrollThrottle  time.Duration
-	lastWheelAt     time.Time
-	sectionData     sectionData
-	pasteText       string
-	pasteDelay      uint16
-	pasteInvalid    string
-	pasteError      string
-	stats           client.StatsSnapshot
-	statsHistory    []statsPoint
-	lastStatsPoll   time.Time
-	launcherOpen    bool
-	launcherInput   string
-	launcherError   string
-	discovery       *discovery.Scanner
-	discovered      []discovery.Device
+	mu                     sync.RWMutex
+	lastImg                *ebiten.Image
+	lastFrameAt            time.Time
+	keyboard               *input.Keyboard
+	lastX                  int
+	lastY                  int
+	lastButtons            byte
+	lastPhase              session.Phase
+	lastTitle              string
+	relative               bool
+	renderRect             rect
+	focused                bool
+	lastWidth              int
+	lastHeight             int
+	resizeUntil            time.Time
+	lastUIX                int
+	lastUIY                int
+	uiVisibleUntil         time.Time
+	settingsOpen           bool
+	pasteOpen              bool
+	statsOpen              bool
+	settingsSection        settingsSection
+	chromeButtons          []chromeButton
+	overlayButtons         []chromeButton
+	settingsButtons        []chromeButton
+	settingsPanel          rect
+	pasteButtons           []chromeButton
+	pastePanel             rect
+	launcherButtons        []chromeButton
+	prefs                  Preferences
+	hideCursor             bool
+	showPressedKeys        bool
+	scrollThrottle         time.Duration
+	lastWheelAt            time.Time
+	sectionData            sectionData
+	pasteText              string
+	pasteDelay             uint16
+	pasteInvalid           string
+	pasteError             string
+	stats                  client.StatsSnapshot
+	statsHistory           []statsPoint
+	lastStatsPoll          time.Time
+	launcherOpen           bool
+	launcherInput          string
+	launcherPassword       string
+	launcherError          string
+	launcherPromptPassword bool
+	pendingTarget          string
+	discovery              *discovery.Scanner
+	discovered             []discovery.Device
 }
 
 type statsPoint struct {
@@ -665,6 +668,8 @@ func (a *App) invokeAction(id string) {
 	switch id {
 	case "launcher_connect":
 		a.connectFromLauncher(a.launcherInput)
+	case "launcher_retry_password":
+		a.connectFromLauncher(a.pendingTarget)
 	case "reconnect":
 		if a.ctrl == nil {
 			return
@@ -855,6 +860,17 @@ func (a *App) syncSessionState() {
 	}
 	snap := a.ctrl.Snapshot()
 	phase := snap.Phase
+	if phase == session.PhaseAuthFailed && a.lastPhase != session.PhaseAuthFailed {
+		a.launcherOpen = true
+		a.launcherPromptPassword = true
+		a.launcherError = "Password required for " + a.cfg.BaseURL
+		a.pendingTarget = a.cfg.BaseURL
+		a.settingsOpen = false
+		a.pasteOpen = false
+		a.statsOpen = false
+		a.relative = false
+		a.applyCursorMode()
+	}
 	if phase == a.lastPhase {
 		return
 	}
@@ -1158,6 +1174,7 @@ func (a *App) connectFromLauncher(target string) {
 	a.launcherError = ""
 	a.launcherOpen = false
 	a.launcherInput = baseURL
+	a.pendingTarget = baseURL
 	a.connectTo(baseURL)
 }
 
@@ -1172,6 +1189,7 @@ func (a *App) connectTo(target string) {
 		a.ctrl.Stop()
 	}
 	a.cfg.BaseURL = baseURL
+	a.cfg.Password = a.launcherPassword
 	a.lastImg = nil
 	a.lastFrameAt = time.Time{}
 	a.lastPhase = session.PhaseIdle
@@ -1179,7 +1197,7 @@ func (a *App) connectTo(target string) {
 	a.statsHistory = nil
 	a.ctrl = session.New(session.Config{
 		BaseURL:    baseURL,
-		Password:   a.cfg.Password,
+		Password:   a.launcherPassword,
 		RPCTimeout: a.cfg.RPCTimeout,
 		Reconnect:  true,
 	})

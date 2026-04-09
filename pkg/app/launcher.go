@@ -50,19 +50,41 @@ func (a *App) sortDiscovered() {
 }
 
 func (a *App) syncLauncherInput() {
+	targetField := !a.launcherPromptPassword
 	if inpututil.IsKeyJustPressed(ebiten.KeyBackspace) {
-		runes := []rune(a.launcherInput)
+		value := a.launcherInput
+		if !targetField {
+			value = a.launcherPassword
+		}
+		runes := []rune(value)
 		if len(runes) > 0 {
-			a.launcherInput = string(runes[:len(runes)-1])
+			value = string(runes[:len(runes)-1])
+			if targetField {
+				a.launcherInput = value
+			} else {
+				a.launcherPassword = value
+			}
 		}
 	}
+	if inpututil.IsKeyJustPressed(ebiten.KeyTab) {
+		a.launcherPromptPassword = !a.launcherPromptPassword
+		return
+	}
 	if inpututil.IsKeyJustPressed(ebiten.KeyEnter) {
-		a.connectFromLauncher(a.launcherInput)
+		if a.launcherPromptPassword {
+			a.connectFromLauncher(a.pendingTarget)
+		} else {
+			a.connectFromLauncher(a.launcherInput)
+		}
 		return
 	}
 	for _, r := range ebiten.AppendInputChars(nil) {
 		if r >= 32 && r != 127 {
-			a.launcherInput += string(r)
+			if targetField {
+				a.launcherInput += string(r)
+			} else {
+				a.launcherPassword += string(r)
+			}
 		}
 	}
 }
@@ -133,10 +155,31 @@ func (a *App) drawLauncher(screen *ebiten.Image) {
 		}
 	}
 
+	passY := inputY
+	if a.launcherPromptPassword {
+		passY = inputY - 64
+		drawText(screen, "Password required", 48, passY-18, 13, color.RGBA{R: 248, G: 113, B: 113, A: 255})
+		vector.DrawFilledRect(screen, 48, float32(passY), float32(listW), 40, color.RGBA{R: 15, G: 23, B: 34, A: 255}, false)
+		vector.StrokeRect(screen, 48, float32(passY), float32(listW), 40, 1, color.RGBA{R: 127, G: 29, B: 29, A: 180}, false)
+		passDisplay := strings.Repeat("*", len([]rune(a.launcherPassword)))
+		if passDisplay == "" {
+			drawText(screen, "Enter local password", 62, passY+12, 15, color.RGBA{R: 100, G: 116, B: 139, A: 255})
+		} else {
+			drawText(screen, passDisplay, 62, passY+12, 15, color.RGBA{R: 241, G: 245, B: 249, A: 255})
+		}
+		if time.Now().UnixMilli()/500%2 == 0 {
+			textW, _ := measureText(passDisplay, 15)
+			vector.DrawFilledRect(screen, float32(64+textW), float32(passY+8), 2, 20, color.RGBA{R: 248, G: 113, B: 113, A: 255}, false)
+		}
+	}
+
 	connectBtn := chromeButton{
 		id:      "launcher_connect",
-		enabled: validInput,
+		enabled: validInput && (!a.launcherPromptPassword || strings.TrimSpace(a.launcherPassword) != ""),
 		rect:    rect{x: 48 + listW - 128, y: inputY, w: 128, h: 40},
+	}
+	if a.launcherPromptPassword {
+		connectBtn.id = "launcher_retry_password"
 	}
 	a.launcherButtons = append(a.launcherButtons, connectBtn)
 	fill := color.RGBA{R: 37, G: 99, B: 235, A: 255}
