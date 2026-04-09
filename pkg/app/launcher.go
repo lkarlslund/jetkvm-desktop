@@ -183,7 +183,11 @@ func (a *App) drawLauncher(screen *ebiten.Image) {
 func (a *App) drawPasswordPrompt(screen *ebiten.Image) {
 	bounds := screen.Bounds()
 	panelW := min(float64(bounds.Dx())-96, 620)
-	panelH := 230.0
+	errorHeight := 0.0
+	if a.launcherError != "" {
+		errorHeight = wrappedTextHeight(a.launcherError, panelW-48, 12) + 18
+	}
+	panelH := 230.0 + errorHeight
 	panelX := (float64(bounds.Dx()) - panelW) / 2
 	panelY := (float64(bounds.Dy()) - panelH) / 2
 
@@ -213,15 +217,16 @@ func (a *App) drawPasswordPrompt(screen *ebiten.Image) {
 	}
 
 	a.launcherButtons = a.launcherButtons[:0]
+	buttonY := panelY + panelH - 56
 	backBtn := chromeButton{
 		id:      "launcher_back",
 		enabled: true,
-		rect:    rect{x: panelX + 24, y: panelY + 174, w: 110, h: 40},
+		rect:    rect{x: panelX + 24, y: buttonY, w: 110, h: 40},
 	}
 	connectBtn := chromeButton{
 		id:      "launcher_retry_password",
 		enabled: strings.TrimSpace(a.launcherPassword) != "",
-		rect:    rect{x: panelX + panelW - 152, y: panelY + 174, w: 128, h: 40},
+		rect:    rect{x: panelX + panelW - 152, y: buttonY, w: 128, h: 40},
 	}
 	a.launcherButtons = append(a.launcherButtons, backBtn, connectBtn)
 
@@ -242,7 +247,7 @@ func (a *App) drawPasswordPrompt(screen *ebiten.Image) {
 	drawText(screen, "Connect", connectBtn.rect.x+28, connectBtn.rect.y+12, 15, textClr)
 
 	if a.launcherError != "" {
-		drawWrappedText(screen, a.launcherError, panelX+24, panelY+222, panelW-48, 12, color.RGBA{R: 252, G: 165, B: 165, A: 255})
+		drawWrappedText(screen, a.launcherError, panelX+24, fieldY+64, panelW-48, 12, color.RGBA{R: 252, G: 165, B: 165, A: 255})
 	}
 }
 

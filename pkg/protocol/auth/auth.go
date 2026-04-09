@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/http/cookiejar"
@@ -14,6 +15,25 @@ import (
 
 type Client struct {
 	httpClient *http.Client
+}
+
+type Error struct {
+	StatusCode int
+	Message    string
+	RetryAfter int
+}
+
+func (e *Error) Error() string {
+	if e == nil {
+		return ""
+	}
+	if e.Message == "" {
+		return fmt.Sprintf("login failed with status %d", e.StatusCode)
+	}
+	if e.RetryAfter > 0 {
+		return fmt.Sprintf("%s (retry after %ds)", e.Message, e.RetryAfter)
+	}
+	return e.Message
 }
 
 func NewClient() (*Client, error) {
@@ -66,7 +86,26 @@ func (c *Client) Login(ctx context.Context, baseURL, password string) error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("login failed with status %s", resp.Status)
+		return loginError(resp)
 	}
 	return nil
+}
+
+func loginError(resp *http.Response) error {
+	var payload struct {
+		Error      string `json:"error"`
+		RetryAfter int    `json:"retry_after"`
+	}
+	data, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+	if len(data) > 0 && json.Unmarshal(data, &payload) == nil && payload.Error != "" {
+		return &Error{
+			StatusCode: resp.StatusCode,
+			Message:    payload.Error,
+			RetryAfter: payload.RetryAfter,
+		}
+	}
+	return &Error{
+		StatusCode: resp.StatusCode,
+		Message:    fmt.Sprintf("login failed with status %s", resp.Status),
+	}
 }

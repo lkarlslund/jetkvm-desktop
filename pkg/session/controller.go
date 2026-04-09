@@ -13,6 +13,7 @@ import (
 
 	"github.com/lkarlslund/jetkvm-desktop/pkg/client"
 	"github.com/lkarlslund/jetkvm-desktop/pkg/input"
+	"github.com/lkarlslund/jetkvm-desktop/pkg/protocol/auth"
 )
 
 type Phase string
@@ -384,7 +385,7 @@ func (c *Controller) run(ctx context.Context) {
 		err := cl.Connect(ctx)
 		if err != nil {
 			c.setConnectError(err)
-			if !c.cfg.Reconnect || ctx.Err() != nil {
+			if !c.cfg.Reconnect || ctx.Err() != nil || isAuthError(err) {
 				return
 			}
 			if !sleepWithContext(ctx, backoff(attempt, c.cfg.ReconnectBase, c.cfg.ReconnectMax)) {
@@ -686,8 +687,16 @@ func withTimeout(ctx context.Context, d time.Duration) context.Context {
 }
 
 func isAuthError(err error) bool {
+	var authErr *auth.Error
+	if errors.As(err, &authErr) {
+		switch authErr.StatusCode {
+		case 401, 403, 429:
+			return true
+		}
+	}
 	msg := strings.ToLower(err.Error())
-	return strings.Contains(msg, "unauthorized") || strings.Contains(msg, "login failed")
+	return strings.Contains(msg, "unauthorized") ||
+		strings.Contains(msg, "authentication failed")
 }
 
 func normalizeKeyboardLayoutCode(layout string) string {

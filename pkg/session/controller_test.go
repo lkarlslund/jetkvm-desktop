@@ -2,12 +2,14 @@ package session
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/lkarlslund/jetkvm-desktop/pkg/client"
 	"github.com/lkarlslund/jetkvm-desktop/pkg/emulator"
+	"github.com/lkarlslund/jetkvm-desktop/pkg/protocol/auth"
 )
 
 func TestControllerConnects(t *testing.T) {
@@ -194,6 +196,23 @@ func TestControllerSetKeyboardLayoutSucceedsWhenWriteAckIsDropped(t *testing.T) 
 	}
 	if got := controller.Snapshot().KeyboardLayout; got != "da-DK" {
 		t.Fatalf("snapshot keyboard layout = %q, want da-DK", got)
+	}
+}
+
+func TestIsAuthErrorMatchesDeviceMessages(t *testing.T) {
+	tests := []error{
+		&auth.Error{StatusCode: 401, Message: "Invalid password"},
+		&auth.Error{StatusCode: 403, Message: "Forbidden"},
+		&auth.Error{StatusCode: 429, Message: "Too many failed attempts"},
+		errors.New("authentication failed"),
+	}
+	for _, err := range tests {
+		if !isAuthError(err) {
+			t.Fatalf("expected %v to be treated as auth error", err)
+		}
+	}
+	if isAuthError(errors.New("connection reset by peer")) {
+		t.Fatal("expected transport error to not be treated as auth error")
 	}
 }
 

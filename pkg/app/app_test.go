@@ -1,9 +1,12 @@
 package app
 
 import (
+	"context"
 	"errors"
 	"testing"
+	"time"
 
+	"github.com/lkarlslund/jetkvm-desktop/pkg/emulator"
 	"github.com/lkarlslund/jetkvm-desktop/pkg/input"
 	"github.com/lkarlslund/jetkvm-desktop/pkg/session"
 )
@@ -309,4 +312,138 @@ func TestShowPasswordPromptSwitchesLauncherMode(t *testing.T) {
 	if app.pendingTarget != "http://jetkvm.local" {
 		t.Fatalf("pending target = %q, want http://jetkvm.local", app.pendingTarget)
 	}
+}
+
+func TestAuthPromptError(t *testing.T) {
+	if got := authPromptError(""); got != "Authentication failed" {
+		t.Fatalf("empty error = %q, want Authentication failed", got)
+	}
+	if got := authPromptError("login failed with status 401 Unauthorized"); got != "login failed with status 401 Unauthorized" {
+		t.Fatalf("unexpected auth prompt error %q", got)
+	}
+}
+
+func TestAppPasswordRetryFlowConnects(t *testing.T) {
+	srv, ctx, cancel := startAppEmulator(t)
+	defer cancel()
+
+	app, err := New(Config{BaseURL: srv.BaseURL(), RPCTimeout: 2 * time.Second})
+	if err != nil {
+		t.Fatal(err)
+	}
+	app.Start(ctx)
+	defer func() {
+		if app.ctrl != nil {
+			app.ctrl.Stop()
+		}
+	}()
+
+	waitForAppPhase(t, app, session.PhaseAuthFailed, 5*time.Second)
+	app.syncSessionState()
+	if !app.launcherOpen {
+		t.Fatal("expected launcher to open after auth failure")
+	}
+	if app.launcherMode != launcherModePassword {
+		t.Fatalf("launcher mode = %q, want password", app.launcherMode)
+	}
+
+	app.launcherPassword = "secret"
+	app.connectFromLauncher(app.pendingTarget)
+	if app.launcherOpen {
+		t.Fatal("expected launcher to close while retrying with password")
+	}
+
+	waitForAppPhase(t, app, session.PhaseConnected, 5*time.Second)
+	app.syncSessionState()
+	if app.launcherOpen {
+		t.Fatal("expected launcher to remain closed after successful password retry")
+	}
+}
+
+func TestAppWrongPasswordReturnsToPasswordPromptWithError(t *testing.T) {
+	srv, ctx, cancel := startAppEmulator(t)
+	defer cancel()
+
+	app, err := New(Config{BaseURL: srv.BaseURL(), RPCTimeout: 2 * time.Second})
+	if err != nil {
+		t.Fatal(err)
+	}
+	app.Start(ctx)
+	defer func() {
+		if app.ctrl != nil {
+			app.ctrl.Stop()
+		}
+	}()
+
+	waitForAppPhase(t, app, session.PhaseAuthFailed, 5*time.Second)
+	app.syncSessionState()
+	app.launcherPassword = "wrongpass"
+	app.connectFromLauncher(app.pendingTarget)
+
+	if app.launcherOpen {
+		t.Fatal("expected launcher to close while retrying wrong password")
+	}
+
+	waitForAppPhase(t, app, session.PhaseAuthFailed, 5*time.Second)
+	app.syncSessionState()
+	if !app.launcherOpen {
+		t.Fatal("expected password prompt to reopen after auth failure")
+	}
+	if app.launcherMode != launcherModePassword {
+		t.Fatalf("launcher mode = %q, want password", app.launcherMode)
+	}
+	if app.launcherError == "" {
+		t.Fatal("expected auth error to be shown in password prompt")
+	}
+}
+
+func startAppEmulator(t *testing.T) (*emulator.Server, context.Context, context.CancelFunc) {
+	t.Helper()
+	srv, err := emulator.NewServer(emulator.Config{
+		ListenAddr: "127.0.0.1:0",
+		AuthMode:   emulator.AuthModePassword,
+		Password:   "secret",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	errCh := make(chan error, 1)
+	t.Cleanup(func() {
+		cancel()
+		select {
+		case err := <-errCh:
+			if err != nil && ctx.Err() == nil {
+				t.Errorf("server: %v", err)
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatal("server did not shut down")
+		}
+	})
+	go func() {
+		errCh <- srv.ListenAndServe(ctx)
+	}()
+	deadline := time.Now().Add(2 * time.Second)
+	for srv.BaseURL() == "" && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if srv.BaseURL() == "" {
+		t.Fatal("server did not start")
+	}
+	return srv, ctx, cancel
+}
+
+func waitForAppPhase(t *testing.T, app *App, phase session.Phase, timeout time.Duration) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if app.ctrl != nil && app.ctrl.Snapshot().Phase == phase {
+			return
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+	if app.ctrl == nil {
+		t.Fatalf("timed out waiting for phase %s: controller is nil", phase)
+	}
+	t.Fatalf("timed out waiting for phase %s, got %+v", phase, app.ctrl.Snapshot())
 }

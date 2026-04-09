@@ -1037,7 +1037,11 @@ func (a *App) syncSessionState() {
 	snap := a.ctrl.Snapshot()
 	phase := snap.Phase
 	if phase == session.PhaseAuthFailed && a.lastPhase != session.PhaseAuthFailed {
-		a.showPasswordPrompt(a.cfg.BaseURL, "Password required for "+a.cfg.BaseURL)
+		errMsg := ""
+		if a.launcherMode == launcherModePassword {
+			errMsg = authPromptError(snap.LastError)
+		}
+		a.showPasswordPrompt(a.cfg.BaseURL, errMsg)
 		a.settingsOpen = false
 		a.pasteOpen = false
 		a.statsOpen = false
@@ -1386,6 +1390,14 @@ func (a *App) showPasswordPrompt(target, errMsg string) {
 	a.launcherOpen = true
 	a.launcherMode = launcherModePassword
 	a.launcherError = errMsg
+}
+
+func authPromptError(lastError string) string {
+	lastError = strings.TrimSpace(lastError)
+	if lastError == "" {
+		return "Authentication failed"
+	}
+	return lastError
 }
 
 func (a *App) connectTo(target string) {
