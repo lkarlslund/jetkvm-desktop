@@ -7,44 +7,43 @@ on:
   workflow_dispatch:
 
 permissions:
+  actions: read
   contents: write
 
 jobs:
-  test:
-    name: Test (${{ matrix.name }})
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-24.04
-            name: linux-amd64
-            goos: linux
-            goarch: amd64
-          - os: ubuntu-24.04-arm
-            name: linux-aarch64
-            goos: linux
-            goarch: arm64
-          - os: macos-15-intel
-            name: macos-amd64
-            goos: darwin
-            goarch: amd64
-          - os: macos-15
-            name: macos-aarch64
-            goos: darwin
-            goarch: arm64
-          - os: windows-latest
-            name: windows-amd64
-            goos: windows
-            goarch: amd64
-    uses: ./.github/workflows/reusable-go-test.yml
-    with:
-      runner: ${{ matrix.os }}
-      goos: ${{ matrix.goos }}
-      goarch: ${{ matrix.goarch }}
+  verify-ci:
+    name: Verify CI Passed
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify successful CI run for this commit
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const headSha = context.sha;
+            const { owner, repo } = context.repo;
+            const runs = await github.paginate(github.rest.actions.listWorkflowRunsForRepo, {
+              owner,
+              repo,
+              head_sha: headSha,
+              per_page: 100
+            });
+
+            const ciRun = runs.find((run) =>
+              run.name === "CI" &&
+              run.status === "completed" &&
+              run.conclusion === "success"
+            );
+
+            if (!ciRun) {
+              core.setFailed(`No successful CI run found for commit ${headSha}. Push the commit to main and wait for CI before tagging a release.`);
+              return;
+            }
+
+            core.info(`Using CI run ${ciRun.html_url}`);
 
   build:
     name: Build (${{ matrix.name }})
-    needs: test
+    needs: verify-ci
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
