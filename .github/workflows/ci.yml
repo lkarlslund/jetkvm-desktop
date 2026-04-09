@@ -27,6 +27,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
+            xvfb \
             libx11-dev \
             libxcursor-dev \
             libxrandr-dev \
@@ -61,7 +62,12 @@ jobs:
           go-version-file: go.mod
 
       - name: Test
-        run: go test ./...
+        run: |
+          if [ "${{ runner.os }}" = "Linux" ]; then
+            xvfb-run -a go test ./...
+          else
+            go test ./...
+          fi
 
       - name: Build
         run: go build ./...
