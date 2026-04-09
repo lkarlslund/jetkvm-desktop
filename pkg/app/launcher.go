@@ -120,17 +120,22 @@ func (a *App) drawLauncher(screen *ebiten.Image) {
 	drawText(screen, "Connect by host, DNS name, or IP", 48, inputY-18, 13, color.RGBA{R: 148, G: 163, B: 184, A: 255})
 	vector.DrawFilledRect(screen, 48, float32(inputY), float32(listW-140), 40, color.RGBA{R: 15, G: 23, B: 34, A: 255}, false)
 	vector.StrokeRect(screen, 48, float32(inputY), float32(listW-140), 40, 1, color.RGBA{R: 71, G: 85, B: 105, A: 180}, false)
+	validInput := strings.TrimSpace(a.launcherInput) != "" && isValidConnectHost(strings.TrimSpace(a.launcherInput))
 	inputText := a.launcherInput
 	if inputText == "" {
 		inputText = "jetkvm.local or 192.168.1.50"
 		drawText(screen, inputText, 62, inputY+12, 15, color.RGBA{R: 100, G: 116, B: 139, A: 255})
 	} else {
 		drawText(screen, inputText, 62, inputY+12, 15, color.RGBA{R: 241, G: 245, B: 249, A: 255})
+		if time.Now().UnixMilli()/500%2 == 0 {
+			textW, _ := measureText(inputText, 15)
+			vector.DrawFilledRect(screen, float32(64+textW), float32(inputY+8), 2, 20, color.RGBA{R: 191, G: 219, B: 254, A: 255}, false)
+		}
 	}
 
 	connectBtn := chromeButton{
 		id:      "launcher_connect",
-		enabled: strings.TrimSpace(a.launcherInput) != "",
+		enabled: validInput,
 		rect:    rect{x: 48 + listW - 128, y: inputY, w: 128, h: 40},
 	}
 	a.launcherButtons = append(a.launcherButtons, connectBtn)
@@ -148,6 +153,8 @@ func (a *App) drawLauncher(screen *ebiten.Image) {
 
 	if a.launcherError != "" {
 		drawWrappedText(screen, a.launcherError, 48, inputY+52, listW, 12, color.RGBA{R: 252, G: 165, B: 165, A: 255})
+	} else if strings.TrimSpace(a.launcherInput) != "" && !validInput {
+		drawWrappedText(screen, "Enter a valid hostname or IP address.", 48, inputY+52, listW, 12, color.RGBA{R: 252, G: 165, B: 165, A: 255})
 	}
 }
 

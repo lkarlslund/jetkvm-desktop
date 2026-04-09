@@ -28,3 +28,27 @@ func TestNormalizeBaseURLRejectsEmpty(t *testing.T) {
 		t.Fatal("expected error for empty input")
 	}
 }
+
+func TestNormalizeBaseURLRejectsInvalidHost(t *testing.T) {
+	for _, value := range []string{"bad host", "://broken", "http://bad host"} {
+		if _, err := normalizeBaseURL(value); err == nil {
+			t.Fatalf("expected error for %q", value)
+		}
+	}
+}
+
+func TestIsValidConnectHost(t *testing.T) {
+	valid := []string{"192.168.1.50", "jetkvm.local", "jetkvm-22fef15037dbb5bb.isobits.local"}
+	for _, value := range valid {
+		if !isValidConnectHost(value) {
+			t.Fatalf("expected %q to be valid", value)
+		}
+	}
+
+	invalid := []string{"", "bad host", "-jetkvm.local", "jetkvm_.local", "foo/bar"}
+	for _, value := range invalid {
+		if isValidConnectHost(value) {
+			t.Fatalf("expected %q to be invalid", value)
+		}
+	}
+}

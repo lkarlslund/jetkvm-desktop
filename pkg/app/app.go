@@ -7,6 +7,7 @@ import (
 	"image"
 	"image/color"
 	"math"
+	"net"
 	"net/url"
 	"strings"
 	"sync"
@@ -1085,6 +1086,9 @@ func normalizeBaseURL(raw string) (string, error) {
 		return "", errors.New("host or URL is required")
 	}
 	if !strings.Contains(raw, "://") {
+		if !isValidConnectHost(raw) {
+			return "", errors.New("enter a valid hostname or IP address")
+		}
 		raw = "http://" + raw
 	}
 	parsed, err := url.Parse(raw)
@@ -1094,10 +1098,55 @@ func normalizeBaseURL(raw string) (string, error) {
 	if parsed.Scheme == "" || parsed.Host == "" {
 		return "", errors.New("invalid target")
 	}
+	host := parsed.Hostname()
+	if host == "" || !isValidConnectHost(host) {
+		return "", errors.New("enter a valid hostname or IP address")
+	}
 	parsed.Path = ""
 	parsed.RawQuery = ""
 	parsed.Fragment = ""
 	return parsed.String(), nil
+}
+
+func isValidConnectHost(raw string) bool {
+	if raw == "" {
+		return false
+	}
+	if strings.ContainsAny(raw, "/?#") {
+		return false
+	}
+	if ip := net.ParseIP(raw); ip != nil {
+		return true
+	}
+	return isValidHostname(raw)
+}
+
+func isValidHostname(host string) bool {
+	if len(host) == 0 || len(host) > 253 {
+		return false
+	}
+	if strings.HasPrefix(host, ".") || strings.HasSuffix(host, ".") {
+		host = strings.Trim(host, ".")
+	}
+	labels := strings.Split(host, ".")
+	if len(labels) == 0 {
+		return false
+	}
+	for _, label := range labels {
+		if len(label) == 0 || len(label) > 63 {
+			return false
+		}
+		if label[0] == '-' || label[len(label)-1] == '-' {
+			return false
+		}
+		for _, r := range label {
+			if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-' {
+				continue
+			}
+			return false
+		}
+	}
+	return true
 }
 
 func (a *App) connectFromLauncher(target string) {
