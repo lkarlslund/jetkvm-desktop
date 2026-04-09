@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/hajimehoshi/ebiten/v2"
-	"github.com/hajimehoshi/ebiten/v2/ebitenutil"
 	"github.com/hajimehoshi/ebiten/v2/inpututil"
 	"github.com/hajimehoshi/ebiten/v2/vector"
 
@@ -598,12 +597,12 @@ func (a *App) drawOverlay(screen *ebiten.Image, snap session.Snapshot, hasVideo 
 		return
 	}
 	vector.DrawFilledRect(screen, 26, 84, float32(screen.Bounds().Dx()-52), 86, color.RGBA{R: 8, G: 12, B: 18, A: 228}, false)
-	ebitenutil.DebugPrintAt(screen, title, 42, 108)
+	drawText(screen, title, 42, 104, 22, color.RGBA{R: 240, G: 244, B: 248, A: 255})
 	if detail == "" && snap.LastError != "" && snap.Phase != session.PhaseConnected {
 		detail = snap.LastError
 	}
 	if detail != "" {
-		ebitenutil.DebugPrintAt(screen, detail, 42, 128)
+		drawText(screen, detail, 42, 132, 14, color.RGBA{R: 178, G: 188, B: 198, A: 255})
 	}
 }
 
@@ -614,8 +613,8 @@ func (a *App) drawHeader(screen *ebiten.Image, snap session.Snapshot) {
 	} else if snap.Hostname != "" {
 		label = snap.Hostname
 	}
-	ebitenutil.DebugPrintAt(screen, label, 16, 10)
-	ebitenutil.DebugPrintAt(screen, snap.BaseURL, 16, 28)
+	drawText(screen, label, 16, 8, 20, color.RGBA{R: 240, G: 244, B: 248, A: 255})
+	drawText(screen, snap.BaseURL, 16, 31, 13, color.RGBA{R: 150, G: 162, B: 176, A: 255})
 
 	chips := []string{
 		"phase: " + string(snap.Phase),
@@ -628,8 +627,9 @@ func (a *App) drawHeader(screen *ebiten.Image, snap session.Snapshot) {
 	}
 	x := 260
 	for _, chip := range chips {
-		ebitenutil.DebugPrintAt(screen, chip, x, 18)
-		x += (len(chip) * 7) + 16
+		drawText(screen, chip, float64(x), 17, 13, color.RGBA{R: 192, G: 204, B: 214, A: 255})
+		w, _ := measureText(chip, 13)
+		x += int(w) + 18
 	}
 }
 
@@ -638,9 +638,12 @@ func (a *App) drawFooter(screen *ebiten.Image, snap session.Snapshot) {
 	if snap.Phase == session.PhaseConnected {
 		left = left + "  click inside the video to control the host"
 	}
-	ebitenutil.DebugPrintAt(screen, left, 16, screen.Bounds().Dy()-26)
+	footerY := float64(screen.Bounds().Dy() - 28)
+	drawText(screen, left, 16, footerY, 13, color.RGBA{R: 168, G: 178, B: 188, A: 255})
 	if snap.LastError != "" && snap.Phase != session.PhaseConnected {
-		ebitenutil.DebugPrintAt(screen, trimForFooter(snap.LastError), screen.Bounds().Dx()-360, screen.Bounds().Dy()-26)
+		msg := trimForFooter(snap.LastError)
+		w, _ := measureText(msg, 13)
+		drawText(screen, msg, float64(screen.Bounds().Dx())-w-16, footerY, 13, color.RGBA{R: 220, G: 132, B: 132, A: 255})
 	}
 }
 
@@ -703,18 +706,18 @@ func (r rect) toHID(cursorX, cursorY int) (int32, int32) {
 }
 
 type button struct {
-	id    string
-	label string
+	id      string
+	label   string
 	enabled bool
-	rect  rect
+	rect    rect
 }
 
 func layoutButtons(width int, snap session.Snapshot, relative bool) []button {
 	canAct := snap.Phase == session.PhaseConnected || snap.Phase == session.PhaseDisconnected || snap.Phase == session.PhaseReconnecting
 	defs := []struct {
-		id    string
-		label string
-		w     float64
+		id      string
+		label   string
+		w       float64
 		enabled bool
 	}{
 		{id: "reconnect", label: reconnectLabel(snap.Phase), w: 92, enabled: true},
@@ -728,8 +731,8 @@ func layoutButtons(width int, snap session.Snapshot, relative bool) []button {
 	for i := len(defs) - 1; i >= 0; i-- {
 		x -= defs[i].w
 		buttons = append([]button{{
-			id:    defs[i].id,
-			label: defs[i].label,
+			id:      defs[i].id,
+			label:   defs[i].label,
 			enabled: defs[i].enabled,
 			rect: rect{
 				x: x,
@@ -749,7 +752,19 @@ func drawButton(screen *ebiten.Image, btn button) {
 		fill = color.RGBA{R: 22, G: 30, B: 42, A: 255}
 	}
 	vector.DrawFilledRect(screen, float32(btn.rect.x), float32(btn.rect.y), float32(btn.rect.w), float32(btn.rect.h), fill, false)
-	ebitenutil.DebugPrintAt(screen, btn.label, int(btn.rect.x)+10, int(btn.rect.y)+8)
+	clr := color.RGBA{R: 236, G: 241, B: 245, A: 255}
+	if !btn.enabled {
+		clr = color.RGBA{R: 118, G: 130, B: 142, A: 255}
+	}
+	w, h := measureText(btn.label, 13)
+	drawText(
+		screen,
+		btn.label,
+		btn.rect.x+((btn.rect.w-w)/2),
+		btn.rect.y+((btn.rect.h-h)/2)-1,
+		13,
+		clr,
+	)
 }
 
 func reconnectLabel(phase session.Phase) string {
