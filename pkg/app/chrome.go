@@ -471,11 +471,11 @@ func (a *App) drawSettingsOverlay(screen *ebiten.Image, snap session.Snapshot) {
 
 	sections := settingsSections(snap)
 	section := a.currentSection(sections)
-	sidebarW := 168.0
-	contentW := min(760, float64(bounds.Dx())-sidebarW-96)
-	panelW := sidebarW + contentW + 56
+	sidebarW := 156.0
+	contentW := min(720, float64(bounds.Dx())-sidebarW-84)
+	panelW := sidebarW + contentW + 44
 	panelW = min(panelW, float64(bounds.Dx()-48))
-	panelH := min(a.settingsPanelHeight(section), float64(bounds.Dy()-64))
+	panelH := min(a.settingsPanelHeight(section), float64(bounds.Dy()-56))
 
 	panelX := (float64(bounds.Dx()) - panelW) / 2
 	panelY := (float64(bounds.Dy()) - panelH) / 2
@@ -484,28 +484,27 @@ func (a *App) drawSettingsOverlay(screen *ebiten.Image, snap session.Snapshot) {
 	vector.DrawFilledRect(screen, float32(panelX), float32(panelY), float32(panelW), float32(panelH), color.RGBA{R: 13, G: 20, B: 30, A: 246}, false)
 	vector.StrokeRect(screen, float32(panelX), float32(panelY), float32(panelW), float32(panelH), 1, color.RGBA{R: 88, G: 102, B: 118, A: 180}, false)
 	vector.DrawFilledRect(screen, float32(panelX), float32(panelY), float32(sidebarW), float32(panelH), color.RGBA{R: 18, G: 28, B: 40, A: 255}, false)
-
-	drawText(screen, "Settings", panelX+20, panelY+16, 21, color.RGBA{R: 240, G: 244, B: 248, A: 255})
-	drawWrappedText(screen, "Upstream structure, native surface.", panelX+20, panelY+42, sidebarW-40, 11, color.RGBA{R: 166, G: 178, B: 190, A: 255})
+	drawText(screen, "Settings", panelX+18, panelY+16, 20, color.RGBA{R: 240, G: 244, B: 248, A: 255})
+	drawWrappedText(screen, fallbackLabel(snap.DeviceID, snap.Hostname, snap.BaseURL), panelX+18, panelY+40, sidebarW-36, 11, color.RGBA{R: 166, G: 178, B: 190, A: 255})
 
 	closeBtn := chromeButton{
 		id:      "settings_close",
 		hint:    "Close settings",
 		icon:    iconClose,
 		enabled: true,
-		rect:    rect{x: panelX + panelW - 42, y: panelY + 12, w: 28, h: 28},
+		rect:    rect{x: panelX + panelW - 40, y: panelY + 12, w: 26, h: 26},
 	}
 	a.settingsButtons = append(a.settingsButtons[:0], closeBtn)
 	drawChromeButton(screen, closeBtn, 1)
 
-	sideY := panelY + 74
+	sideY := panelY + 72
 	for _, section := range sections {
 		btn := chromeButton{
 			id:      "section:" + string(section.id),
 			label:   section.label,
 			enabled: true,
 			active:  a.settingsSection == section.id,
-			rect:    rect{x: panelX + 12, y: sideY, w: sidebarW - 24, h: 32},
+			rect:    rect{x: panelX + 10, y: sideY, w: sidebarW - 20, h: 30},
 		}
 		a.settingsButtons = append(a.settingsButtons, btn)
 		fill := color.RGBA{R: 18, G: 28, B: 40, A: 255}
@@ -518,52 +517,53 @@ func (a *App) drawSettingsOverlay(screen *ebiten.Image, snap session.Snapshot) {
 		}
 		vector.DrawFilledRect(screen, float32(btn.rect.x), float32(btn.rect.y), float32(btn.rect.w), float32(btn.rect.h), fill, false)
 		vector.StrokeRect(screen, float32(btn.rect.x), float32(btn.rect.y), float32(btn.rect.w), float32(btn.rect.h), 1, stroke, false)
-		drawText(screen, section.label, btn.rect.x+10, btn.rect.y+9, 13, textClr)
-		sideY += 38
+		drawText(screen, section.label, btn.rect.x+10, btn.rect.y+8, 13, textClr)
+		sideY += 36
 	}
 
-	contentX := panelX + sidebarW + 24
-	contentY := panelY + 24
-	contentW = panelW - sidebarW - 40
-	drawText(screen, section.label, contentX, contentY, 20, color.RGBA{R: 240, G: 244, B: 248, A: 255})
-	drawWrappedText(screen, section.description, contentX, contentY+28, contentW, 13, color.RGBA{R: 166, G: 178, B: 190, A: 255})
+	contentX := panelX + sidebarW + 18
+	contentY := panelY + 18
+	contentW = panelW - sidebarW - 32
+	drawText(screen, section.label, contentX, contentY, 22, color.RGBA{R: 240, G: 244, B: 248, A: 255})
+	drawWrappedText(screen, section.description, contentX, contentY+28, contentW-48, 12, color.RGBA{R: 166, G: 178, B: 190, A: 255})
+	vector.StrokeLine(screen, float32(contentX), float32(contentY+58), float32(contentX+contentW), float32(contentY+58), 1, color.RGBA{R: 42, G: 54, B: 68, A: 180}, false)
 
 	switch section.id {
 	case sectionGeneral:
-		a.drawSettingsGeneral(screen, snap, contentX, contentY+72, contentW)
+		a.drawSettingsGeneral(screen, snap, contentX, contentY+76, contentW)
 	case sectionMouse:
-		a.drawSettingsMouse(screen, snap, contentX, contentY+74, contentW)
+		a.drawSettingsMouse(screen, snap, contentX, contentY+76, contentW)
 	case sectionKeyboard:
-		a.drawSettingsKeyboard(screen, snap, contentX, contentY+74, contentW)
+		a.drawSettingsKeyboard(screen, snap, contentX, contentY+76, contentW)
 	case sectionVideo:
-		a.drawSettingsVideo(screen, snap, contentX, contentY+74, contentW)
+		a.drawSettingsVideo(screen, snap, contentX, contentY+76, contentW)
 	case sectionHardware:
-		a.drawSettingsHardware(screen, contentX, contentY+74, contentW)
+		a.drawSettingsHardware(screen, contentX, contentY+76, contentW)
 	case sectionAccess:
-		a.drawSettingsAccess(screen, contentX, contentY+74, contentW)
+		a.drawSettingsAccess(screen, contentX, contentY+76, contentW)
 	case sectionAppearance:
-		a.drawSettingsAppearance(screen, contentX, contentY+74, contentW)
+		a.drawSettingsAppearance(screen, contentX, contentY+76, contentW)
 	case sectionNetwork:
-		a.drawSettingsNetwork(screen, contentX, contentY+74, contentW)
+		a.drawSettingsNetwork(screen, contentX, contentY+76, contentW)
 	case sectionAdvanced:
-		a.drawSettingsAdvanced(screen, contentX, contentY+74, contentW)
+		a.drawSettingsAdvanced(screen, contentX, contentY+76, contentW)
 	default:
-		a.drawSettingsPlanned(screen, section, contentX, contentY+72, contentW)
+		a.drawSettingsPlanned(screen, section, contentX, contentY+76, contentW)
 	}
 }
 
 func (a *App) settingsPanelHeight(section settingsSectionDef) float64 {
 	switch section.id {
 	case sectionKeyboard:
-		return 430
+		return 474
 	case sectionGeneral, sectionHardware, sectionAccess:
-		return 410
+		return 424
 	case sectionMouse, sectionAdvanced:
-		return 390
+		return 400
 	case sectionVideo, sectionNetwork, sectionAppearance:
-		return 360
+		return 350
 	default:
-		return 380
+		return 360
 	}
 }
 
@@ -717,14 +717,22 @@ func (a *App) currentSection(sections []settingsSectionDef) settingsSectionDef {
 func (a *App) drawSettingsCard(screen *ebiten.Image, x, y, w, h float64, title, desc string) rect {
 	vector.DrawFilledRect(screen, float32(x), float32(y), float32(w), float32(h), color.RGBA{R: 18, G: 28, B: 40, A: 255}, false)
 	vector.StrokeRect(screen, float32(x), float32(y), float32(w), float32(h), 1, color.RGBA{R: 54, G: 68, B: 84, A: 180}, false)
-	drawText(screen, title, x+16, y+14, 16, color.RGBA{R: 240, G: 244, B: 248, A: 255})
-	drawWrappedText(screen, desc, x+16, y+40, w-32, 13, color.RGBA{R: 166, G: 178, B: 190, A: 255})
+	if title != "" {
+		drawText(screen, title, x+16, y+14, 15, color.RGBA{R: 240, G: 244, B: 248, A: 255})
+	}
+	if desc != "" {
+		drawWrappedText(screen, desc, x+16, y+36, w-32, 12, color.RGBA{R: 166, G: 178, B: 190, A: 255})
+	}
 	return rect{x: x, y: y, w: w, h: h}
 }
 
 func drawSettingsKeyValue(screen *ebiten.Image, label, value string, x, y, split float64) {
 	drawText(screen, label, x, y, 13, color.RGBA{R: 166, G: 178, B: 190, A: 255})
 	drawText(screen, fallbackLabel(value, "Unavailable"), x+split, y, 13, color.RGBA{R: 236, G: 241, B: 245, A: 255})
+}
+
+func drawSettingsSectionLabel(screen *ebiten.Image, label string, x, y float64) {
+	drawText(screen, label, x, y, 12, color.RGBA{R: 166, G: 178, B: 190, A: 255})
 }
 
 func (a *App) drawSettingsAction(screen *ebiten.Image, id, label string, x, y, w float64, enabled, active bool) {
@@ -748,32 +756,43 @@ func (a *App) drawSettingsAction(screen *ebiten.Image, id, label string, x, y, w
 }
 
 func (a *App) drawSettingsGeneral(screen *ebiten.Image, snap session.Snapshot, x, y, w float64) {
-	a.drawSettingsCard(screen, x, y, w, 224, "Device", "Connection state, versions, updates, and recovery actions.")
-	drawSettingsKeyValue(screen, "Base URL", snap.BaseURL, x+16, y+72, 116)
-	drawSettingsKeyValue(screen, "Phase", string(snap.Phase), x+16, y+96, 116)
-	drawSettingsKeyValue(screen, "Signaling", signalingLabel(snap.SignalingMode), x+16, y+120, 116)
-	drawSettingsKeyValue(screen, "App Version", snap.AppVersion, x+16, y+152, 116)
-	drawSettingsKeyValue(screen, "System Version", snap.SystemVersion, x+16, y+176, 116)
+	leftW := (w - 14) * 0.58
+	rightX := x + leftW + 14
+	rightW := w - leftW - 14
+	a.drawSettingsCard(screen, x, y, leftW, 214, "Device", "")
+	drawSettingsKeyValue(screen, "Base URL", snap.BaseURL, x+16, y+48, 116)
+	drawSettingsKeyValue(screen, "Phase", string(snap.Phase), x+16, y+74, 116)
+	drawSettingsKeyValue(screen, "Signaling", signalingLabel(snap.SignalingMode), x+16, y+100, 116)
+	drawSettingsKeyValue(screen, "App Version", snap.AppVersion, x+16, y+132, 116)
+	drawSettingsKeyValue(screen, "System Version", snap.SystemVersion, x+16, y+158, 116)
 	updateLabel := "No updates reported"
 	if snap.AppUpdateAvailable || snap.SystemUpdateAvailable {
 		updateLabel = "Updates available"
 	}
-	drawSettingsKeyValue(screen, "Updates", updateLabel, x+16, y+200, 116)
-	a.drawSettingsAction(screen, "reconnect", reconnectLabel(snap.Phase), x+w-214, y+186, 92, true, false)
-	a.drawSettingsAction(screen, "reboot", "Reboot", x+w-110, y+186, 92, snap.Phase != session.PhaseConnecting, false)
+	drawSettingsKeyValue(screen, "Updates", updateLabel, x+16, y+184, 116)
+	a.drawSettingsCard(screen, rightX, y, rightW, 214, "Actions", "")
+	drawWrappedText(screen, "Reconnect the native session or force a device reboot.", rightX+16, y+48, rightW-32, 12, color.RGBA{R: 166, G: 178, B: 190, A: 255})
+	a.drawSettingsAction(screen, "reconnect", reconnectLabel(snap.Phase), rightX+16, y+98, rightW-32, true, false)
+	a.drawSettingsAction(screen, "reboot", "Reboot device", rightX+16, y+136, rightW-32, snap.Phase != session.PhaseConnecting, false)
 }
 
 func (a *App) drawSettingsMouse(screen *ebiten.Image, snap session.Snapshot, x, y, w float64) {
-	a.drawSettingsCard(screen, x, y, w, 206, "Mouse Mode", "Absolute and relative modes, host cursor visibility, and wheel throttling.")
-	a.drawSettingsAction(screen, "mouse_absolute", "Absolute", x+16, y+104, 110, snap.Phase == session.PhaseConnected, !a.relative)
-	a.drawSettingsAction(screen, "mouse_relative", "Relative", x+138, y+104, 110, snap.Phase == session.PhaseConnected, a.relative)
-	a.drawSettingsAction(screen, "mouse_hide_cursor", "Hide Host Cursor", x+260, y+104, 154, true, a.hideCursor)
-	drawText(screen, "Scroll throttling", x+16, y+152, 13, color.RGBA{R: 166, G: 178, B: 190, A: 255})
-	a.drawSettingsAction(screen, "scroll_0", "Off", x+16, y+176, 64, true, a.scrollThrottle == 0)
-	a.drawSettingsAction(screen, "scroll_10", "Low", x+92, y+176, 64, true, a.scrollThrottle == 10*time.Millisecond)
-	a.drawSettingsAction(screen, "scroll_25", "Medium", x+168, y+176, 84, true, a.scrollThrottle == 25*time.Millisecond)
-	a.drawSettingsAction(screen, "scroll_50", "High", x+264, y+176, 72, true, a.scrollThrottle == 50*time.Millisecond)
-	a.drawSettingsAction(screen, "scroll_100", "Very High", x+348, y+176, 108, true, a.scrollThrottle == 100*time.Millisecond)
+	leftW := (w - 14) * 0.54
+	rightX := x + leftW + 14
+	rightW := w - leftW - 14
+	a.drawSettingsCard(screen, x, y, leftW, 196, "Pointer", "")
+	drawSettingsSectionLabel(screen, "Remote mode", x+16, y+48)
+	a.drawSettingsAction(screen, "mouse_absolute", "Absolute", x+16, y+66, 110, snap.Phase == session.PhaseConnected, !a.relative)
+	a.drawSettingsAction(screen, "mouse_relative", "Relative", x+138, y+66, 110, snap.Phase == session.PhaseConnected, a.relative)
+	drawSettingsSectionLabel(screen, "Local cursor", x+16, y+114)
+	a.drawSettingsAction(screen, "mouse_hide_cursor", "Hide Host Cursor", x+16, y+132, 154, true, a.hideCursor)
+	a.drawSettingsCard(screen, rightX, y, rightW, 196, "Wheel", "")
+	drawWrappedText(screen, "Throttle local wheel bursts before sending them to the device.", rightX+16, y+48, rightW-32, 12, color.RGBA{R: 166, G: 178, B: 190, A: 255})
+	a.drawSettingsAction(screen, "scroll_0", "Off", rightX+16, y+98, 64, true, a.scrollThrottle == 0)
+	a.drawSettingsAction(screen, "scroll_10", "Low", rightX+92, y+98, 64, true, a.scrollThrottle == 10*time.Millisecond)
+	a.drawSettingsAction(screen, "scroll_25", "Medium", rightX+168, y+98, 84, true, a.scrollThrottle == 25*time.Millisecond)
+	a.drawSettingsAction(screen, "scroll_50", "High", rightX+16, y+136, 72, true, a.scrollThrottle == 50*time.Millisecond)
+	a.drawSettingsAction(screen, "scroll_100", "Very High", rightX+100, y+136, 108, true, a.scrollThrottle == 100*time.Millisecond)
 }
 
 func (a *App) drawSettingsKeyboard(screen *ebiten.Image, snap session.Snapshot, x, y, w float64) {
@@ -817,42 +836,50 @@ func (a *App) drawSettingsKeyboard(screen *ebiten.Image, snap session.Snapshot, 
 }
 
 func (a *App) drawSettingsVideo(screen *ebiten.Image, snap session.Snapshot, x, y, w float64) {
-	a.drawSettingsCard(screen, x, y, w, 184, "Video", "Stream quality presets and current EDID state.")
-	a.drawSettingsAction(screen, "quality_preset_high", "High", x+16, y+106, 96, snap.Phase == session.PhaseConnected, snap.Quality >= 0.95)
-	a.drawSettingsAction(screen, "quality_preset_medium", "Medium", x+124, y+106, 96, snap.Phase == session.PhaseConnected, snap.Quality >= 0.45 && snap.Quality < 0.95)
-	a.drawSettingsAction(screen, "quality_preset_low", "Low", x+232, y+106, 96, snap.Phase == session.PhaseConnected, snap.Quality < 0.45)
-	drawText(screen, fmt.Sprintf("Current factor %.2f", snap.Quality), x+16, y+146, 13, color.RGBA{R: 236, G: 241, B: 245, A: 255})
-	drawText(screen, "EDID", x+16, y+166, 13, color.RGBA{R: 166, G: 178, B: 190, A: 255})
+	leftW := (w - 14) * 0.48
+	rightX := x + leftW + 14
+	rightW := w - leftW - 14
+	a.drawSettingsCard(screen, x, y, leftW, 174, "Stream", "")
+	drawSettingsSectionLabel(screen, "Quality preset", x+16, y+48)
+	a.drawSettingsAction(screen, "quality_preset_high", "High", x+16, y+68, 96, snap.Phase == session.PhaseConnected, snap.Quality >= 0.95)
+	a.drawSettingsAction(screen, "quality_preset_medium", "Medium", x+124, y+68, 96, snap.Phase == session.PhaseConnected, snap.Quality >= 0.45 && snap.Quality < 0.95)
+	a.drawSettingsAction(screen, "quality_preset_low", "Low", x+232, y+68, 96, snap.Phase == session.PhaseConnected, snap.Quality < 0.45)
+	drawText(screen, fmt.Sprintf("Current factor %.2f", snap.Quality), x+16, y+120, 13, color.RGBA{R: 236, G: 241, B: 245, A: 255})
+	a.drawSettingsCard(screen, rightX, y, rightW, 174, "EDID", "")
 	edid := snap.EDID
 	if edid == "" {
 		edid = "Unavailable on current target"
-	} else if len(edid) > 60 {
-		edid = edid[:60] + "..."
 	}
-	drawWrappedText(screen, edid, x+72, y+166, w-88, 13, color.RGBA{R: 236, G: 241, B: 245, A: 255})
+	drawWrappedText(screen, edid, rightX+16, y+48, rightW-32, 12, color.RGBA{R: 236, G: 241, B: 245, A: 255})
 }
 
 func (a *App) drawSettingsHardware(screen *ebiten.Image, x, y, w float64) {
 	a.mu.RLock()
 	state := a.sectionData.Hardware
 	a.mu.RUnlock()
-	a.drawSettingsCard(screen, x, y, w, 228, "Display & USB", "Display orientation and USB emulation state exposed by the current target.")
+	leftW := (w - 14) * 0.48
+	rightX := x + leftW + 14
+	rightW := w - leftW - 14
+	a.drawSettingsCard(screen, x, y, leftW, 220, "Display", "")
+	a.drawSettingsCard(screen, rightX, y, rightW, 220, "USB", "")
 	if state.Loading {
-		drawText(screen, "Loading hardware state…", x+16, y+82, 13, color.RGBA{R: 236, G: 241, B: 245, A: 255})
+		drawText(screen, "Loading hardware state…", x+16, y+48, 13, color.RGBA{R: 236, G: 241, B: 245, A: 255})
 		return
 	}
-	drawSettingsKeyValue(screen, "USB Emulation", boolPtrWord(state.USBEmulation), x+16, y+82, 132)
-	drawSettingsKeyValue(screen, "USB Config", state.USBConfig, x+16, y+108, 132)
-	drawSettingsKeyValue(screen, "USB Devices", state.USBDevicesSummary, x+16, y+134, 132)
-	drawSettingsKeyValue(screen, "Display Rotation", state.DisplayRotation, x+16, y+160, 132)
-	a.drawSettingsAction(screen, "rotate_normal", "Normal", x+16, y+184, 88, state.DisplayRotation != "", state.DisplayRotation == "270")
-	a.drawSettingsAction(screen, "rotate_inverted", "Inverted", x+116, y+184, 98, state.DisplayRotation != "", state.DisplayRotation == "90")
+	drawSettingsKeyValue(screen, "Rotation", state.DisplayRotation, x+16, y+50, 86)
+	drawWrappedText(screen, "Rotate the displayed feed to match the connected panel orientation.", x+16, y+82, leftW-32, 12, color.RGBA{R: 166, G: 178, B: 190, A: 255})
+	a.drawSettingsAction(screen, "rotate_normal", "Normal", x+16, y+150, 88, state.DisplayRotation != "", state.DisplayRotation == "270")
+	a.drawSettingsAction(screen, "rotate_inverted", "Inverted", x+116, y+150, 98, state.DisplayRotation != "", state.DisplayRotation == "90")
+	drawSettingsKeyValue(screen, "USB Emulation", boolPtrWord(state.USBEmulation), rightX+16, y+50, 112)
+	drawSettingsKeyValue(screen, "USB Config", state.USBConfig, rightX+16, y+76, 112)
+	drawSettingsSectionLabel(screen, "Configured devices", rightX+16, y+108)
+	drawWrappedText(screen, state.USBDevicesSummary, rightX+16, y+126, rightW-32, 12, color.RGBA{R: 236, G: 241, B: 245, A: 255})
 	if state.USBEmulation != nil {
-		a.drawSettingsAction(screen, "usb_emulation_on", "USB On", x+228, y+184, 86, true, *state.USBEmulation)
-		a.drawSettingsAction(screen, "usb_emulation_off", "USB Off", x+326, y+184, 92, true, !*state.USBEmulation)
+		a.drawSettingsAction(screen, "usb_emulation_on", "USB On", rightX+16, y+150, 86, true, *state.USBEmulation)
+		a.drawSettingsAction(screen, "usb_emulation_off", "USB Off", rightX+114, y+150, 92, true, !*state.USBEmulation)
 	}
 	if state.Error != "" {
-		drawText(screen, state.Error, x+16, y+214, 13, color.RGBA{R: 220, G: 132, B: 132, A: 255})
+		drawWrappedText(screen, state.Error, x+16, y+192, w-32, 12, color.RGBA{R: 220, G: 132, B: 132, A: 255})
 	}
 }
 
@@ -860,19 +887,26 @@ func (a *App) drawSettingsAccess(screen *ebiten.Image, x, y, w float64) {
 	a.mu.RLock()
 	state := a.sectionData.Access
 	a.mu.RUnlock()
-	a.drawSettingsCard(screen, x, y, w, 228, "Access", "Local access, TLS mode, and cloud adoption state exposed by the current target.")
+	leftW := (w - 14) * 0.5
+	rightX := x + leftW + 14
+	rightW := w - leftW - 14
+	a.drawSettingsCard(screen, x, y, leftW, 220, "Cloud", "")
+	a.drawSettingsCard(screen, rightX, y, rightW, 220, "TLS", "")
 	if state.Loading {
-		drawText(screen, "Loading access state…", x+16, y+82, 13, color.RGBA{R: 236, G: 241, B: 245, A: 255})
+		drawText(screen, "Loading access state…", x+16, y+48, 13, color.RGBA{R: 236, G: 241, B: 245, A: 255})
 		return
 	}
-	drawSettingsKeyValue(screen, "Cloud Connected", boolWord(state.CloudConnected), x+16, y+82, 120)
-	drawSettingsKeyValue(screen, "Cloud API", state.CloudURL, x+16, y+108, 120)
-	drawSettingsKeyValue(screen, "Cloud App", state.CloudAppURL, x+16, y+134, 120)
-	drawSettingsKeyValue(screen, "TLS Mode", state.TLSMode, x+16, y+160, 120)
-	a.drawSettingsAction(screen, "tls_disabled", "Disabled", x+16, y+184, 92, state.TLSMode != "", state.TLSMode == "disabled")
-	a.drawSettingsAction(screen, "tls_self_signed", "Self-Signed", x+120, y+184, 114, state.TLSMode != "", state.TLSMode == "self-signed")
+	drawSettingsKeyValue(screen, "Connected", boolWord(state.CloudConnected), x+16, y+50, 96)
+	drawSettingsSectionLabel(screen, "Cloud API", x+16, y+84)
+	drawWrappedText(screen, fallbackLabel(state.CloudURL, "Unavailable"), x+16, y+102, leftW-32, 12, color.RGBA{R: 236, G: 241, B: 245, A: 255})
+	drawSettingsSectionLabel(screen, "Cloud App", x+16, y+138)
+	drawWrappedText(screen, fallbackLabel(state.CloudAppURL, "Unavailable"), x+16, y+156, leftW-32, 12, color.RGBA{R: 236, G: 241, B: 245, A: 255})
+	drawSettingsKeyValue(screen, "Mode", state.TLSMode, rightX+16, y+50, 70)
+	drawWrappedText(screen, "Use the target's currently exposed TLS mode. Native client transport follows whatever the device publishes.", rightX+16, y+84, rightW-32, 12, color.RGBA{R: 166, G: 178, B: 190, A: 255})
+	a.drawSettingsAction(screen, "tls_disabled", "Disabled", rightX+16, y+150, 92, state.TLSMode != "", state.TLSMode == "disabled")
+	a.drawSettingsAction(screen, "tls_self_signed", "Self-Signed", rightX+120, y+150, 114, state.TLSMode != "", state.TLSMode == "self-signed")
 	if state.Error != "" {
-		drawText(screen, state.Error, x+16, y+214, 13, color.RGBA{R: 220, G: 132, B: 132, A: 255})
+		drawWrappedText(screen, state.Error, x+16, y+192, w-32, 12, color.RGBA{R: 220, G: 132, B: 132, A: 255})
 	}
 }
 
@@ -880,16 +914,16 @@ func (a *App) drawSettingsNetwork(screen *ebiten.Image, x, y, w float64) {
 	a.mu.RLock()
 	state := a.sectionData.Network
 	a.mu.RUnlock()
-	a.drawSettingsCard(screen, x, y, w, 160, "Network", "Current hostname, IP, and DHCP state exposed by the target.")
+	a.drawSettingsCard(screen, x, y, w, 152, "Current state", "")
 	if state.Loading {
-		drawText(screen, "Loading network state…", x+16, y+82, 13, color.RGBA{R: 236, G: 241, B: 245, A: 255})
+		drawText(screen, "Loading network state…", x+16, y+48, 13, color.RGBA{R: 236, G: 241, B: 245, A: 255})
 		return
 	}
-	drawSettingsKeyValue(screen, "Hostname", state.Hostname, x+16, y+82, 96)
-	drawSettingsKeyValue(screen, "IP", state.IP, x+16, y+108, 96)
-	drawSettingsKeyValue(screen, "DHCP", boolPtrWord(state.DHCP), x+16, y+134, 96)
+	drawSettingsKeyValue(screen, "Hostname", state.Hostname, x+16, y+48, 96)
+	drawSettingsKeyValue(screen, "IP", state.IP, x+16, y+74, 96)
+	drawSettingsKeyValue(screen, "DHCP", boolPtrWord(state.DHCP), x+16, y+100, 96)
 	if state.Error != "" {
-		drawText(screen, state.Error, x+16, y+146, 13, color.RGBA{R: 220, G: 132, B: 132, A: 255})
+		drawWrappedText(screen, state.Error, x+16, y+124, w-32, 12, color.RGBA{R: 220, G: 132, B: 132, A: 255})
 	}
 }
 
@@ -897,28 +931,28 @@ func (a *App) drawSettingsAdvanced(screen *ebiten.Image, x, y, w float64) {
 	a.mu.RLock()
 	state := a.sectionData.Advanced
 	a.mu.RUnlock()
-	a.drawSettingsCard(screen, x, y, w, 186, "Advanced", "Developer and recovery-oriented state exposed by the current target.")
+	a.drawSettingsCard(screen, x, y, w, 182, "Current state", "")
 	if state.Loading {
-		drawText(screen, "Loading advanced state…", x+16, y+82, 13, color.RGBA{R: 236, G: 241, B: 245, A: 255})
+		drawText(screen, "Loading advanced state…", x+16, y+48, 13, color.RGBA{R: 236, G: 241, B: 245, A: 255})
 		return
 	}
-	drawSettingsKeyValue(screen, "Developer Mode", boolPtrWord(state.DevMode), x+16, y+82, 128)
-	drawSettingsKeyValue(screen, "USB Emulation", boolPtrWord(state.USBEmulation), x+16, y+108, 128)
-	drawSettingsKeyValue(screen, "App Version", state.AppVersion, x+16, y+134, 128)
-	drawSettingsKeyValue(screen, "System Version", state.SystemVersion, x+16, y+160, 128)
+	drawSettingsKeyValue(screen, "Developer Mode", boolPtrWord(state.DevMode), x+16, y+48, 128)
+	drawSettingsKeyValue(screen, "USB Emulation", boolPtrWord(state.USBEmulation), x+16, y+74, 128)
+	drawSettingsKeyValue(screen, "App Version", state.AppVersion, x+16, y+106, 128)
+	drawSettingsKeyValue(screen, "System Version", state.SystemVersion, x+16, y+132, 128)
 	if state.Error != "" {
-		drawText(screen, state.Error, x+16, y+176, 13, color.RGBA{R: 220, G: 132, B: 132, A: 255})
+		drawWrappedText(screen, state.Error, x+16, y+156, w-32, 12, color.RGBA{R: 220, G: 132, B: 132, A: 255})
 	}
 }
 
 func (a *App) drawSettingsAppearance(screen *ebiten.Image, x, y, w float64) {
-	a.drawSettingsCard(screen, x, y, w, 188, "Appearance", "Desktop-specific chrome visibility and fullscreen behavior.")
-	drawText(screen, "Chrome mode", x+16, y+78, 13, color.RGBA{R: 166, G: 178, B: 190, A: 255})
-	a.drawSettingsAction(screen, "pin_chrome_off", "Auto-hide", x+136, y+66, 96, true, !a.prefs.PinChrome)
-	a.drawSettingsAction(screen, "pin_chrome_on", "Pinned", x+244, y+66, 84, true, a.prefs.PinChrome)
-	drawText(screen, "Fullscreen", x+16, y+118, 13, color.RGBA{R: 166, G: 178, B: 190, A: 255})
-	a.drawSettingsAction(screen, "fullscreen", "Toggle Fullscreen", x+136, y+106, 160, true, ebiten.IsFullscreen())
-	drawWrappedText(screen, "The pinned setting is saved locally and keeps the top action bar visible even when the pointer is away from the edge.", x+16, y+154, w-32, 13, color.RGBA{R: 166, G: 178, B: 190, A: 255})
+	a.drawSettingsCard(screen, x, y, w, 170, "Chrome", "")
+	drawSettingsSectionLabel(screen, "Top bar", x+16, y+48)
+	a.drawSettingsAction(screen, "pin_chrome_off", "Auto-hide", x+136, y+36, 96, true, !a.prefs.PinChrome)
+	a.drawSettingsAction(screen, "pin_chrome_on", "Pinned", x+244, y+36, 84, true, a.prefs.PinChrome)
+	drawSettingsSectionLabel(screen, "Window", x+16, y+90)
+	a.drawSettingsAction(screen, "fullscreen", "Toggle Fullscreen", x+136, y+78, 160, true, ebiten.IsFullscreen())
+	drawWrappedText(screen, "Pinned is a local preference and keeps the top action bar visible at all times.", x+16, y+122, w-32, 12, color.RGBA{R: 166, G: 178, B: 190, A: 255})
 }
 
 func boolWord(v bool) string {
@@ -936,12 +970,13 @@ func boolPtrWord(v *bool) string {
 }
 
 func (a *App) drawSettingsPlanned(screen *ebiten.Image, section settingsSectionDef, x, y, w float64) {
-	a.drawSettingsCard(screen, x, y, w, 230, section.label, section.description)
-	drawText(screen, "Current upstream surface", x+16, y+78, 13, color.RGBA{R: 166, G: 178, B: 190, A: 255})
-	lineY := y + 104
+	a.drawSettingsCard(screen, x, y, w, 220, "Not exposed here", "")
+	drawWrappedText(screen, section.description, x+16, y+46, w-32, 12, color.RGBA{R: 166, G: 178, B: 190, A: 255})
+	drawText(screen, "Current upstream surface", x+16, y+86, 12, color.RGBA{R: 166, G: 178, B: 190, A: 255})
+	lineY := y + 110
 	for _, item := range section.items {
-		drawText(screen, "• "+item, x+24, lineY, 13, color.RGBA{R: 236, G: 241, B: 245, A: 255})
-		lineY += 24
+		drawWrappedText(screen, "• "+item, x+24, lineY, w-40, 12, color.RGBA{R: 236, G: 241, B: 245, A: 255})
+		lineY += 22
 	}
-	drawWrappedText(screen, "This section is not currently exposed by the native client or the current target. It stays in the list so the settings map matches the upstream product structure.", x+16, y+184, w-32, 13, color.RGBA{R: 166, G: 178, B: 190, A: 255})
+	drawWrappedText(screen, "This section exists in the upstream product structure but is not currently exposed by this target or the native client.", x+16, y+176, w-32, 12, color.RGBA{R: 166, G: 178, B: 190, A: 255})
 }
