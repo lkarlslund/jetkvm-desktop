@@ -29,6 +29,7 @@ type App struct {
 
 	mu          sync.RWMutex
 	lastImg     *ebiten.Image
+	lastFrameAt time.Time
 	keyboard    *input.Keyboard
 	lastX       int
 	lastY       int
@@ -62,25 +63,6 @@ func New(cfg Config) (*App, error) {
 
 func (a *App) Start(ctx context.Context) {
 	a.ctrl.Start(ctx)
-	go func() {
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			default:
-			}
-			frame := a.ctrl.LatestFrame()
-			if frame == nil {
-				time.Sleep(50 * time.Millisecond)
-				continue
-			}
-			img := ebiten.NewImageFromImage(frame)
-			a.mu.Lock()
-			a.lastImg = img
-			a.mu.Unlock()
-			time.Sleep(16 * time.Millisecond)
-		}
-	}()
 }
 
 func (a *App) Update() error {
@@ -121,9 +103,22 @@ func (a *App) Update() error {
 		a.handleClick()
 	}
 
+	a.syncVideoFrame()
 	a.syncKeyboard()
 	a.syncMouse()
 	return nil
+}
+
+func (a *App) syncVideoFrame() {
+	frame, at := a.ctrl.LatestFrameInfo()
+	if frame == nil || !at.After(a.lastFrameAt) {
+		return
+	}
+	img := ebiten.NewImageFromImage(frame)
+	a.mu.Lock()
+	a.lastImg = img
+	a.lastFrameAt = at
+	a.mu.Unlock()
 }
 
 func (a *App) Draw(screen *ebiten.Image) {

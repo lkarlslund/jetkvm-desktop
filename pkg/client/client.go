@@ -400,6 +400,17 @@ func (c *Client) LatestFrame() image.Image {
 	return c.videoStream.Latest().Image
 }
 
+func (c *Client) LatestFrameInfo() (image.Image, time.Time) {
+	if c.videoStream == nil {
+		return nil, time.Time{}
+	}
+	frame := c.videoStream.Latest()
+	if frame == nil {
+		return nil, time.Time{}
+	}
+	return frame.Image, frame.At
+}
+
 func (c *Client) emitLifecycle(evt LifecycleEvent) {
 	select {
 	case c.lifecycleCh <- evt:

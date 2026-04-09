@@ -118,6 +118,16 @@ func (c *Controller) LatestFrame() image.Image {
 	return current.LatestFrame()
 }
 
+func (c *Controller) LatestFrameInfo() (image.Image, time.Time) {
+	c.mu.RLock()
+	current := c.current
+	c.mu.RUnlock()
+	if current == nil {
+		return nil, time.Time{}
+	}
+	return current.LatestFrameInfo()
+}
+
 func (c *Controller) ReconnectNow() {
 	c.mu.Lock()
 	current := c.current
