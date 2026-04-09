@@ -64,18 +64,18 @@ func (m KeyboardReport) MarshalBinary() ([]byte, error) {
 }
 
 type Pointer struct {
-	X       uint16
-	Y       uint16
+	X       int32
+	Y       int32
 	Buttons byte
 }
 
 func (m Pointer) Type() byte { return TypePointerReport }
 func (m Pointer) MarshalBinary() ([]byte, error) {
-	out := make([]byte, 6)
+	out := make([]byte, 10)
 	out[0] = TypePointerReport
-	binary.BigEndian.PutUint16(out[1:3], m.X)
-	binary.BigEndian.PutUint16(out[3:5], m.Y)
-	out[5] = m.Buttons
+	binary.BigEndian.PutUint32(out[1:5], uint32(m.X))
+	binary.BigEndian.PutUint32(out[5:9], uint32(m.Y))
+	out[9] = m.Buttons
 	return out, nil
 }
 
@@ -150,13 +150,13 @@ func Decode(data []byte) (Message, error) {
 		}
 		return KeyboardReport{Modifier: data[1], Keys: append([]byte(nil), data[2:]...)}, nil
 	case TypePointerReport:
-		if len(data) != 6 {
+		if len(data) != 10 {
 			return nil, fmt.Errorf("pointer length %d", len(data))
 		}
 		return Pointer{
-			X:       binary.BigEndian.Uint16(data[1:3]),
-			Y:       binary.BigEndian.Uint16(data[3:5]),
-			Buttons: data[5],
+			X:       int32(binary.BigEndian.Uint32(data[1:5])),
+			Y:       int32(binary.BigEndian.Uint32(data[5:9])),
+			Buttons: data[9],
 		}, nil
 	case TypeMouseReport:
 		if len(data) != 4 {

@@ -143,7 +143,7 @@ func (c *Controller) SendKeypress(key byte, press bool) error {
 	return current.SendKeypress(key, press)
 }
 
-func (c *Controller) SendAbsPointer(x, y uint16, buttons byte) error {
+func (c *Controller) SendAbsPointer(x, y int32, buttons byte) error {
 	current := c.clientIfConnected()
 	if current == nil {
 		return errors.New("client not connected")

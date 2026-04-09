@@ -683,13 +683,13 @@ func (r rect) contains(cursorX, cursorY int) bool {
 		float64(cursorY) >= r.y && float64(cursorY) <= r.y+r.h
 }
 
-func (r rect) toHID(cursorX, cursorY int) (uint16, uint16) {
+func (r rect) toHID(cursorX, cursorY int) (int32, int32) {
 	if !r.valid() {
 		return 0, 0
 	}
 	relX := clamp((float64(cursorX)-r.x)/r.w, 0, 1)
 	relY := clamp((float64(cursorY)-r.y)/r.h, 0, 1)
-	return uint16(relX * 32767.0), uint16(relY * 32767.0)
+	return int32(relX * 32767.0), int32(relY * 32767.0)
 }
 
 type button struct {

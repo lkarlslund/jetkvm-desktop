@@ -288,7 +288,7 @@ func (c *Client) SendKeypress(key byte, press bool) error {
 	return c.hidDC.Send(data)
 }
 
-func (c *Client) SendAbsPointer(x, y uint16, buttons byte) error {
+func (c *Client) SendAbsPointer(x, y int32, buttons byte) error {
 	if c.hidUnreliable == nil {
 		return fmt.Errorf("pointer channel not ready")
 	}
