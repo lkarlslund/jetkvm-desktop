@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/lkarlslund/jetkvm-desktop/pkg/input"
+	"github.com/lkarlslund/jetkvm-desktop/pkg/session"
 )
 
 func TestNormalizeBaseURL(t *testing.T) {
@@ -144,6 +145,14 @@ func TestPreferencesNormalizeChromeAnchor(t *testing.T) {
 	}
 }
 
+func TestPreferencesNormalizeChromeLayout(t *testing.T) {
+	prefs := Preferences{ChromeLayout: "diagonal"}
+	prefs.normalize()
+	if prefs.ChromeLayout != "horizontal" {
+		t.Fatalf("chrome layout = %q, want horizontal", prefs.ChromeLayout)
+	}
+}
+
 func TestChromeAnchorOrigin(t *testing.T) {
 	x, y := chromeAnchorOrigin("top_left", 1280, 720, 200, 34)
 	if x != 18 || y != 18 {
@@ -156,6 +165,26 @@ func TestChromeAnchorOrigin(t *testing.T) {
 	x, y = chromeAnchorOrigin("right_center", 1280, 720, 200, 34)
 	if x != 1062 || y != 343 {
 		t.Fatalf("right_center origin = (%v,%v), want (1062,343)", x, y)
+	}
+}
+
+func TestLayoutChromeButtonsVertical(t *testing.T) {
+	app, err := New(Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	app.prefs.ChromeAnchor = "top_left"
+	app.prefs.ChromeLayout = "vertical"
+
+	buttons := app.layoutChromeButtons(1280, 720, session.Snapshot{Phase: session.PhaseConnected})
+	if len(buttons) != 4 {
+		t.Fatalf("button count = %d, want 4", len(buttons))
+	}
+	if buttons[0].rect.x != buttons[1].rect.x {
+		t.Fatalf("expected vertical buttons to share x, got %v and %v", buttons[0].rect.x, buttons[1].rect.x)
+	}
+	if buttons[0].rect.y >= buttons[1].rect.y {
+		t.Fatalf("expected later button to be lower, got %v then %v", buttons[0].rect.y, buttons[1].rect.y)
 	}
 }
 

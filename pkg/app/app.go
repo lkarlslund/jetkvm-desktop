@@ -894,6 +894,12 @@ func (a *App) invokeAction(id string) {
 	case "chrome_anchor:bottom_right":
 		a.prefs.ChromeAnchor = "bottom_right"
 		a.savePreferences()
+	case "chrome_layout:horizontal":
+		a.prefs.ChromeLayout = "horizontal"
+		a.savePreferences()
+	case "chrome_layout:vertical":
+		a.prefs.ChromeLayout = "vertical"
+		a.savePreferences()
 	case "fullscreen":
 		ebiten.SetFullscreen(!ebiten.IsFullscreen())
 	case "tls_disabled":

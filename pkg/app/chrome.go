@@ -282,12 +282,25 @@ func (a *App) layoutChromeButtons(width, height int, snap session.Snapshot) []ch
 
 	const size = 34.0
 	const gap = 8.0
-	totalW := (size * float64(len(defs))) + (gap * float64(len(defs)-1))
+	totalW := size
 	totalH := size
+	horizontal := a.prefs.ChromeLayout != "vertical"
+	if horizontal {
+		totalW = (size * float64(len(defs))) + (gap * float64(len(defs)-1))
+	} else {
+		totalH = (size * float64(len(defs))) + (gap * float64(len(defs)-1))
+	}
 	x, y := chromeAnchorOrigin(a.prefs.ChromeAnchor, float64(width), float64(height), totalW, totalH)
 	out := make([]chromeButton, len(defs))
 	for i, def := range defs {
-		def.rect = rect{x: x + float64(i)*(size+gap), y: y, w: size, h: size}
+		btnX := x
+		btnY := y
+		if horizontal {
+			btnX += float64(i) * (size + gap)
+		} else {
+			btnY += float64(i) * (size + gap)
+		}
+		def.rect = rect{x: btnX, y: btnY, w: size, h: size}
 		out[i] = def
 	}
 	return out
@@ -411,15 +424,6 @@ func (a *App) drawTopBar(screen *ebiten.Image, snap session.Snapshot) {
 	}
 	buttons := a.layoutChromeButtons(screen.Bounds().Dx(), screen.Bounds().Dy(), snap)
 	a.chromeButtons = buttons
-	if len(buttons) == 0 {
-		return
-	}
-	clusterX := buttons[0].rect.x - 10
-	clusterY := buttons[0].rect.y - 4
-	clusterW := buttons[len(buttons)-1].rect.x + buttons[len(buttons)-1].rect.w - clusterX + 10
-	clusterH := 42.0
-	vector.DrawFilledRect(screen, float32(clusterX), float32(clusterY), float32(clusterW), float32(clusterH), rgba(14, 24, 36, 200, alpha), false)
-	vector.StrokeRect(screen, float32(clusterX), float32(clusterY), float32(clusterW), float32(clusterH), 1, rgba(112, 128, 148, 120, alpha), false)
 	for _, btn := range buttons {
 		drawChromeButton(screen, btn, alpha)
 	}
@@ -671,7 +675,7 @@ func (a *App) settingsWideBodyHeight(section settingsSection, w float64) float64
 		}
 		return max(182, 156+wrappedTextHeight(state.Error, w-32, 12)+24)
 	case sectionAppearance:
-		return max(286, 238+wrappedTextHeight("Pinned keeps the chrome visible. Position moves the control cluster without affecting the video.", w-32, 12)+24)
+		return max(330, 280+wrappedTextHeight("Position chooses where the chrome sits on screen. Layout changes whether the control buttons run across or down.", w-32, 12)+24)
 	default:
 		return 220
 	}
@@ -1209,9 +1213,12 @@ func (a *App) drawSettingsAppearance(screen *ebiten.Image, x, y, w float64) {
 	for _, option := range positionOptions {
 		a.drawSettingsAction(screen, option.id, option.label, option.x, option.y, option.w, settingsActionVisual{Enabled: true, Active: a.prefs.ChromeAnchor == option.value})
 	}
-	drawSettingsSectionLabel(screen, "Window", x+16, y+206)
-	a.drawSettingsAction(screen, "fullscreen", "Toggle Fullscreen", x+136, y+194, 160, settingsActionVisual{Enabled: true, Active: ebiten.IsFullscreen()})
-	drawWrappedText(screen, "Pinned keeps the chrome visible. Position moves the control cluster without affecting the video.", x+16, y+238, w-32, 12, color.RGBA{R: 166, G: 178, B: 190, A: 255})
+	drawSettingsSectionLabel(screen, "Layout", x+16, y+206)
+	a.drawSettingsAction(screen, "chrome_layout:horizontal", "Horizontal", x+136, y+194, 112, settingsActionVisual{Enabled: true, Active: a.prefs.ChromeLayout == "horizontal"})
+	a.drawSettingsAction(screen, "chrome_layout:vertical", "Vertical", x+260, y+194, 96, settingsActionVisual{Enabled: true, Active: a.prefs.ChromeLayout == "vertical"})
+	drawSettingsSectionLabel(screen, "Window", x+16, y+248)
+	a.drawSettingsAction(screen, "fullscreen", "Toggle Fullscreen", x+136, y+236, 160, settingsActionVisual{Enabled: true, Active: ebiten.IsFullscreen()})
+	drawWrappedText(screen, "Position chooses where the chrome sits on screen. Layout changes whether the control buttons run across or down.", x+16, y+280, w-32, 12, color.RGBA{R: 166, G: 178, B: 190, A: 255})
 }
 
 func boolWord(v bool) string {

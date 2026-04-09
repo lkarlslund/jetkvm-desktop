@@ -12,6 +12,7 @@ type Preferences struct {
 	Theme           string `json:"theme"`
 	PinChrome       bool   `json:"pin_chrome"`
 	ChromeAnchor    string `json:"chrome_anchor"`
+	ChromeLayout    string `json:"chrome_layout"`
 	HideCursor      bool   `json:"hide_cursor"`
 	ShowPressedKeys bool   `json:"show_pressed_keys"`
 	ScrollThrottle  string `json:"scroll_throttle"`
@@ -22,6 +23,7 @@ func defaultPreferences() Preferences {
 		Theme:           "dark",
 		PinChrome:       false,
 		ChromeAnchor:    "top_right",
+		ChromeLayout:    "horizontal",
 		HideCursor:      false,
 		ShowPressedKeys: false,
 		ScrollThrottle:  "0",
@@ -85,6 +87,11 @@ func (p *Preferences) normalize() {
 	case "top_left", "top_center", "top_right", "left_center", "right_center", "bottom_left", "bottom_center", "bottom_right":
 	default:
 		p.ChromeAnchor = "top_right"
+	}
+	switch p.ChromeLayout {
+	case "horizontal", "vertical":
+	default:
+		p.ChromeLayout = "horizontal"
 	}
 }
 
