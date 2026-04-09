@@ -57,6 +57,9 @@ type DeviceState struct {
 	CloudURL            string
 	CloudAppURL         string
 	KeyboardLayout      string
+	TLSMode             string
+	DisplayRotation     string
+	USBEmulation        bool
 }
 
 type InputRecord struct {
@@ -104,7 +107,7 @@ func NewServer(cfg Config) (*Server, error) {
 	s := &Server{
 		cfg:    cfg,
 		token:  "jetkvm-native-emulator-token",
-		state:  DeviceState{DeviceID: "emu-jetkvm-001", VideoState: "ready", StreamQualityFactor: 0.75, KeyboardLEDMask: 0, KeyboardModifiers: 0, KeysDown: []byte{0, 0, 0, 0, 0, 0}, Hostname: "jetkvm-emulator", KeyboardLayout: "en_US"},
+		state:  DeviceState{DeviceID: "emu-jetkvm-001", VideoState: "ready", StreamQualityFactor: 0.75, KeyboardLEDMask: 0, KeyboardModifiers: 0, KeysDown: []byte{0, 0, 0, 0, 0, 0}, Hostname: "jetkvm-emulator", KeyboardLayout: "en_US", TLSMode: "disabled", DisplayRotation: "270", USBEmulation: true},
 		inputs: make([]InputRecord, 0, 32),
 	}
 	if cfg.Faults.InitialVideoState != "" {
@@ -740,13 +743,46 @@ func (s *session) handleRPC(data []byte) error {
 	case "getEDID":
 		resp = jsonrpc.NewResponse(req.ID, "")
 	case "getUsbEmulationState":
-		resp = jsonrpc.NewResponse(req.ID, true)
+		resp = jsonrpc.NewResponse(req.ID, s.serverRef.state.USBEmulation)
+	case "setUsbEmulationState":
+		if enabled, ok := req.Params["enabled"].(bool); ok {
+			s.serverRef.state.USBEmulation = enabled
+			resp = jsonrpc.NewResponse(req.ID, enabled)
+		} else {
+			resp = jsonrpc.NewErrorResponse(req.ID, -32602, "missing enabled", nil)
+		}
 	case "getCloudState":
 		resp = jsonrpc.NewResponse(req.ID, map[string]any{"connected": s.serverRef.state.CloudURL != "", "url": s.serverRef.state.CloudURL, "appUrl": s.serverRef.state.CloudAppURL})
+	case "getTLSState":
+		resp = jsonrpc.NewResponse(req.ID, map[string]any{"mode": s.serverRef.state.TLSMode})
+	case "setTLSState":
+		if state, ok := req.Params["state"].(map[string]any); ok {
+			if mode, ok := state["mode"].(string); ok && mode != "" {
+				s.serverRef.state.TLSMode = mode
+				resp = jsonrpc.NewResponse(req.ID, true)
+			} else {
+				resp = jsonrpc.NewErrorResponse(req.ID, -32602, "missing mode", nil)
+			}
+		} else {
+			resp = jsonrpc.NewErrorResponse(req.ID, -32602, "missing state", nil)
+		}
 	case "getUsbConfig":
 		resp = jsonrpc.NewResponse(req.ID, map[string]any{"vendor_id": "0xCafe", "product_id": "0x4000"})
 	case "getUsbDevices":
 		resp = jsonrpc.NewResponse(req.ID, []any{})
+	case "getDisplayRotation":
+		resp = jsonrpc.NewResponse(req.ID, map[string]any{"rotation": s.serverRef.state.DisplayRotation})
+	case "setDisplayRotation":
+		if params, ok := req.Params["params"].(map[string]any); ok {
+			if rotation, ok := params["rotation"].(string); ok && rotation != "" {
+				s.serverRef.state.DisplayRotation = rotation
+				resp = jsonrpc.NewResponse(req.ID, true)
+			} else {
+				resp = jsonrpc.NewErrorResponse(req.ID, -32602, "missing rotation", nil)
+			}
+		} else {
+			resp = jsonrpc.NewErrorResponse(req.ID, -32602, "missing params", nil)
+		}
 	case "getKeyboardMacros":
 		resp = jsonrpc.NewResponse(req.ID, []any{})
 	case "getLocalVersion":
@@ -795,6 +831,37 @@ func (s *session) handleHID(channel string, data []byte) error {
 	case hidrpc.Keypress:
 		s.serverRef.applyKeypress(v.Key, v.Press)
 		return s.sendEvent("keysDownState", map[string]any{"modifier": s.serverRef.state.KeyboardModifiers, "keys": s.serverRef.state.KeysDown})
+	case hidrpc.KeyboardMacroReport:
+		if v.IsPaste {
+			stateMsg, err := hidrpc.KeyboardMacroState{State: true, IsPaste: true}.MarshalBinary()
+			if err == nil {
+				_ = s.hid.Send(stateMsg)
+			}
+		}
+		for _, step := range v.Steps {
+			s.serverRef.mu.Lock()
+			s.serverRef.state.KeyboardModifiers = step.Modifier
+			keys := make([]byte, 0, len(step.Keys))
+			for _, key := range step.Keys {
+				keys = append(keys, key)
+			}
+			s.serverRef.state.KeysDown = keys
+			s.serverRef.mu.Unlock()
+			_ = s.sendEvent("keysDownState", map[string]any{"modifier": s.serverRef.state.KeyboardModifiers, "keys": s.serverRef.state.KeysDown})
+		}
+		if v.IsPaste {
+			stateMsg, err := hidrpc.KeyboardMacroState{State: false, IsPaste: true}.MarshalBinary()
+			if err == nil {
+				_ = s.hid.Send(stateMsg)
+			}
+		}
+		return nil
+	case hidrpc.CancelKeyboardMacro:
+		stateMsg, err := hidrpc.KeyboardMacroState{State: false, IsPaste: true}.MarshalBinary()
+		if err == nil {
+			_ = s.hid.Send(stateMsg)
+		}
+		return nil
 	}
 	return nil
 }

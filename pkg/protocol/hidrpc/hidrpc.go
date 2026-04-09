@@ -9,16 +9,21 @@ import (
 const (
 	Version byte = 0x01
 
-	TypeHandshake         byte = 0x01
-	TypeKeyboardReport    byte = 0x02
-	TypePointerReport     byte = 0x03
-	TypeWheelReport       byte = 0x04
-	TypeKeypressReport    byte = 0x05
-	TypeMouseReport       byte = 0x06
-	TypeKeyboardLEDState  byte = 0x32
-	TypeKeysDownState     byte = 0x33
-	TypeKeypressKeepAlive byte = 0x09
+	TypeHandshake           byte = 0x01
+	TypeKeyboardReport      byte = 0x02
+	TypePointerReport       byte = 0x03
+	TypeWheelReport         byte = 0x04
+	TypeKeypressReport      byte = 0x05
+	TypeMouseReport         byte = 0x06
+	TypeKeyboardMacro       byte = 0x07
+	TypeCancelKeyboardMacro byte = 0x08
+	TypeKeyboardLEDState    byte = 0x32
+	TypeKeysDownState       byte = 0x33
+	TypeKeyboardMacroState  byte = 0x34
+	TypeKeypressKeepAlive   byte = 0x09
 )
+
+const HidKeyBufferSize = 6
 
 var ErrUnsupportedMessage = errors.New("unsupported HID-RPC message")
 
@@ -99,6 +104,42 @@ func (m Wheel) MarshalBinary() ([]byte, error) {
 	return []byte{TypeWheelReport, byte(m.Delta)}, nil
 }
 
+type KeyboardMacroStep struct {
+	Modifier byte
+	Keys     [HidKeyBufferSize]byte
+	Delay    uint16
+}
+
+type KeyboardMacroReport struct {
+	IsPaste bool
+	Steps   []KeyboardMacroStep
+}
+
+func (m KeyboardMacroReport) Type() byte { return TypeKeyboardMacro }
+func (m KeyboardMacroReport) MarshalBinary() ([]byte, error) {
+	out := make([]byte, 0, 6+len(m.Steps)*(1+HidKeyBufferSize+2))
+	out = append(out, TypeKeyboardMacro)
+	if m.IsPaste {
+		out = append(out, 1)
+	} else {
+		out = append(out, 0)
+	}
+	out = binary.BigEndian.AppendUint32(out, uint32(len(m.Steps)))
+	for _, step := range m.Steps {
+		out = append(out, step.Modifier)
+		out = append(out, step.Keys[:]...)
+		out = binary.BigEndian.AppendUint16(out, step.Delay)
+	}
+	return out, nil
+}
+
+type CancelKeyboardMacro struct{}
+
+func (m CancelKeyboardMacro) Type() byte { return TypeCancelKeyboardMacro }
+func (m CancelKeyboardMacro) MarshalBinary() ([]byte, error) {
+	return []byte{TypeCancelKeyboardMacro}, nil
+}
+
 type KeypressKeepAlive struct{}
 
 func (m KeypressKeepAlive) Type() byte { return TypeKeypressKeepAlive }
@@ -126,6 +167,24 @@ func (m KeysDownState) MarshalBinary() ([]byte, error) {
 	out = append(out, TypeKeysDownState, m.Modifier)
 	out = append(out, m.Keys...)
 	return out, nil
+}
+
+type KeyboardMacroState struct {
+	State   bool
+	IsPaste bool
+}
+
+func (m KeyboardMacroState) Type() byte { return TypeKeyboardMacroState }
+func (m KeyboardMacroState) MarshalBinary() ([]byte, error) {
+	state := byte(0)
+	if m.State {
+		state = 1
+	}
+	isPaste := byte(0)
+	if m.IsPaste {
+		isPaste = 1
+	}
+	return []byte{TypeKeyboardMacroState, state, isPaste}, nil
 }
 
 func Decode(data []byte) (Message, error) {
@@ -163,6 +222,33 @@ func Decode(data []byte) (Message, error) {
 			return nil, fmt.Errorf("mouse length %d", len(data))
 		}
 		return Mouse{DX: int8(data[1]), DY: int8(data[2]), Buttons: data[3]}, nil
+	case TypeKeyboardMacro:
+		if len(data) < 6 {
+			return nil, fmt.Errorf("keyboard macro length %d", len(data))
+		}
+		stepCount := int(binary.BigEndian.Uint32(data[2:6]))
+		expected := 6 + stepCount*(1+HidKeyBufferSize+2)
+		if len(data) != expected {
+			return nil, fmt.Errorf("keyboard macro length %d expected %d", len(data), expected)
+		}
+		steps := make([]KeyboardMacroStep, 0, stepCount)
+		offset := 6
+		for i := 0; i < stepCount; i++ {
+			var keys [HidKeyBufferSize]byte
+			copy(keys[:], data[offset+1:offset+1+HidKeyBufferSize])
+			steps = append(steps, KeyboardMacroStep{
+				Modifier: data[offset],
+				Keys:     keys,
+				Delay:    binary.BigEndian.Uint16(data[offset+1+HidKeyBufferSize : offset+1+HidKeyBufferSize+2]),
+			})
+			offset += 1 + HidKeyBufferSize + 2
+		}
+		return KeyboardMacroReport{IsPaste: data[1] == 1, Steps: steps}, nil
+	case TypeCancelKeyboardMacro:
+		if len(data) != 1 {
+			return nil, fmt.Errorf("cancel keyboard macro length %d", len(data))
+		}
+		return CancelKeyboardMacro{}, nil
 	case TypeWheelReport:
 		if len(data) != 2 {
 			return nil, fmt.Errorf("wheel length %d", len(data))
@@ -178,6 +264,11 @@ func Decode(data []byte) (Message, error) {
 			return nil, fmt.Errorf("keys down length %d", len(data))
 		}
 		return KeysDownState{Modifier: data[1], Keys: append([]byte(nil), data[2:]...)}, nil
+	case TypeKeyboardMacroState:
+		if len(data) != 3 {
+			return nil, fmt.Errorf("keyboard macro state length %d", len(data))
+		}
+		return KeyboardMacroState{State: data[1] == 1, IsPaste: data[2] == 1}, nil
 	case TypeKeypressKeepAlive:
 		if len(data) != 1 {
 			return nil, fmt.Errorf("keypress keepalive length %d", len(data))

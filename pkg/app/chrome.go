@@ -17,6 +17,8 @@ type iconKind string
 const (
 	iconReconnect  iconKind = "reconnect"
 	iconMouse      iconKind = "mouse"
+	iconPaste      iconKind = "paste"
+	iconStats      iconKind = "stats"
 	iconMinus      iconKind = "minus"
 	iconPlus       iconKind = "plus"
 	iconPower      iconKind = "power"
@@ -129,23 +131,21 @@ func settingsSections(snap session.Snapshot) []settingsSectionDef {
 		{
 			id:          sectionKeyboard,
 			label:       "Keyboard",
-			description: "Layout, paste behavior, pressed-key display",
+			description: "Layout and pressed-key display",
 			available:   true,
 			items: []string{
 				"Keyboard layout selection",
 				"Show pressed keys overlay",
-				"Paste-text behavior tied to selected layout",
 			},
 		},
 		{
 			id:          sectionVideo,
 			label:       "Video",
-			description: "Stream quality, EDID, and client-side video tuning",
+			description: "Stream quality and EDID",
 			available:   true,
 			items: []string{
 				"Stream quality presets",
-				"EDID presets and custom EDID",
-				"Brightness, contrast, and saturation tuning",
+				"Current EDID state",
 			},
 		},
 		{
@@ -177,8 +177,7 @@ func settingsSections(snap session.Snapshot) []settingsSectionDef {
 			available:   true,
 			items: []string{
 				"Auto-hide top control bar",
-				"Dark overlay styling and UI density",
-				"Future theme selection",
+				"Fullscreen",
 			},
 		},
 		{
@@ -261,15 +260,23 @@ func (a *App) revealUIFor(d time.Duration) {
 }
 
 func (a *App) layoutChromeButtons(width int, snap session.Snapshot) []chromeButton {
-	canAct := snap.Phase == session.PhaseConnected || snap.Phase == session.PhaseDisconnected || snap.Phase == session.PhaseReconnecting
-	defs := []chromeButton{
-		{id: "reconnect", hint: reconnectLabel(snap.Phase), icon: iconReconnect, enabled: true},
-		{id: "mouse", hint: mouseButtonLabel(a.relative), icon: iconMouse, enabled: snap.Phase == session.PhaseConnected, active: a.relative},
-		{id: "quality_down", hint: "Lower stream quality", icon: iconMinus, enabled: snap.Phase == session.PhaseConnected},
-		{id: "quality_up", hint: "Raise stream quality", icon: iconPlus, enabled: snap.Phase == session.PhaseConnected},
-		{id: "fullscreen", hint: "Toggle fullscreen", icon: iconFullscreen, enabled: true, active: ebiten.IsFullscreen()},
-		{id: "reboot", hint: "Reboot device", icon: iconPower, enabled: canAct},
-		{id: "settings", hint: "Settings", icon: iconSettings, enabled: true, active: a.settingsOpen},
+	defs := make([]chromeButton, 0, 7)
+	if snap.Phase != session.PhaseConnected {
+		defs = append(defs, chromeButton{id: "reconnect", hint: reconnectLabel(snap.Phase), icon: iconReconnect, enabled: true})
+	}
+	if snap.Phase == session.PhaseConnected {
+		defs = append(defs,
+			chromeButton{id: "paste", hint: "Paste text", icon: iconPaste, enabled: true, active: a.pasteOpen},
+			chromeButton{id: "mouse", hint: mouseButtonLabel(a.relative), icon: iconMouse, enabled: true, active: a.relative},
+		)
+	}
+	defs = append(defs,
+		chromeButton{id: "stats", hint: "Connection stats", icon: iconStats, enabled: true, active: a.statsOpen},
+		chromeButton{id: "fullscreen", hint: "Toggle fullscreen", icon: iconFullscreen, enabled: true, active: ebiten.IsFullscreen()},
+		chromeButton{id: "settings", hint: "Settings", icon: iconSettings, enabled: true, active: a.settingsOpen},
+	)
+	if snap.Phase == session.PhaseConnected {
+		defs = append(defs, chromeButton{id: "reboot", hint: "Reboot device", icon: iconPower, enabled: true})
 	}
 
 	const size = 34.0
@@ -332,6 +339,14 @@ func drawIcon(screen *ebiten.Image, kind iconKind, r rect, clr color.Color, alph
 			vector.StrokeLine(screen, left+2, top, right-1, cy, 1.5, clr, true)
 			vector.StrokeLine(screen, left+2, top, cx+1, bottom-2, 1.5, clr, true)
 		}
+	case iconPaste:
+		vector.StrokeRect(screen, left, top+2, right-left, bottom-top-2, 1.4, clr, false)
+		vector.StrokeLine(screen, left+3, top+6, right-3, top+6, 1.4, clr, true)
+		vector.StrokeLine(screen, cx, top+6, cx, top+1, 1.4, clr, true)
+	case iconStats:
+		vector.StrokeLine(screen, left+2, bottom, left+2, mid+4, 2, clr, true)
+		vector.StrokeLine(screen, cx, bottom, cx, top+5, 2, clr, true)
+		vector.StrokeLine(screen, right-2, bottom, right-2, mid-1, 2, clr, true)
 	case iconMinus:
 		vector.StrokeLine(screen, left, cy, right, cy, 2, clr, true)
 	case iconPlus:
@@ -472,7 +487,7 @@ func (a *App) drawSettingsOverlay(screen *ebiten.Image, snap session.Snapshot) {
 	vector.DrawFilledRect(screen, float32(panelX), float32(panelY), float32(sidebarW), float32(panelH), color.RGBA{R: 18, G: 28, B: 40, A: 255}, false)
 
 	drawText(screen, "Settings", panelX+22, panelY+18, 22, color.RGBA{R: 240, G: 244, B: 248, A: 255})
-	drawWrappedText(screen, "Mirrors the web UI structure, starting with the controls the native client already supports.", panelX+22, panelY+46, panelW-80, 12, color.RGBA{R: 166, G: 178, B: 190, A: 255})
+	drawWrappedText(screen, "Settings structure matches the upstream web client and only shows the current native or target capability surface.", panelX+22, panelY+46, panelW-80, 12, color.RGBA{R: 166, G: 178, B: 190, A: 255})
 
 	closeBtn := chromeButton{
 		id:      "settings_close",
@@ -738,7 +753,7 @@ func (a *App) drawSettingsGeneral(screen *ebiten.Image, snap session.Snapshot, x
 }
 
 func (a *App) drawSettingsMouse(screen *ebiten.Image, snap session.Snapshot, x, y, w float64) {
-	a.drawSettingsCard(screen, x, y, w, 226, "Mouse Mode", "The web UI exposes absolute and relative modes, cursor behavior, scroll throttling, and a jiggler. The native client now exposes mode switching plus local cursor and wheel behavior.")
+	a.drawSettingsCard(screen, x, y, w, 206, "Mouse Mode", "Absolute and relative modes, host cursor visibility, and wheel throttling.")
 	a.drawSettingsAction(screen, "mouse_absolute", "Absolute", x+16, y+104, 110, snap.Phase == session.PhaseConnected, !a.relative)
 	a.drawSettingsAction(screen, "mouse_relative", "Relative", x+138, y+104, 110, snap.Phase == session.PhaseConnected, a.relative)
 	a.drawSettingsAction(screen, "mouse_hide_cursor", "Hide Host Cursor", x+260, y+104, 154, true, a.hideCursor)
@@ -748,11 +763,10 @@ func (a *App) drawSettingsMouse(screen *ebiten.Image, snap session.Snapshot, x, 
 	a.drawSettingsAction(screen, "scroll_25", "Medium", x+168, y+176, 84, true, a.scrollThrottle == 25*time.Millisecond)
 	a.drawSettingsAction(screen, "scroll_50", "High", x+264, y+176, 72, true, a.scrollThrottle == 50*time.Millisecond)
 	a.drawSettingsAction(screen, "scroll_100", "Very High", x+348, y+176, 108, true, a.scrollThrottle == 100*time.Millisecond)
-	drawWrappedText(screen, "Jiggler remains planned until the native client has a dedicated UI for scheduling and safety confirmations.", x+16, y+212, w-32, 13, color.RGBA{R: 166, G: 178, B: 190, A: 255})
 }
 
 func (a *App) drawSettingsKeyboard(screen *ebiten.Image, snap session.Snapshot, x, y, w float64) {
-	a.drawSettingsCard(screen, x, y, w, 248, "Keyboard", "The web UI exposes layout selection and a pressed-key view. The native client now supports the same structure, with layout written over RPC and the key overlay rendered locally.")
+	a.drawSettingsCard(screen, x, y, w, 248, "Keyboard", "Layout selection and a local pressed-key view.")
 	drawText(screen, "Active layout", x+16, y+78, 13, color.RGBA{R: 166, G: 178, B: 190, A: 255})
 	layout := snap.KeyboardLayout
 	if layout == "" {
@@ -788,11 +802,11 @@ func (a *App) drawSettingsKeyboard(screen *ebiten.Image, snap session.Snapshot, 
 			rowY += 38
 		}
 	}
-	drawWrappedText(screen, "The native client still uses physical-HID semantics first. Non-US punctuation remains best-effort until a deeper layout pass lands.", x+16, y+220, w-32, 13, color.RGBA{R: 166, G: 178, B: 190, A: 255})
+	drawWrappedText(screen, "Paste and keyboard input use physical HID semantics. Unsupported paste characters are skipped and shown before send.", x+16, y+220, w-32, 13, color.RGBA{R: 166, G: 178, B: 190, A: 255})
 }
 
 func (a *App) drawSettingsVideo(screen *ebiten.Image, snap session.Snapshot, x, y, w float64) {
-	a.drawSettingsCard(screen, x, y, w, 214, "Stream Quality", "The web UI exposes high, medium, and low quality plus EDID and image tuning. The native client supports quality directly and exposes the current EDID as device state.")
+	a.drawSettingsCard(screen, x, y, w, 198, "Stream Quality", "The native client exposes quality presets and current EDID state.")
 	a.drawSettingsAction(screen, "quality_preset_high", "High", x+16, y+106, 96, snap.Phase == session.PhaseConnected, snap.Quality >= 0.95)
 	a.drawSettingsAction(screen, "quality_preset_medium", "Medium", x+124, y+106, 96, snap.Phase == session.PhaseConnected, snap.Quality >= 0.45 && snap.Quality < 0.95)
 	a.drawSettingsAction(screen, "quality_preset_low", "Low", x+232, y+106, 96, snap.Phase == session.PhaseConnected, snap.Quality < 0.45)
@@ -805,14 +819,13 @@ func (a *App) drawSettingsVideo(screen *ebiten.Image, snap session.Snapshot, x, 
 		edid = edid[:60] + "..."
 	}
 	drawWrappedText(screen, edid, x+72, y+176, w-88, 13, color.RGBA{R: 236, G: 241, B: 245, A: 255})
-	drawWrappedText(screen, "EDID write support and image tuning controls remain planned for a later native pass.", x+16, y+202, w-32, 13, color.RGBA{R: 166, G: 178, B: 190, A: 255})
 }
 
 func (a *App) drawSettingsHardware(screen *ebiten.Image, x, y, w float64) {
 	a.mu.RLock()
 	state := a.sectionData.Hardware
 	a.mu.RUnlock()
-	a.drawSettingsCard(screen, x, y, w, 208, "Hardware", "The web UI uses this section for display, USB, and power settings. The native client now surfaces the hardware state that is already reachable through the current RPC surface.")
+	a.drawSettingsCard(screen, x, y, w, 244, "Hardware", "Display orientation and USB emulation state exposed by the current target.")
 	if state.Loading {
 		drawText(screen, "Loading hardware state…", x+16, y+82, 13, color.RGBA{R: 236, G: 241, B: 245, A: 255})
 		return
@@ -829,8 +842,14 @@ func (a *App) drawSettingsHardware(screen *ebiten.Image, x, y, w float64) {
 	drawText(screen, fallbackLabel(state.USBDevicesSummary, "Unavailable"), x+128, y+134, 13, color.RGBA{R: 236, G: 241, B: 245, A: 255})
 	drawText(screen, "Display Rotation", x+16, y+160, 13, color.RGBA{R: 166, G: 178, B: 190, A: 255})
 	drawText(screen, fallbackLabel(state.DisplayRotation, "Unavailable"), x+128, y+160, 13, color.RGBA{R: 236, G: 241, B: 245, A: 255})
+	a.drawSettingsAction(screen, "rotate_normal", "Normal", x+16, y+192, 88, state.DisplayRotation != "", state.DisplayRotation == "270")
+	a.drawSettingsAction(screen, "rotate_inverted", "Inverted", x+116, y+192, 98, state.DisplayRotation != "", state.DisplayRotation == "90")
+	if state.USBEmulation != nil {
+		a.drawSettingsAction(screen, "usb_emulation_on", "USB On", x+228, y+192, 86, true, *state.USBEmulation)
+		a.drawSettingsAction(screen, "usb_emulation_off", "USB Off", x+326, y+192, 92, true, !*state.USBEmulation)
+	}
 	if state.Error != "" {
-		drawText(screen, state.Error, x+16, y+190, 13, color.RGBA{R: 220, G: 132, B: 132, A: 255})
+		drawText(screen, state.Error, x+16, y+226, 13, color.RGBA{R: 220, G: 132, B: 132, A: 255})
 	}
 }
 
@@ -838,7 +857,7 @@ func (a *App) drawSettingsAccess(screen *ebiten.Image, x, y, w float64) {
 	a.mu.RLock()
 	state := a.sectionData.Access
 	a.mu.RUnlock()
-	a.drawSettingsCard(screen, x, y, w, 208, "Access", "The web UI uses this section for local auth, TLS, and cloud adoption. The native client now shows the access state that the current target exposes.")
+	a.drawSettingsCard(screen, x, y, w, 244, "Access", "Local access, TLS mode, and cloud adoption state exposed by the current target.")
 	if state.Loading {
 		drawText(screen, "Loading access state…", x+16, y+82, 13, color.RGBA{R: 236, G: 241, B: 245, A: 255})
 		return
@@ -851,8 +870,10 @@ func (a *App) drawSettingsAccess(screen *ebiten.Image, x, y, w float64) {
 	drawText(screen, fallbackLabel(state.CloudAppURL, "Unavailable"), x+136, y+134, 13, color.RGBA{R: 236, G: 241, B: 245, A: 255})
 	drawText(screen, "TLS Mode", x+16, y+160, 13, color.RGBA{R: 166, G: 178, B: 190, A: 255})
 	drawText(screen, fallbackLabel(state.TLSMode, "Unavailable"), x+136, y+160, 13, color.RGBA{R: 236, G: 241, B: 245, A: 255})
+	a.drawSettingsAction(screen, "tls_disabled", "Disabled", x+16, y+192, 92, state.TLSMode != "", state.TLSMode == "disabled")
+	a.drawSettingsAction(screen, "tls_self_signed", "Self-Signed", x+120, y+192, 114, state.TLSMode != "", state.TLSMode == "self-signed")
 	if state.Error != "" {
-		drawText(screen, state.Error, x+16, y+190, 13, color.RGBA{R: 220, G: 132, B: 132, A: 255})
+		drawText(screen, state.Error, x+16, y+226, 13, color.RGBA{R: 220, G: 132, B: 132, A: 255})
 	}
 }
 
@@ -860,7 +881,7 @@ func (a *App) drawSettingsNetwork(screen *ebiten.Image, x, y, w float64) {
 	a.mu.RLock()
 	state := a.sectionData.Network
 	a.mu.RUnlock()
-	a.drawSettingsCard(screen, x, y, w, 190, "Network", "The web UI exposes full network configuration here. The native client now surfaces the current network state exposed by the target.")
+	a.drawSettingsCard(screen, x, y, w, 174, "Network", "Current hostname, IP, and DHCP state exposed by the target.")
 	if state.Loading {
 		drawText(screen, "Loading network state…", x+16, y+82, 13, color.RGBA{R: 236, G: 241, B: 245, A: 255})
 		return
@@ -875,9 +896,8 @@ func (a *App) drawSettingsNetwork(screen *ebiten.Image, x, y, w float64) {
 	} else {
 		drawText(screen, "Unavailable", x+112, y+134, 13, color.RGBA{R: 236, G: 241, B: 245, A: 255})
 	}
-	drawText(screen, "Full static/DHCP editing remains planned for a later native pass.", x+16, y+166, 13, color.RGBA{R: 166, G: 178, B: 190, A: 255})
 	if state.Error != "" {
-		drawText(screen, state.Error, x+16, y+186, 13, color.RGBA{R: 220, G: 132, B: 132, A: 255})
+		drawText(screen, state.Error, x+16, y+160, 13, color.RGBA{R: 220, G: 132, B: 132, A: 255})
 	}
 }
 
@@ -912,7 +932,7 @@ func (a *App) drawSettingsAdvanced(screen *ebiten.Image, x, y, w float64) {
 }
 
 func (a *App) drawSettingsAppearance(screen *ebiten.Image, x, y, w float64) {
-	a.drawSettingsCard(screen, x, y, w, 188, "Appearance", "The web UI only exposes theme selection here. In the native client this section controls how much chrome stays visible while you work.")
+	a.drawSettingsCard(screen, x, y, w, 188, "Appearance", "Desktop-specific chrome visibility and fullscreen behavior.")
 	drawText(screen, "Chrome mode", x+16, y+78, 13, color.RGBA{R: 166, G: 178, B: 190, A: 255})
 	a.drawSettingsAction(screen, "pin_chrome_off", "Auto-hide", x+136, y+66, 96, true, !a.prefs.PinChrome)
 	a.drawSettingsAction(screen, "pin_chrome_on", "Pinned", x+244, y+66, 84, true, a.prefs.PinChrome)
@@ -930,17 +950,11 @@ func boolWord(v bool) string {
 
 func (a *App) drawSettingsPlanned(screen *ebiten.Image, section settingsSectionDef, x, y, w float64) {
 	a.drawSettingsCard(screen, x, y, w, 230, section.label, section.description)
-	status := "Planned"
-	if section.available {
-		status = "In progress"
-	}
-	drawText(screen, "Status", x+16, y+78, 13, color.RGBA{R: 166, G: 178, B: 190, A: 255})
-	drawText(screen, status, x+96, y+78, 13, color.RGBA{R: 236, G: 241, B: 245, A: 255})
-	drawText(screen, "Web UI surface", x+16, y+106, 13, color.RGBA{R: 166, G: 178, B: 190, A: 255})
-	lineY := y + 132
+	drawText(screen, "Current upstream surface", x+16, y+78, 13, color.RGBA{R: 166, G: 178, B: 190, A: 255})
+	lineY := y + 104
 	for _, item := range section.items {
 		drawText(screen, "• "+item, x+24, lineY, 13, color.RGBA{R: 236, G: 241, B: 245, A: 255})
 		lineY += 24
 	}
-	drawWrappedText(screen, "This section is listed so the native settings map stays aligned with the upstream web interface as features land.", x+16, y+194, w-32, 13, color.RGBA{R: 166, G: 178, B: 190, A: 255})
+	drawWrappedText(screen, "This section is not currently exposed by the native client or the current target. It stays in the list so the settings map matches the upstream product structure.", x+16, y+184, w-32, 13, color.RGBA{R: 166, G: 178, B: 190, A: 255})
 }

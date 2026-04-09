@@ -38,6 +38,25 @@ type LifecycleEvent struct {
 	Connection webrtc.PeerConnectionState
 	Err        string
 	Signaling  SignalingMode
+	PasteState bool
+}
+
+type StatsSnapshot struct {
+	SignalingMode   SignalingMode
+	RTCState        webrtc.PeerConnectionState
+	HIDReady        bool
+	VideoReady      bool
+	FrameWidth      int
+	FrameHeight     int
+	BytesReceived   uint64
+	BitrateKbps     float64
+	PacketsLost     int32
+	JitterMs        float64
+	FramesDecoded   uint32
+	FramesRendered  uint32
+	FramesPerSecond float64
+	RoundTripMs     float64
+	LastError       string
 }
 
 type Client struct {
@@ -60,6 +79,15 @@ type Client struct {
 	signalConn     *websocket.Conn
 	signalMu       sync.Mutex
 	signalMode     SignalingMode
+	statsMu        sync.Mutex
+	lastStats      statsSample
+	lastError      atomic.Value
+}
+
+type statsSample struct {
+	at            time.Time
+	bytesReceived uint64
+	framesDecoded uint32
 }
 
 type pendingCall struct {
@@ -316,6 +344,30 @@ func (c *Client) SendWheel(delta int8) error {
 	return c.Call(context.Background(), "wheelReport", map[string]any{"wheelY": int(delta)}, nil)
 }
 
+func (c *Client) ExecuteKeyboardMacro(isPaste bool, steps []hidrpc.KeyboardMacroStep) error {
+	if c.hidDC == nil {
+		return fmt.Errorf("hid channel not ready")
+	}
+	msg := hidrpc.KeyboardMacroReport{IsPaste: isPaste, Steps: steps}
+	data, err := msg.MarshalBinary()
+	if err != nil {
+		return err
+	}
+	return c.hidDC.Send(data)
+}
+
+func (c *Client) CancelKeyboardMacro() error {
+	if c.hidDC == nil {
+		return fmt.Errorf("hid channel not ready")
+	}
+	msg := hidrpc.CancelKeyboardMacro{}
+	data, err := msg.MarshalBinary()
+	if err != nil {
+		return err
+	}
+	return c.hidDC.Send(data)
+}
+
 func (c *Client) VideoStream() *video.Stream {
 	return c.videoStream
 }
@@ -359,11 +411,16 @@ func (c *Client) openDataChannels() error {
 		if err != nil {
 			return
 		}
-		if hs, ok := decoded.(hidrpc.Handshake); ok && hs.Version <= hidrpc.Version {
-			c.hidReadyOnce.Do(func() {
-				close(c.hidReady)
-				c.emitLifecycle(LifecycleEvent{Type: "hid_ready"})
-			})
+		switch v := decoded.(type) {
+		case hidrpc.Handshake:
+			if v.Version <= hidrpc.Version {
+				c.hidReadyOnce.Do(func() {
+					close(c.hidReady)
+					c.emitLifecycle(LifecycleEvent{Type: "hid_ready"})
+				})
+			}
+		case hidrpc.KeyboardMacroState:
+			c.emitLifecycle(LifecycleEvent{Type: "paste_state", PasteState: v.State && v.IsPaste})
 		}
 	})
 
@@ -404,10 +461,68 @@ func (c *Client) LatestFrameInfo() (image.Image, time.Time) {
 }
 
 func (c *Client) emitLifecycle(evt LifecycleEvent) {
+	if evt.Err != "" {
+		c.lastError.Store(evt.Err)
+	}
 	select {
 	case c.lifecycleCh <- evt:
 	default:
 	}
+}
+
+func (c *Client) Stats() StatsSnapshot {
+	stats := StatsSnapshot{
+		SignalingMode: c.signalMode,
+	}
+	if c.pc != nil {
+		stats.RTCState = c.pc.ConnectionState()
+		report := c.pc.GetStats()
+		now := time.Now()
+		for _, raw := range report {
+			switch v := raw.(type) {
+			case webrtc.InboundRTPStreamStats:
+				if v.Kind != "video" {
+					continue
+				}
+				stats.FrameWidth = int(v.FrameWidth)
+				stats.FrameHeight = int(v.FrameHeight)
+				stats.BytesReceived = v.BytesReceived
+				stats.PacketsLost = v.PacketsLost
+				stats.JitterMs = v.Jitter * 1000
+				stats.FramesDecoded = v.FramesDecoded
+				stats.FramesRendered = v.FramesRendered
+				c.statsMu.Lock()
+				last := c.lastStats
+				if !last.at.IsZero() {
+					elapsed := now.Sub(last.at).Seconds()
+					if elapsed > 0 {
+						stats.BitrateKbps = float64(v.BytesReceived-last.bytesReceived) * 8 / elapsed / 1000
+						stats.FramesPerSecond = float64(v.FramesDecoded-last.framesDecoded) / elapsed
+					}
+				}
+				c.lastStats = statsSample{
+					at:            now,
+					bytesReceived: v.BytesReceived,
+					framesDecoded: v.FramesDecoded,
+				}
+				c.statsMu.Unlock()
+			case webrtc.ICECandidatePairStats:
+				if v.State == webrtc.StatsICECandidatePairStateSucceeded || v.Nominated {
+					stats.RoundTripMs = v.CurrentRoundTripTime * 1000
+				}
+			}
+		}
+	}
+	select {
+	case <-c.hidReady:
+		stats.HIDReady = true
+	default:
+	}
+	stats.VideoReady = c.VideoStream() != nil && c.VideoStream().Latest() != nil
+	if err, ok := c.lastError.Load().(string); ok {
+		stats.LastError = err
+	}
+	return stats
 }
 
 func (c *Client) runHIDHandshake(dc *webrtc.DataChannel) {

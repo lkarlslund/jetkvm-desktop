@@ -12,6 +12,7 @@ import (
 	"github.com/hajimehoshi/ebiten/v2/inpututil"
 	"github.com/hajimehoshi/ebiten/v2/vector"
 
+	"github.com/lkarlslund/jetkvm-native/pkg/client"
 	"github.com/lkarlslund/jetkvm-native/pkg/input"
 	"github.com/lkarlslund/jetkvm-native/pkg/session"
 )
@@ -45,16 +46,26 @@ type App struct {
 	lastUIY         int
 	uiVisibleUntil  time.Time
 	settingsOpen    bool
+	pasteOpen       bool
+	statsOpen       bool
 	settingsSection settingsSection
 	chromeButtons   []chromeButton
 	settingsButtons []chromeButton
 	settingsPanel   rect
+	pasteButtons    []chromeButton
+	pastePanel      rect
 	prefs           Preferences
 	hideCursor      bool
 	showPressedKeys bool
 	scrollThrottle  time.Duration
 	lastWheelAt     time.Time
 	sectionData     sectionData
+	pasteText       string
+	pasteDelay      uint16
+	pasteInvalid    string
+	pasteError      string
+	stats           client.StatsSnapshot
+	lastStatsPoll   time.Time
 }
 
 func New(cfg Config) (*App, error) {
@@ -77,6 +88,7 @@ func New(cfg Config) (*App, error) {
 		hideCursor:      prefs.HideCursor,
 		showPressedKeys: prefs.ShowPressedKeys,
 		scrollThrottle:  scrollThrottleFromPref(prefs.ScrollThrottle),
+		pasteDelay:      100,
 	}, nil
 }
 
@@ -86,6 +98,12 @@ func (a *App) Start(ctx context.Context) {
 
 func (a *App) Update() error {
 	if inpututil.IsKeyJustPressed(ebiten.KeyEscape) {
+		if a.pasteOpen {
+			a.pasteOpen = false
+			a.applyCursorMode()
+			a.revealUIFor(1200 * time.Millisecond)
+			return nil
+		}
 		if a.settingsOpen {
 			a.settingsOpen = false
 			a.revealUIFor(1200 * time.Millisecond)
@@ -96,6 +114,7 @@ func (a *App) Update() error {
 	a.syncSessionState()
 	a.syncWindowTitle()
 	a.syncChromeVisibility()
+	a.syncStats()
 	nowFocused := ebiten.IsFocused()
 	if a.focused && !nowFocused {
 		a.releaseAllKeys(true)
@@ -122,6 +141,7 @@ func (a *App) Update() error {
 		a.handleClick()
 	}
 
+	a.syncPasteInput()
 	a.syncVideoFrame()
 	a.syncKeyboard()
 	a.syncMouse()
@@ -172,8 +192,10 @@ func (a *App) Draw(screen *ebiten.Image) {
 	a.drawStatusFooter(screen, snap)
 	a.drawPressedKeysOverlay(screen)
 	a.drawOverlay(screen, snap, img != nil)
+	a.drawStatsOverlay(screen)
 	a.drawHint(screen)
 	a.drawSettingsOverlay(screen, snap)
+	a.drawPasteOverlay(screen, snap)
 }
 
 func (a *App) Layout(outsideWidth, outsideHeight int) (int, int) {
@@ -186,7 +208,7 @@ func (a *App) Layout(outsideWidth, outsideHeight int) (int, int) {
 }
 
 func (a *App) syncKeyboard() {
-	if !a.focused || a.settingsOpen || a.ctrl.Snapshot().Phase != session.PhaseConnected {
+	if !a.focused || a.settingsOpen || a.pasteOpen || a.ctrl.Snapshot().Phase != session.PhaseConnected {
 		return
 	}
 	rawKeys := inpututil.AppendPressedKeys(nil)
@@ -202,7 +224,7 @@ func (a *App) syncKeyboard() {
 }
 
 func (a *App) syncMouse() {
-	if a.settingsOpen || a.ctrl.Snapshot().Phase != session.PhaseConnected {
+	if a.settingsOpen || a.pasteOpen || a.ctrl.Snapshot().Phase != session.PhaseConnected {
 		return
 	}
 	x, y := ebiten.CursorPosition()
@@ -499,6 +521,8 @@ func (a *App) applyCursorMode() {
 	switch {
 	case a.settingsOpen:
 		ebiten.SetCursorMode(ebiten.CursorModeVisible)
+	case a.pasteOpen:
+		ebiten.SetCursorMode(ebiten.CursorModeVisible)
 	case a.relative:
 		ebiten.SetCursorMode(ebiten.CursorModeCaptured)
 	case a.hideCursor:
@@ -517,6 +541,18 @@ func (a *App) savePreferences() {
 
 func (a *App) handleClick() {
 	x, y := ebiten.CursorPosition()
+	for _, btn := range a.pasteButtons {
+		if !btn.enabled || !btn.rect.contains(x, y) {
+			continue
+		}
+		a.invokeAction(btn.id)
+		return
+	}
+	if a.pasteOpen && !a.pastePanel.contains(x, y) {
+		a.pasteOpen = false
+		a.applyCursorMode()
+		return
+	}
 	for _, btn := range a.settingsButtons {
 		if !btn.enabled || !btn.rect.contains(x, y) {
 			continue
@@ -545,6 +581,23 @@ func (a *App) invokeAction(id string) {
 		a.ctrl.ReconnectNow()
 	case "mouse":
 		a.setMouseRelative(!a.relative)
+	case "paste":
+		a.pasteOpen = !a.pasteOpen
+		if a.pasteOpen {
+			a.loadClipboardText()
+			a.settingsOpen = false
+		}
+		a.applyCursorMode()
+	case "stats":
+		a.statsOpen = !a.statsOpen
+	case "paste_load_clipboard":
+		a.loadClipboardText()
+	case "paste_send":
+		go a.submitPaste()
+	case "paste_cancel":
+		_ = a.ctrl.CancelPaste()
+		a.pasteOpen = false
+		a.applyCursorMode()
 	case "mouse_absolute":
 		a.setMouseRelative(false)
 	case "mouse_relative":
@@ -564,6 +617,7 @@ func (a *App) invokeAction(id string) {
 	case "settings":
 		a.settingsOpen = !a.settingsOpen
 		if a.settingsOpen {
+			a.pasteOpen = false
 			a.refreshSettingsSection(a.settingsSection)
 		}
 		a.applyCursorMode()
@@ -601,6 +655,24 @@ func (a *App) invokeAction(id string) {
 		a.savePreferences()
 	case "fullscreen":
 		ebiten.SetFullscreen(!ebiten.IsFullscreen())
+	case "tls_disabled":
+		_ = a.ctrl.SetTLSMode("disabled")
+		a.refreshSettingsSection(sectionAccess)
+	case "tls_self_signed":
+		_ = a.ctrl.SetTLSMode("self-signed")
+		a.refreshSettingsSection(sectionAccess)
+	case "rotate_normal":
+		_ = a.ctrl.SetDisplayRotation("270")
+		a.refreshSettingsSection(sectionHardware)
+	case "rotate_inverted":
+		_ = a.ctrl.SetDisplayRotation("90")
+		a.refreshSettingsSection(sectionHardware)
+	case "usb_emulation_on":
+		_ = a.ctrl.SetUSBEmulation(true)
+		a.refreshSettingsSection(sectionHardware)
+	case "usb_emulation_off":
+		_ = a.ctrl.SetUSBEmulation(false)
+		a.refreshSettingsSection(sectionHardware)
 	case "layout:en_US":
 		_ = a.ctrl.SetKeyboardLayout("en_US")
 	case "layout:en_UK":
@@ -628,13 +700,13 @@ func (a *App) invokeAction(id string) {
 func (a *App) syncChromeVisibility() {
 	x, y := ebiten.CursorPosition()
 	if x != a.lastUIX || y != a.lastUIY {
-		if y <= 72 || a.settingsOpen {
+		if y <= 72 || a.settingsOpen || a.pasteOpen {
 			a.revealUIFor(1600 * time.Millisecond)
 		}
 		a.lastUIX = x
 		a.lastUIY = y
 	}
-	if a.settingsOpen {
+	if a.settingsOpen || a.pasteOpen {
 		a.applyCursorMode()
 		a.revealUIFor(500 * time.Millisecond)
 	}
@@ -647,6 +719,9 @@ func (a *App) syncSessionState() {
 		return
 	}
 	if a.lastPhase == session.PhaseConnected && phase != session.PhaseConnected {
+		if a.pasteOpen {
+			a.pasteOpen = false
+		}
 		a.releaseAllKeys(false)
 		a.releasePointerState()
 		a.lastButtons = 0

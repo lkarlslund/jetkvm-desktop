@@ -12,6 +12,7 @@ import (
 	"github.com/pion/webrtc/v4"
 
 	"github.com/lkarlslund/jetkvm-native/pkg/client"
+	"github.com/lkarlslund/jetkvm-native/pkg/input"
 )
 
 type Phase string
@@ -55,6 +56,7 @@ type Snapshot struct {
 	LastError             string
 	RTCState              webrtc.PeerConnectionState
 	SignalingMode         client.SignalingMode
+	PasteInProgress       bool
 }
 
 type Controller struct {
@@ -164,6 +166,35 @@ func (c *Controller) SetKeyboardLayout(layout string) error {
 	return nil
 }
 
+func (c *Controller) SetTLSMode(mode string) error {
+	if mode == "" {
+		return errors.New("tls mode is required")
+	}
+	return c.call(context.Background(), "setTLSState", map[string]any{
+		"state": map[string]any{"mode": mode},
+	}, nil)
+}
+
+func (c *Controller) SetDisplayRotation(rotation string) error {
+	if rotation == "" {
+		return errors.New("display rotation is required")
+	}
+	return c.call(context.Background(), "setDisplayRotation", map[string]any{
+		"params": map[string]any{"rotation": rotation},
+	}, nil)
+}
+
+func (c *Controller) SetUSBEmulation(enabled bool) error {
+	return c.call(context.Background(), "setUsbEmulationState", map[string]any{"enabled": enabled}, nil)
+}
+
+func (c *Controller) SetNetworkSettings(settings map[string]any) error {
+	if len(settings) == 0 {
+		return errors.New("network settings are required")
+	}
+	return c.call(context.Background(), "setNetworkSettings", map[string]any{"settings": settings}, nil)
+}
+
 func (c *Controller) SendKeypress(key byte, press bool) error {
 	current := c.clientIfConnected()
 	if current == nil {
@@ -194,6 +225,59 @@ func (c *Controller) SendWheel(delta int8) error {
 		return errors.New("client not connected")
 	}
 	return current.SendWheel(delta)
+}
+
+func (c *Controller) ExecutePaste(text string, delay uint16) ([]rune, error) {
+	current := c.clientIfConnected()
+	if current == nil {
+		return nil, errors.New("client not connected")
+	}
+	layout := c.Snapshot().KeyboardLayout
+	steps, invalid := input.BuildPasteMacro(layout, text, delay)
+	if len(steps) == 0 && len(invalid) > 0 {
+		return invalid, errors.New("no pasteable characters in input")
+	}
+	if len(steps) == 0 {
+		return invalid, nil
+	}
+	return invalid, current.ExecuteKeyboardMacro(true, steps)
+}
+
+func (c *Controller) CancelPaste() error {
+	current := c.clientIfConnected()
+	if current == nil {
+		return errors.New("client not connected")
+	}
+	return current.CancelKeyboardMacro()
+}
+
+func (c *Controller) Stats() client.StatsSnapshot {
+	c.mu.RLock()
+	current := c.current
+	snap := c.snapshot
+	c.mu.RUnlock()
+	if current == nil {
+		return client.StatsSnapshot{
+			SignalingMode: snap.SignalingMode,
+			RTCState:      snap.RTCState,
+			HIDReady:      snap.HIDReady,
+			VideoReady:    snap.VideoReady,
+			LastError:     snap.LastError,
+		}
+	}
+	stats := current.Stats()
+	stats.HIDReady = snap.HIDReady
+	stats.VideoReady = snap.VideoReady
+	if stats.SignalingMode == "" {
+		stats.SignalingMode = snap.SignalingMode
+	}
+	if stats.RTCState == webrtc.PeerConnectionStateUnknown {
+		stats.RTCState = snap.RTCState
+	}
+	if stats.LastError == "" {
+		stats.LastError = snap.LastError
+	}
+	return stats
 }
 
 func (c *Controller) run(ctx context.Context) {
@@ -372,6 +456,8 @@ func (c *Controller) watch(ctx context.Context, cl *client.Client) (reason strin
 				c.setState(func(s *Snapshot) { s.HIDReady = true })
 			case "video_ready":
 				c.setState(func(s *Snapshot) { s.VideoReady = true })
+			case "paste_state":
+				c.setState(func(s *Snapshot) { s.PasteInProgress = life.PasteState })
 			case "peer_state":
 				c.setState(func(s *Snapshot) { s.RTCState = life.Connection })
 				if life.Connection == webrtc.PeerConnectionStateDisconnected ||
