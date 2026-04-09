@@ -61,3 +61,12 @@ func (k *Keyboard) ReleaseAll() []KeyEvent {
 	k.pressed = map[Key]bool{}
 	return events
 }
+
+func (k *Keyboard) Pressed() []Key {
+	keys := make([]Key, 0, len(k.pressed))
+	for key := range k.pressed {
+		keys = append(keys, key)
+	}
+	sort.Slice(keys, func(i, j int) bool { return keys[i] < keys[j] })
+	return keys
+}

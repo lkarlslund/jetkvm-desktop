@@ -1,5 +1,7 @@
 package input
 
+import "fmt"
+
 type Key int
 
 const (
@@ -319,5 +321,218 @@ func KeyToHID(key Key) (byte, bool) {
 		return 231, true
 	default:
 		return 0, false
+	}
+}
+
+func (k Key) String() string {
+	switch k {
+	case KeyA:
+		return "A"
+	case KeyB:
+		return "B"
+	case KeyC:
+		return "C"
+	case KeyD:
+		return "D"
+	case KeyE:
+		return "E"
+	case KeyF:
+		return "F"
+	case KeyG:
+		return "G"
+	case KeyH:
+		return "H"
+	case KeyI:
+		return "I"
+	case KeyJ:
+		return "J"
+	case KeyK:
+		return "K"
+	case KeyL:
+		return "L"
+	case KeyM:
+		return "M"
+	case KeyN:
+		return "N"
+	case KeyO:
+		return "O"
+	case KeyP:
+		return "P"
+	case KeyQ:
+		return "Q"
+	case KeyR:
+		return "R"
+	case KeyS:
+		return "S"
+	case KeyT:
+		return "T"
+	case KeyU:
+		return "U"
+	case KeyV:
+		return "V"
+	case KeyW:
+		return "W"
+	case KeyX:
+		return "X"
+	case KeyY:
+		return "Y"
+	case KeyZ:
+		return "Z"
+	case Key1:
+		return "1"
+	case Key2:
+		return "2"
+	case Key3:
+		return "3"
+	case Key4:
+		return "4"
+	case Key5:
+		return "5"
+	case Key6:
+		return "6"
+	case Key7:
+		return "7"
+	case Key8:
+		return "8"
+	case Key9:
+		return "9"
+	case Key0:
+		return "0"
+	case KeyEnter:
+		return "Enter"
+	case KeyEscape:
+		return "Esc"
+	case KeyBackspace:
+		return "Backspace"
+	case KeyTab:
+		return "Tab"
+	case KeySpace:
+		return "Space"
+	case KeyMinus:
+		return "-"
+	case KeyEqual:
+		return "="
+	case KeyLeftBracket:
+		return "["
+	case KeyRightBracket:
+		return "]"
+	case KeyBackslash:
+		return "\\"
+	case KeySemicolon:
+		return ";"
+	case KeyApostrophe:
+		return "'"
+	case KeyGraveAccent:
+		return "`"
+	case KeyComma:
+		return ","
+	case KeyPeriod:
+		return "."
+	case KeySlash:
+		return "/"
+	case KeyCapsLock:
+		return "Caps Lock"
+	case KeyF1:
+		return "F1"
+	case KeyF2:
+		return "F2"
+	case KeyF3:
+		return "F3"
+	case KeyF4:
+		return "F4"
+	case KeyF5:
+		return "F5"
+	case KeyF6:
+		return "F6"
+	case KeyF7:
+		return "F7"
+	case KeyF8:
+		return "F8"
+	case KeyF9:
+		return "F9"
+	case KeyF10:
+		return "F10"
+	case KeyF11:
+		return "F11"
+	case KeyF12:
+		return "F12"
+	case KeyPrintScreen:
+		return "Print Screen"
+	case KeyScrollLock:
+		return "Scroll Lock"
+	case KeyPause:
+		return "Pause"
+	case KeyInsert:
+		return "Insert"
+	case KeyHome:
+		return "Home"
+	case KeyPageUp:
+		return "Page Up"
+	case KeyDelete:
+		return "Delete"
+	case KeyEnd:
+		return "End"
+	case KeyPageDown:
+		return "Page Down"
+	case KeyRight:
+		return "Right"
+	case KeyLeft:
+		return "Left"
+	case KeyDown:
+		return "Down"
+	case KeyUp:
+		return "Up"
+	case KeyNumLock:
+		return "Num Lock"
+	case KeyNumpadDivide:
+		return "Num /"
+	case KeyNumpadMultiply:
+		return "Num *"
+	case KeyNumpadSubtract:
+		return "Num -"
+	case KeyNumpadAdd:
+		return "Num +"
+	case KeyNumpadEnter:
+		return "Num Enter"
+	case KeyNumpad1:
+		return "Num 1"
+	case KeyNumpad2:
+		return "Num 2"
+	case KeyNumpad3:
+		return "Num 3"
+	case KeyNumpad4:
+		return "Num 4"
+	case KeyNumpad5:
+		return "Num 5"
+	case KeyNumpad6:
+		return "Num 6"
+	case KeyNumpad7:
+		return "Num 7"
+	case KeyNumpad8:
+		return "Num 8"
+	case KeyNumpad9:
+		return "Num 9"
+	case KeyNumpad0:
+		return "Num 0"
+	case KeyNumpadDecimal:
+		return "Num ."
+	case KeyControlLeft:
+		return "Left Ctrl"
+	case KeyShiftLeft:
+		return "Left Shift"
+	case KeyAltLeft:
+		return "Left Alt"
+	case KeyMetaLeft:
+		return "Left Meta"
+	case KeyControlRight:
+		return "Right Ctrl"
+	case KeyShiftRight:
+		return "Right Shift"
+	case KeyAltRight:
+		return "Right Alt"
+	case KeyMetaRight:
+		return "Right Meta"
+	default:
+		return fmt.Sprintf("Key(%d)", k)
 	}
 }

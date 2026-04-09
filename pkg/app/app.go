@@ -49,6 +49,10 @@ type App struct {
 	chromeButtons   []chromeButton
 	settingsButtons []chromeButton
 	settingsPanel   rect
+	hideCursor      bool
+	showPressedKeys bool
+	scrollThrottle  time.Duration
+	lastWheelAt     time.Time
 }
 
 func New(cfg Config) (*App, error) {
@@ -90,19 +94,13 @@ func (a *App) Update() error {
 		a.releaseAllKeys(true)
 		if a.relative {
 			a.relative = false
-			ebiten.SetCursorMode(ebiten.CursorModeVisible)
+			a.applyCursorMode()
 		}
 	}
 	a.focused = nowFocused
 
 	if inpututil.IsKeyJustPressed(ebiten.KeyF8) {
-		a.relative = !a.relative
-		if a.relative {
-			ebiten.SetCursorMode(ebiten.CursorModeCaptured)
-		} else {
-			ebiten.SetCursorMode(ebiten.CursorModeVisible)
-		}
-		a.lastX, a.lastY = ebiten.CursorPosition()
+		a.setMouseRelative(!a.relative)
 	}
 	if inpututil.IsKeyJustPressed(ebiten.KeyF5) {
 		_ = a.ctrl.Reboot()
@@ -165,6 +163,7 @@ func (a *App) Draw(screen *ebiten.Image) {
 	}
 	a.drawTopBar(screen, snap)
 	a.drawStatusFooter(screen, snap)
+	a.drawPressedKeysOverlay(screen)
 	a.drawOverlay(screen, snap, img != nil)
 	a.drawHint(screen)
 	a.drawSettingsOverlay(screen, snap)
@@ -234,8 +233,9 @@ func (a *App) syncMouse() {
 		}
 	}
 	_, wheelY := ebiten.Wheel()
-	if wheelY != 0 {
+	if wheelY != 0 && (a.scrollThrottle == 0 || time.Since(a.lastWheelAt) >= a.scrollThrottle) {
 		_ = a.ctrl.SendWheel(int8(clamp(-wheelY, -127, 127)))
+		a.lastWheelAt = time.Now()
 	}
 	a.lastX = x
 	a.lastY = y
@@ -483,13 +483,22 @@ func (a *App) adjustStreamQuality(delta float64) {
 
 func (a *App) setMouseRelative(relative bool) {
 	a.relative = relative
-	if a.relative {
-		ebiten.SetCursorMode(ebiten.CursorModeCaptured)
-	} else {
-		ebiten.SetCursorMode(ebiten.CursorModeVisible)
-	}
+	a.applyCursorMode()
 	a.lastX, a.lastY = ebiten.CursorPosition()
 	a.revealUIFor(1200 * time.Millisecond)
+}
+
+func (a *App) applyCursorMode() {
+	switch {
+	case a.settingsOpen:
+		ebiten.SetCursorMode(ebiten.CursorModeVisible)
+	case a.relative:
+		ebiten.SetCursorMode(ebiten.CursorModeCaptured)
+	case a.hideCursor:
+		ebiten.SetCursorMode(ebiten.CursorModeHidden)
+	default:
+		ebiten.SetCursorMode(ebiten.CursorModeVisible)
+	}
 }
 
 func (a *App) handleClick() {
@@ -503,6 +512,7 @@ func (a *App) handleClick() {
 	}
 	if a.settingsOpen && !a.settingsPanel.contains(x, y) {
 		a.settingsOpen = false
+		a.applyCursorMode()
 		return
 	}
 	for _, btn := range a.chromeButtons {
@@ -539,9 +549,42 @@ func (a *App) invokeAction(id string) {
 		_ = a.ctrl.Reboot()
 	case "settings":
 		a.settingsOpen = !a.settingsOpen
+		a.applyCursorMode()
 		a.revealUIFor(1200 * time.Millisecond)
 	case "settings_close":
 		a.settingsOpen = false
+		a.applyCursorMode()
+	case "mouse_hide_cursor":
+		a.hideCursor = !a.hideCursor
+		a.applyCursorMode()
+	case "scroll_0":
+		a.scrollThrottle = 0
+	case "scroll_10":
+		a.scrollThrottle = 10 * time.Millisecond
+	case "scroll_25":
+		a.scrollThrottle = 25 * time.Millisecond
+	case "scroll_50":
+		a.scrollThrottle = 50 * time.Millisecond
+	case "scroll_100":
+		a.scrollThrottle = 100 * time.Millisecond
+	case "toggle_pressed_keys":
+		a.showPressedKeys = !a.showPressedKeys
+	case "layout:en_US":
+		_ = a.ctrl.SetKeyboardLayout("en_US")
+	case "layout:en_UK":
+		_ = a.ctrl.SetKeyboardLayout("en_UK")
+	case "layout:da_DK":
+		_ = a.ctrl.SetKeyboardLayout("da_DK")
+	case "layout:de_DE":
+		_ = a.ctrl.SetKeyboardLayout("de_DE")
+	case "layout:fr_FR":
+		_ = a.ctrl.SetKeyboardLayout("fr_FR")
+	case "layout:es_ES":
+		_ = a.ctrl.SetKeyboardLayout("es_ES")
+	case "layout:it_IT":
+		_ = a.ctrl.SetKeyboardLayout("it_IT")
+	case "layout:ja_JP":
+		_ = a.ctrl.SetKeyboardLayout("ja_JP")
 	default:
 		if len(id) > 8 && id[:8] == "section:" {
 			a.settingsSection = settingsSection(id[8:])
@@ -559,6 +602,7 @@ func (a *App) syncChromeVisibility() {
 		a.lastUIY = y
 	}
 	if a.settingsOpen {
+		a.applyCursorMode()
 		a.revealUIFor(500 * time.Millisecond)
 	}
 }
@@ -575,7 +619,7 @@ func (a *App) syncSessionState() {
 		a.lastButtons = 0
 		if a.relative {
 			a.relative = false
-			ebiten.SetCursorMode(ebiten.CursorModeVisible)
+			a.applyCursorMode()
 		}
 	}
 	if phase == session.PhaseConnected && a.lastPhase != session.PhaseConnected {
@@ -668,6 +712,29 @@ func (a *App) drawOverlay(screen *ebiten.Image, snap session.Snapshot, hasVideo 
 	if detail != "" {
 		drawText(screen, detail, 42, 132, 14, color.RGBA{R: 178, G: 188, B: 198, A: 255})
 	}
+}
+
+func (a *App) drawPressedKeysOverlay(screen *ebiten.Image) {
+	if !a.showPressedKeys || a.settingsOpen {
+		return
+	}
+	pressed := a.keyboard.Pressed()
+	if len(pressed) == 0 {
+		return
+	}
+	line := "Keys: "
+	for i, key := range pressed {
+		if i > 0 {
+			line += "  "
+		}
+		line += key.String()
+	}
+	w, _ := measureText(line, 12)
+	x := 14.0
+	y := float64(screen.Bounds().Dy()) - 58
+	vector.DrawFilledRect(screen, float32(x), float32(y), float32(w+20), 28, color.RGBA{R: 8, G: 12, B: 18, A: 212}, false)
+	vector.StrokeRect(screen, float32(x), float32(y), float32(w+20), 28, 1, color.RGBA{R: 112, G: 128, B: 148, A: 120}, false)
+	drawText(screen, line, x+10, y+8, 12, color.RGBA{R: 236, G: 241, B: 245, A: 255})
 }
 
 func rtcLabel(state interface{}) string {

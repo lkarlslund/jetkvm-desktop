@@ -86,7 +86,7 @@ func settingsSections(snap session.Snapshot) []settingsSectionDef {
 			id:          sectionKeyboard,
 			label:       "Keyboard",
 			description: "Layout, paste behavior, pressed-key display",
-			available:   false,
+			available:   true,
 			items: []string{
 				"Keyboard layout selection",
 				"Show pressed keys overlay",
@@ -464,6 +464,8 @@ func (a *App) drawSettingsOverlay(screen *ebiten.Image, snap session.Snapshot) {
 		a.drawSettingsGeneral(screen, snap, contentX, contentY+74, contentW)
 	case sectionMouse:
 		a.drawSettingsMouse(screen, snap, contentX, contentY+74, contentW)
+	case sectionKeyboard:
+		a.drawSettingsKeyboard(screen, snap, contentX, contentY+74, contentW)
 	case sectionVideo:
 		a.drawSettingsVideo(screen, snap, contentX, contentY+74, contentW)
 	case sectionAppearance:
@@ -523,19 +525,74 @@ func (a *App) drawSettingsGeneral(screen *ebiten.Image, snap session.Snapshot, x
 }
 
 func (a *App) drawSettingsMouse(screen *ebiten.Image, snap session.Snapshot, x, y, w float64) {
-	a.drawSettingsCard(screen, x, y, w, 170, "Mouse Mode", "The web UI exposes absolute and relative modes, cursor behavior, scroll throttling, and a jiggler. The native client has the transport path in place and starts with mode switching.")
+	a.drawSettingsCard(screen, x, y, w, 226, "Mouse Mode", "The web UI exposes absolute and relative modes, cursor behavior, scroll throttling, and a jiggler. The native client now exposes mode switching plus local cursor and wheel behavior.")
 	a.drawSettingsAction(screen, "mouse_absolute", "Absolute", x+16, y+104, 110, snap.Phase == session.PhaseConnected, !a.relative)
 	a.drawSettingsAction(screen, "mouse_relative", "Relative", x+138, y+104, 110, snap.Phase == session.PhaseConnected, a.relative)
-	drawText(screen, "Planned next: host cursor hide, scroll throttling, and jiggler controls.", x+16, y+144, 13, color.RGBA{R: 166, G: 178, B: 190, A: 255})
+	a.drawSettingsAction(screen, "mouse_hide_cursor", "Hide Host Cursor", x+260, y+104, 154, true, a.hideCursor)
+	drawText(screen, "Scroll throttling", x+16, y+152, 13, color.RGBA{R: 166, G: 178, B: 190, A: 255})
+	a.drawSettingsAction(screen, "scroll_0", "Off", x+16, y+176, 64, true, a.scrollThrottle == 0)
+	a.drawSettingsAction(screen, "scroll_10", "Low", x+92, y+176, 64, true, a.scrollThrottle == 10*time.Millisecond)
+	a.drawSettingsAction(screen, "scroll_25", "Medium", x+168, y+176, 84, true, a.scrollThrottle == 25*time.Millisecond)
+	a.drawSettingsAction(screen, "scroll_50", "High", x+264, y+176, 72, true, a.scrollThrottle == 50*time.Millisecond)
+	a.drawSettingsAction(screen, "scroll_100", "Very High", x+348, y+176, 108, true, a.scrollThrottle == 100*time.Millisecond)
+	drawText(screen, "Jiggler remains planned until the native client has a dedicated UI for scheduling and safety confirmations.", x+16, y+212, 13, color.RGBA{R: 166, G: 178, B: 190, A: 255})
+}
+
+func (a *App) drawSettingsKeyboard(screen *ebiten.Image, snap session.Snapshot, x, y, w float64) {
+	a.drawSettingsCard(screen, x, y, w, 248, "Keyboard", "The web UI exposes layout selection and a pressed-key view. The native client now supports the same structure, with layout written over RPC and the key overlay rendered locally.")
+	drawText(screen, "Active layout", x+16, y+78, 13, color.RGBA{R: 166, G: 178, B: 190, A: 255})
+	layout := snap.KeyboardLayout
+	if layout == "" {
+		layout = "en_US"
+	}
+	drawText(screen, layout, x+118, y+78, 13, color.RGBA{R: 236, G: 241, B: 245, A: 255})
+	a.drawSettingsAction(screen, "toggle_pressed_keys", "Show Pressed Keys", x+w-174, y+64, 158, true, a.showPressedKeys)
+	drawText(screen, "Layout presets", x+16, y+118, 13, color.RGBA{R: 166, G: 178, B: 190, A: 255})
+	options := []struct {
+		id    string
+		label string
+	}{
+		{id: "layout:en_US", label: "US"},
+		{id: "layout:en_UK", label: "UK"},
+		{id: "layout:da_DK", label: "Danish"},
+		{id: "layout:de_DE", label: "German"},
+		{id: "layout:fr_FR", label: "French"},
+		{id: "layout:es_ES", label: "Spanish"},
+		{id: "layout:it_IT", label: "Italian"},
+		{id: "layout:ja_JP", label: "Japanese"},
+	}
+	rowX := x + 16
+	rowY := y + 142
+	for i, option := range options {
+		btnW := 94.0
+		if len(option.label) > 7 {
+			btnW = 112
+		}
+		a.drawSettingsAction(screen, option.id, option.label, rowX, rowY, btnW, snap.Phase == session.PhaseConnected, layout == option.id[7:])
+		rowX += btnW + 10
+		if (i+1)%4 == 0 {
+			rowX = x + 16
+			rowY += 38
+		}
+	}
+	drawText(screen, "The native client still uses physical-HID semantics first. Non-US punctuation remains best-effort until a deeper layout pass lands.", x+16, y+220, 13, color.RGBA{R: 166, G: 178, B: 190, A: 255})
 }
 
 func (a *App) drawSettingsVideo(screen *ebiten.Image, snap session.Snapshot, x, y, w float64) {
-	a.drawSettingsCard(screen, x, y, w, 178, "Stream Quality", "The web UI exposes high, medium, and low quality plus EDID and image tuning. The native client currently supports the stream quality control directly.")
+	a.drawSettingsCard(screen, x, y, w, 214, "Stream Quality", "The web UI exposes high, medium, and low quality plus EDID and image tuning. The native client supports quality directly and exposes the current EDID as device state.")
 	a.drawSettingsAction(screen, "quality_preset_high", "High", x+16, y+106, 96, snap.Phase == session.PhaseConnected, snap.Quality >= 0.95)
 	a.drawSettingsAction(screen, "quality_preset_medium", "Medium", x+124, y+106, 96, snap.Phase == session.PhaseConnected, snap.Quality >= 0.45 && snap.Quality < 0.95)
 	a.drawSettingsAction(screen, "quality_preset_low", "Low", x+232, y+106, 96, snap.Phase == session.PhaseConnected, snap.Quality < 0.45)
 	drawText(screen, fmt.Sprintf("Current factor %.2f", snap.Quality), x+16, y+146, 13, color.RGBA{R: 236, G: 241, B: 245, A: 255})
-	drawText(screen, "Planned next: EDID presets, custom EDID, and client-side image tuning controls.", x+160, y+146, 13, color.RGBA{R: 166, G: 178, B: 190, A: 255})
+	drawText(screen, "EDID", x+16, y+176, 13, color.RGBA{R: 166, G: 178, B: 190, A: 255})
+	edid := snap.EDID
+	if edid == "" {
+		edid = "Unavailable on current target"
+	} else if len(edid) > 60 {
+		edid = edid[:60] + "..."
+	}
+	drawText(screen, edid, x+72, y+176, 13, color.RGBA{R: 236, G: 241, B: 245, A: 255})
+	drawText(screen, "EDID write support and image tuning controls remain planned for a later native pass.", x+16, y+202, 13, color.RGBA{R: 166, G: 178, B: 190, A: 255})
 }
 
 func (a *App) drawSettingsAppearance(screen *ebiten.Image, x, y, w float64) {

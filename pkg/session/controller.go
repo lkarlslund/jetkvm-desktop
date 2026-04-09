@@ -38,17 +38,19 @@ type Config struct {
 }
 
 type Snapshot struct {
-	Phase         Phase
-	Status        string
-	BaseURL       string
-	DeviceID      string
-	Hostname      string
-	Quality       float64
-	HIDReady      bool
-	VideoReady    bool
-	LastError     string
-	RTCState      webrtc.PeerConnectionState
-	SignalingMode client.SignalingMode
+	Phase          Phase
+	Status         string
+	BaseURL        string
+	DeviceID       string
+	Hostname       string
+	Quality        float64
+	KeyboardLayout string
+	EDID           string
+	HIDReady       bool
+	VideoReady     bool
+	LastError      string
+	RTCState       webrtc.PeerConnectionState
+	SignalingMode  client.SignalingMode
 }
 
 type Controller struct {
@@ -143,6 +145,19 @@ func (c *Controller) Reboot() error {
 
 func (c *Controller) SetQuality(value float64) error {
 	return c.call(context.Background(), "setStreamQualityFactor", map[string]any{"factor": value}, nil)
+}
+
+func (c *Controller) SetKeyboardLayout(layout string) error {
+	if layout == "" {
+		return errors.New("keyboard layout is required")
+	}
+	if err := c.call(context.Background(), "setKeyboardLayout", map[string]any{"layout": layout}, nil); err != nil {
+		return err
+	}
+	c.setState(func(s *Snapshot) {
+		s.KeyboardLayout = layout
+	})
+	return nil
 }
 
 func (c *Controller) SendKeypress(key byte, press bool) error {
@@ -264,6 +279,8 @@ func (c *Controller) run(ctx context.Context) {
 func (c *Controller) bootstrap(ctx context.Context, cl *client.Client) error {
 	var deviceID string
 	var quality float64
+	var keyboardLayout string
+	var edid string
 	var network struct {
 		Hostname string `json:"hostname"`
 	}
@@ -273,6 +290,12 @@ func (c *Controller) bootstrap(ctx context.Context, cl *client.Client) error {
 	}
 	if err := cl.Call(ctx, "getStreamQualityFactor", nil, &quality); err == nil {
 		c.setState(func(s *Snapshot) { s.Quality = quality })
+	}
+	if err := cl.Call(ctx, "getKeyboardLayout", nil, &keyboardLayout); err == nil {
+		c.setState(func(s *Snapshot) { s.KeyboardLayout = keyboardLayout })
+	}
+	if err := cl.Call(ctx, "getEDID", nil, &edid); err == nil {
+		c.setState(func(s *Snapshot) { s.EDID = edid })
 	}
 	if err := cl.Call(ctx, "getNetworkSettings", nil, &network); err == nil {
 		c.setState(func(s *Snapshot) { s.Hostname = network.Hostname })

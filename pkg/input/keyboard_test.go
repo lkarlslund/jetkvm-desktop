@@ -87,3 +87,28 @@ func TestKeyboardReleaseAllCoversModifiersAndKeypad(t *testing.T) {
 		}
 	}
 }
+
+func TestKeyboardPressedReturnsSortedKeys(t *testing.T) {
+	k := NewKeyboard()
+	_ = k.Update([]Key{KeyShiftRight, KeyA, KeyControlLeft})
+
+	pressed := k.Pressed()
+	expected := []Key{KeyA, KeyControlLeft, KeyShiftRight}
+	if len(pressed) != len(expected) {
+		t.Fatalf("unexpected pressed key count: got %v want %v", pressed, expected)
+	}
+	for i := range expected {
+		if pressed[i] != expected[i] {
+			t.Fatalf("unexpected pressed key at %d: got %v want %v", i, pressed[i], expected[i])
+		}
+	}
+}
+
+func TestKeyString(t *testing.T) {
+	if got := KeyControlLeft.String(); got != "Left Ctrl" {
+		t.Fatalf("unexpected string for control key: %q", got)
+	}
+	if got := KeyA.String(); got != "A" {
+		t.Fatalf("unexpected string for letter key: %q", got)
+	}
+}
