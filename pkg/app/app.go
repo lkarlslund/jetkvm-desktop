@@ -602,10 +602,6 @@ func (a *App) invokeAction(id string) {
 		a.setMouseRelative(false)
 	case "mouse_relative":
 		a.setMouseRelative(true)
-	case "quality_down":
-		a.adjustStreamQuality(-0.05)
-	case "quality_up":
-		a.adjustStreamQuality(+0.05)
 	case "quality_preset_high":
 		_ = a.ctrl.SetQuality(1.0)
 	case "quality_preset_medium":

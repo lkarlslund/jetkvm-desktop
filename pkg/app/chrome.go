@@ -260,24 +260,18 @@ func (a *App) revealUIFor(d time.Duration) {
 }
 
 func (a *App) layoutChromeButtons(width int, snap session.Snapshot) []chromeButton {
-	defs := make([]chromeButton, 0, 7)
+	defs := make([]chromeButton, 0, 5)
 	if snap.Phase != session.PhaseConnected {
 		defs = append(defs, chromeButton{id: "reconnect", hint: reconnectLabel(snap.Phase), icon: iconReconnect, enabled: true})
 	}
 	if snap.Phase == session.PhaseConnected {
-		defs = append(defs,
-			chromeButton{id: "paste", hint: "Paste text", icon: iconPaste, enabled: true, active: a.pasteOpen},
-			chromeButton{id: "mouse", hint: mouseButtonLabel(a.relative), icon: iconMouse, enabled: true, active: a.relative},
-		)
+		defs = append(defs, chromeButton{id: "paste", hint: "Paste text", icon: iconPaste, enabled: true, active: a.pasteOpen})
 	}
 	defs = append(defs,
 		chromeButton{id: "stats", hint: "Connection stats", icon: iconStats, enabled: true, active: a.statsOpen},
 		chromeButton{id: "fullscreen", hint: "Toggle fullscreen", icon: iconFullscreen, enabled: true, active: ebiten.IsFullscreen()},
 		chromeButton{id: "settings", hint: "Settings", icon: iconSettings, enabled: true, active: a.settingsOpen},
 	)
-	if snap.Phase == session.PhaseConnected {
-		defs = append(defs, chromeButton{id: "reboot", hint: "Reboot device", icon: iconPower, enabled: true})
-	}
 
 	const size = 34.0
 	const gap = 8.0
@@ -437,7 +431,7 @@ func (a *App) drawStatusFooter(screen *ebiten.Image, snap session.Snapshot) {
 	if alpha <= 0 && snap.Phase == session.PhaseConnected && snap.LastError == "" {
 		return
 	}
-	left := fmt.Sprintf("RTC %s  HID %s  Video %s  Quality %.0f%%", rtcLabel(snap.RTCState), readyWord(snap.HIDReady), readyWord(snap.VideoReady), snap.Quality*100)
+	left := fmt.Sprintf("RTC %s  HID %s  Video %s", rtcLabel(snap.RTCState), readyWord(snap.HIDReady), readyWord(snap.VideoReady))
 	clr := rgba(164, 176, 188, 255, max(alpha, 0.75))
 	y := float64(screen.Bounds().Dy() - 24)
 	drawText(screen, left, 14, y, 12, clr)
