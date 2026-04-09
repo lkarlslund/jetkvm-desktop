@@ -8,7 +8,7 @@ import (
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/spf13/cobra"
 
-	"github.com/lkarlslund/jetkvm-native/pkg/app"
+	"github.com/lkarlslund/jetkvm-desktop/pkg/app"
 )
 
 func main() {
@@ -30,7 +30,7 @@ func main() {
 			ebiten.SetWindowSize(1280, 720)
 			ebiten.SetWindowResizingMode(ebiten.WindowResizingModeEnabled)
 			ebiten.SetTPS(ebiten.SyncWithFPS)
-			ebiten.SetWindowTitle("jetkvm-client")
+			ebiten.SetWindowTitle("jetkvm-desktop")
 			return ebiten.RunGame(clientApp)
 		},
 	}
@@ -40,8 +40,8 @@ func main() {
 	connectCmd.Flags().DurationVar(&cfg.RPCTimeout, "rpc-timeout", 5*time.Second, "Timeout for JSON-RPC requests")
 
 	rootCmd := &cobra.Command{
-		Use:   "jetkvm-client",
-		Short: "Native JetKVM client",
+		Use:   "jetkvm-desktop",
+		Short: "Desktop JetKVM client",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return connectCmd.RunE(cmd, args)
 		},

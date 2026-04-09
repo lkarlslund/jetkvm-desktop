@@ -1,4 +1,4 @@
-module github.com/lkarlslund/jetkvm-native
+module github.com/lkarlslund/jetkvm-desktop
 
 go 1.26.1
 

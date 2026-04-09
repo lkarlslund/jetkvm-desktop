@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lkarlslund/jetkvm-native/pkg/client"
-	"github.com/lkarlslund/jetkvm-native/pkg/emulator"
+	"github.com/lkarlslund/jetkvm-desktop/pkg/client"
+	"github.com/lkarlslund/jetkvm-desktop/pkg/emulator"
 )
 
 func TestControllerConnects(t *testing.T) {

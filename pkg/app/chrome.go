@@ -9,7 +9,7 @@ import (
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/vector"
 
-	"github.com/lkarlslund/jetkvm-native/pkg/session"
+	"github.com/lkarlslund/jetkvm-desktop/pkg/session"
 )
 
 type iconKind string
@@ -383,7 +383,7 @@ func (a *App) drawTopBar(screen *ebiten.Image, snap session.Snapshot) {
 	buttons := a.layoutChromeButtons(screen.Bounds().Dx(), snap)
 	a.chromeButtons = buttons
 
-	label := fallbackLabel(snap.DeviceID, snap.Hostname, "jetkvm-client")
+	label := fallbackLabel(snap.DeviceID, snap.Hostname, "jetkvm-desktop")
 	status := fmt.Sprintf("%s  %s  %s", label, snap.Phase, mouseButtonLabel(a.relative))
 	statusW, _ := measureText(status, 13)
 	bgW := statusW + 22
@@ -978,5 +978,5 @@ func (a *App) drawSettingsPlanned(screen *ebiten.Image, section settingsSectionD
 		drawWrappedText(screen, "• "+item, x+24, lineY, w-40, 12, color.RGBA{R: 236, G: 241, B: 245, A: 255})
 		lineY += 22
 	}
-	drawWrappedText(screen, "This section exists in the upstream product structure but is not currently exposed by this target or the native client.", x+16, y+176, w-32, 12, color.RGBA{R: 166, G: 178, B: 190, A: 255})
+	drawWrappedText(screen, "This section exists in the upstream product structure but is not currently exposed by this target or the desktop client.", x+16, y+176, w-32, 12, color.RGBA{R: 166, G: 178, B: 190, A: 255})
 }

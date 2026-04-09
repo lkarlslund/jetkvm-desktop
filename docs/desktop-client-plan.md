@@ -99,7 +99,7 @@ Use a layered Go client:
    - Reconnect logic.
    - UI model for overlays, device status, connection state, and settings.
 
-9. `cmd/jetkvm-native`
+9. `cmd/jetkvm-desktop`
    - Desktop entrypoint.
 
 ## Recommended Delivery Phases
@@ -172,7 +172,7 @@ Only after the core KVM path is stable:
 ## Suggested Repository Layout
 
 ```text
-cmd/jetkvm-native/
+cmd/jetkvm-desktop/
 internal/app/
 internal/deviceauth/
 internal/hidrpc/
@@ -193,7 +193,7 @@ docs/
    Relative mouse capture and keyboard edge cases will need explicit handling.
 
 3. The device currently assumes WebRTC data channels and H.264 video.
-   The native client should copy those expectations exactly before attempting any protocol changes.
+   The desktop client should copy those expectations exactly before attempting any protocol changes.
 
 ## First Implementation Target
 

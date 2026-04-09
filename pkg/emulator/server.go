@@ -14,10 +14,10 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/pion/webrtc/v4"
 
-	"github.com/lkarlslund/jetkvm-native/pkg/protocol/hidrpc"
-	"github.com/lkarlslund/jetkvm-native/pkg/protocol/jsonrpc"
-	"github.com/lkarlslund/jetkvm-native/pkg/protocol/signaling"
-	"github.com/lkarlslund/jetkvm-native/pkg/video"
+	"github.com/lkarlslund/jetkvm-desktop/pkg/protocol/hidrpc"
+	"github.com/lkarlslund/jetkvm-desktop/pkg/protocol/jsonrpc"
+	"github.com/lkarlslund/jetkvm-desktop/pkg/protocol/signaling"
+	"github.com/lkarlslund/jetkvm-desktop/pkg/video"
 )
 
 type AuthMode string
@@ -106,7 +106,7 @@ func NewServer(cfg Config) (*Server, error) {
 	}
 	s := &Server{
 		cfg:    cfg,
-		token:  "jetkvm-native-emulator-token",
+		token:  "jetkvm-desktop-emulator-token",
 		state:  DeviceState{DeviceID: "emu-jetkvm-001", VideoState: "ready", StreamQualityFactor: 0.75, KeyboardLEDMask: 0, KeyboardModifiers: 0, KeysDown: []byte{0, 0, 0, 0, 0, 0}, Hostname: "jetkvm-emulator", KeyboardLayout: "en_US", TLSMode: "disabled", DisplayRotation: "270", USBEmulation: true},
 		inputs: make([]InputRecord, 0, 32),
 	}
@@ -265,7 +265,7 @@ func (s *Server) handleSignalingClient(w http.ResponseWriter, r *http.Request) {
 	_ = conn.WriteJSON(map[string]any{
 		"type": "device-metadata",
 		"data": map[string]any{
-			"deviceVersion": "jetkvm-native-emulator",
+			"deviceVersion": "jetkvm-desktop-emulator",
 		},
 	})
 
@@ -563,7 +563,7 @@ func (s *Server) exchangeOffer(encoded string) (string, error) {
 	videoTrack, err := webrtc.NewTrackLocalStaticSample(
 		webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeH264},
 		"video",
-		"jetkvm-native-emulator",
+		"jetkvm-desktop-emulator",
 	)
 	if err != nil {
 		return "", err

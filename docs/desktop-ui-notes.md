@@ -1,6 +1,6 @@
 # Native UI Notes
 
-The native client should preserve as much video area as possible. The current direction is:
+The desktop client should preserve as much video area as possible. The current direction is:
 
 - full-screen video with minimal margins
 - a compact top action bar that fades away while idle
@@ -46,4 +46,4 @@ Within those sections, the current upstream feature surface includes:
 - MQTT: broker/TLS/topic/discovery/actions
 - Advanced: developer mode, dev channel, USB emulation, loopback-only, SSH key, reset config, custom version update
 
-The native client does not need web parity immediately, but its settings IA should match these sections so users do not have to relearn the product.
+The desktop client does not need web parity immediately, but its settings IA should match these sections so users do not have to relearn the product.

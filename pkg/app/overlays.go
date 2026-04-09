@@ -11,8 +11,8 @@ import (
 	"github.com/hajimehoshi/ebiten/v2/vector"
 	"golang.design/x/clipboard"
 
-	"github.com/lkarlslund/jetkvm-native/pkg/input"
-	"github.com/lkarlslund/jetkvm-native/pkg/session"
+	"github.com/lkarlslund/jetkvm-desktop/pkg/input"
+	"github.com/lkarlslund/jetkvm-desktop/pkg/session"
 )
 
 var clipboardReady bool

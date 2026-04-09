@@ -19,18 +19,18 @@ jobs:
         include:
           - os: ubuntu-latest
             name: linux-amd64
-            archive_name: jetkvm-native-linux-amd64.tar.gz
-            client_bin: jetkvm-client
+            archive_name: jetkvm-desktop-linux-amd64.tar.gz
+            client_bin: jetkvm-desktop
             emulator_bin: jetkvm-emulator
           - os: macos-latest
             name: macos-amd64
-            archive_name: jetkvm-native-macos-amd64.tar.gz
-            client_bin: jetkvm-client
+            archive_name: jetkvm-desktop-macos-amd64.tar.gz
+            client_bin: jetkvm-desktop
             emulator_bin: jetkvm-emulator
           - os: windows-latest
             name: windows-amd64
-            archive_name: jetkvm-native-windows-amd64.zip
-            client_bin: jetkvm-client.exe
+            archive_name: jetkvm-desktop-windows-amd64.zip
+            client_bin: jetkvm-desktop.exe
             emulator_bin: jetkvm-emulator.exe
 
     steps:
@@ -83,7 +83,7 @@ jobs:
         shell: bash
         run: |
           mkdir -p dist/pkg
-          go build -trimpath -ldflags="-s -w" -o "dist/pkg/${{ matrix.client_bin }}" ./cmd/jetkvm-client
+          go build -trimpath -ldflags="-s -w" -o "dist/pkg/${{ matrix.client_bin }}" ./cmd/jetkvm-desktop
           go build -trimpath -ldflags="-s -w" -o "dist/pkg/${{ matrix.emulator_bin }}" ./cmd/jetkvm-emulator
           cp README.md dist/pkg/
           tar -C dist/pkg -czf "dist/${{ matrix.archive_name }}" .
@@ -93,7 +93,7 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path dist/pkg | Out-Null
-          go build -trimpath -ldflags="-s -w" -o "dist/pkg/${{ matrix.client_bin }}" ./cmd/jetkvm-client
+          go build -trimpath -ldflags="-s -w" -o "dist/pkg/${{ matrix.client_bin }}" ./cmd/jetkvm-desktop
           go build -trimpath -ldflags="-s -w" -o "dist/pkg/${{ matrix.emulator_bin }}" ./cmd/jetkvm-emulator
           Copy-Item README.md dist/pkg/README.md
           Compress-Archive -Path dist/pkg/* -DestinationPath "dist/${{ matrix.archive_name }}"

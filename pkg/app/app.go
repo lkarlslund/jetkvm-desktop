@@ -13,9 +13,9 @@ import (
 	"github.com/hajimehoshi/ebiten/v2/inpututil"
 	"github.com/hajimehoshi/ebiten/v2/vector"
 
-	"github.com/lkarlslund/jetkvm-native/pkg/client"
-	"github.com/lkarlslund/jetkvm-native/pkg/input"
-	"github.com/lkarlslund/jetkvm-native/pkg/session"
+	"github.com/lkarlslund/jetkvm-desktop/pkg/client"
+	"github.com/lkarlslund/jetkvm-desktop/pkg/input"
+	"github.com/lkarlslund/jetkvm-desktop/pkg/session"
 )
 
 type Config struct {
@@ -810,7 +810,7 @@ func (a *App) syncSessionState() {
 
 func (a *App) syncWindowTitle() {
 	snap := a.ctrl.Snapshot()
-	title := "jetkvm-client"
+	title := "jetkvm-desktop"
 	if snap.DeviceID != "" {
 		title = snap.DeviceID
 	} else if snap.Hostname != "" {

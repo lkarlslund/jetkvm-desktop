@@ -10,7 +10,7 @@ import (
 
 	"github.com/pion/webrtc/v4"
 
-	"github.com/lkarlslund/jetkvm-native/pkg/client"
+	"github.com/lkarlslund/jetkvm-desktop/pkg/client"
 )
 
 func TestHTTPBootstrapFlow(t *testing.T) {

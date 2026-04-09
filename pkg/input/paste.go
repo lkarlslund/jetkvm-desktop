@@ -3,7 +3,7 @@ package input
 import (
 	"strings"
 
-	"github.com/lkarlslund/jetkvm-native/pkg/protocol/hidrpc"
+	"github.com/lkarlslund/jetkvm-desktop/pkg/protocol/hidrpc"
 )
 
 const (

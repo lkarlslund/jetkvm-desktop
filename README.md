@@ -1,10 +1,10 @@
-# jetkvm-native
+# jetkvm-desktop
 
-Native Go client for JetKVM.
+Desktop Go client for JetKVM.
 
 ## Keyboard Policy
 
-The native client sends physical HID usages over `hidrpc`.
+The desktop client sends physical HID usages over `hidrpc`.
 
 - The current client is intentionally physical-key-first, not character-first.
 - Letters, modifiers, navigation keys, function keys, and keypad keys are the supported core path.
@@ -13,9 +13,9 @@ The native client sends physical HID usages over `hidrpc`.
 
 ## Commands
 
-Run the native client:
+Run the desktop client:
 
-- `jetkvm-client connect --base-url http://127.0.0.1:8080`
+- `jetkvm-desktop connect --base-url http://127.0.0.1:8080`
 
 Run the emulator:
 
@@ -33,7 +33,7 @@ GitHub Actions builds native release artifacts on:
 
 Each release contains:
 
-- `jetkvm-client`
+- `jetkvm-desktop`
 - `jetkvm-emulator`
 
 The release pipeline uses native runners per OS instead of simple Go cross-compilation, because the in-process OpenH264 path uses CGO-backed static libraries.

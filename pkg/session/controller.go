@@ -11,8 +11,8 @@ import (
 
 	"github.com/pion/webrtc/v4"
 
-	"github.com/lkarlslund/jetkvm-native/pkg/client"
-	"github.com/lkarlslund/jetkvm-native/pkg/input"
+	"github.com/lkarlslund/jetkvm-desktop/pkg/client"
+	"github.com/lkarlslund/jetkvm-desktop/pkg/input"
 )
 
 type Phase string
