@@ -25,7 +25,7 @@ func (a *App) syncStats() {
 	if !a.statsOpen && time.Since(a.lastStatsPoll) < time.Second {
 		return
 	}
-	if time.Since(a.lastStatsPoll) < 400*time.Millisecond {
+	if time.Since(a.lastStatsPoll) < time.Second {
 		return
 	}
 	a.stats = a.ctrl.Stats()
@@ -152,12 +152,14 @@ func humanFrameAge(at time.Time) string {
 	}
 	age := time.Since(at)
 	switch {
-	case age < time.Millisecond:
-		return "<1ms"
+	case age < 100*time.Millisecond:
+		return "<100ms"
 	case age < time.Second:
-		return fmt.Sprintf("%dms", age.Milliseconds())
+		return fmt.Sprintf("%dms", (age/(100*time.Millisecond))*100)
+	case age < 10*time.Second:
+		return fmt.Sprintf("%.1fs", float64((age/(100*time.Millisecond))*100)/1000)
 	default:
-		return fmt.Sprintf("%.1fs", age.Seconds())
+		return fmt.Sprintf("%ds", int(age.Seconds()))
 	}
 }
 

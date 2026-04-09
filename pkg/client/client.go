@@ -80,7 +80,7 @@ type Client struct {
 	signalMu       sync.Mutex
 	signalMode     SignalingMode
 	statsMu        sync.Mutex
-	lastStats      statsSample
+	statsHistory   []statsSample
 	lastError      atomic.Value
 }
 
@@ -88,6 +88,25 @@ type statsSample struct {
 	at            time.Time
 	bytesReceived uint64
 	framesDecoded uint32
+}
+
+func computeSmoothedRates(history []statsSample) (bitrateKbps, framesPerSecond float64) {
+	if len(history) < 2 {
+		return 0, 0
+	}
+	first := history[0]
+	last := history[len(history)-1]
+	elapsed := last.at.Sub(first.at).Seconds()
+	if elapsed <= 0 {
+		return 0, 0
+	}
+	if last.bytesReceived >= first.bytesReceived {
+		bitrateKbps = float64(last.bytesReceived-first.bytesReceived) * 8 / elapsed / 1000
+	}
+	if last.framesDecoded >= first.framesDecoded {
+		framesPerSecond = float64(last.framesDecoded-first.framesDecoded) / elapsed
+	}
+	return bitrateKbps, framesPerSecond
 }
 
 type pendingCall struct {
@@ -474,6 +493,11 @@ func (c *Client) Stats() StatsSnapshot {
 	stats := StatsSnapshot{
 		SignalingMode: c.signalMode,
 	}
+	if frame, _ := c.LatestFrameInfo(); frame != nil {
+		b := frame.Bounds()
+		stats.FrameWidth = b.Dx()
+		stats.FrameHeight = b.Dy()
+	}
 	if c.pc != nil {
 		stats.RTCState = c.pc.ConnectionState()
 		report := c.pc.GetStats()
@@ -484,27 +508,31 @@ func (c *Client) Stats() StatsSnapshot {
 				if v.Kind != "video" {
 					continue
 				}
-				stats.FrameWidth = int(v.FrameWidth)
-				stats.FrameHeight = int(v.FrameHeight)
+				if stats.FrameWidth == 0 && stats.FrameHeight == 0 {
+					stats.FrameWidth = int(v.FrameWidth)
+					stats.FrameHeight = int(v.FrameHeight)
+				}
 				stats.BytesReceived = v.BytesReceived
 				stats.PacketsLost = v.PacketsLost
 				stats.JitterMs = v.Jitter * 1000
 				stats.FramesDecoded = v.FramesDecoded
 				stats.FramesRendered = v.FramesRendered
 				c.statsMu.Lock()
-				last := c.lastStats
-				if !last.at.IsZero() {
-					elapsed := now.Sub(last.at).Seconds()
-					if elapsed > 0 {
-						stats.BitrateKbps = float64(v.BytesReceived-last.bytesReceived) * 8 / elapsed / 1000
-						stats.FramesPerSecond = float64(v.FramesDecoded-last.framesDecoded) / elapsed
-					}
-				}
-				c.lastStats = statsSample{
+				c.statsHistory = append(c.statsHistory, statsSample{
 					at:            now,
 					bytesReceived: v.BytesReceived,
 					framesDecoded: v.FramesDecoded,
+				})
+				cutoff := now.Add(-3 * time.Second)
+				trimmed := c.statsHistory[:0]
+				for _, sample := range c.statsHistory {
+					if sample.at.Before(cutoff) && len(c.statsHistory) > 2 {
+						continue
+					}
+					trimmed = append(trimmed, sample)
 				}
+				c.statsHistory = trimmed
+				stats.BitrateKbps, stats.FramesPerSecond = computeSmoothedRates(c.statsHistory)
 				c.statsMu.Unlock()
 			case webrtc.ICECandidatePairStats:
 				if v.State == webrtc.StatsICECandidatePairStateSucceeded || v.Nominated {
