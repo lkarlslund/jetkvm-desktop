@@ -998,9 +998,11 @@ func (a *App) syncChromeVisibility() {
 	if a.ctrl == nil {
 		return
 	}
+	snap := a.ctrl.Snapshot()
+	hotZone := a.chromeRevealZone(a.lastWidth, a.lastHeight, snap)
 	x, y := ebiten.CursorPosition()
 	if x != a.lastUIX || y != a.lastUIY {
-		if y <= 72 || a.settingsOpen || a.pasteOpen {
+		if hotZone.contains(x, y) || a.settingsOpen || a.pasteOpen {
 			a.revealUIFor(1600 * time.Millisecond)
 		}
 		a.lastUIX = x

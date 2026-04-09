@@ -306,6 +306,38 @@ func (a *App) layoutChromeButtons(width, height int, snap session.Snapshot) []ch
 	return out
 }
 
+func (a *App) chromeRevealZone(width, height int, snap session.Snapshot) rect {
+	buttons := a.layoutChromeButtons(width, height, snap)
+	if len(buttons) == 0 {
+		return rect{}
+	}
+	left := buttons[0].rect.x
+	top := buttons[0].rect.y
+	right := buttons[0].rect.x + buttons[0].rect.w
+	bottom := buttons[0].rect.y + buttons[0].rect.h
+	for _, btn := range buttons[1:] {
+		if btn.rect.x < left {
+			left = btn.rect.x
+		}
+		if btn.rect.y < top {
+			top = btn.rect.y
+		}
+		if btn.rect.x+btn.rect.w > right {
+			right = btn.rect.x + btn.rect.w
+		}
+		if btn.rect.y+btn.rect.h > bottom {
+			bottom = btn.rect.y + btn.rect.h
+		}
+	}
+	const pad = 28.0
+	return rect{
+		x: max(0, left-pad),
+		y: max(0, top-pad),
+		w: min(float64(width), right+pad) - max(0, left-pad),
+		h: min(float64(height), bottom+pad) - max(0, top-pad),
+	}
+}
+
 func chromeAnchorOrigin(anchor string, width, height, clusterW, clusterH float64) (float64, float64) {
 	const margin = 18.0
 	switch anchor {

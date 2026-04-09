@@ -188,6 +188,33 @@ func TestLayoutChromeButtonsVertical(t *testing.T) {
 	}
 }
 
+func TestChromeRevealZoneTracksAnchor(t *testing.T) {
+	app, err := New(Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	app.prefs.ChromeAnchor = "left_center"
+	app.prefs.ChromeLayout = "vertical"
+	leftZone := app.chromeRevealZone(1280, 720, session.Snapshot{Phase: session.PhaseConnected})
+	if !leftZone.contains(30, 360) {
+		t.Fatalf("expected left-center hot zone to include left-side cursor, got %+v", leftZone)
+	}
+	if leftZone.contains(640, 20) {
+		t.Fatalf("expected left-center hot zone to exclude top-center cursor, got %+v", leftZone)
+	}
+
+	app.prefs.ChromeAnchor = "top_right"
+	app.prefs.ChromeLayout = "horizontal"
+	topZone := app.chromeRevealZone(1280, 720, session.Snapshot{Phase: session.PhaseConnected})
+	if !topZone.contains(1200, 30) {
+		t.Fatalf("expected top-right hot zone to include top-right cursor, got %+v", topZone)
+	}
+	if topZone.contains(30, 360) {
+		t.Fatalf("expected top-right hot zone to exclude left-center cursor, got %+v", topZone)
+	}
+}
+
 func TestArmOverlayDismissSuppression(t *testing.T) {
 	app, err := New(Config{})
 	if err != nil {
