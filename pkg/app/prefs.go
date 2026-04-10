@@ -14,6 +14,7 @@ type Preferences struct {
 	ChromeAnchor    ChromeAnchor   `json:"chrome_anchor"`
 	ChromeLayout    ChromeLayout   `json:"chrome_layout"`
 	HideCursor      bool           `json:"hide_cursor"`
+	InvertScroll    bool           `json:"invert_scroll"`
 	ShowPressedKeys bool           `json:"show_pressed_keys"`
 	ScrollThrottle  ScrollThrottle `json:"scroll_throttle"`
 }
@@ -67,6 +68,7 @@ func defaultPreferences() Preferences {
 		ChromeAnchor:    chromeAnchorTopRight,
 		ChromeLayout:    chromeLayoutHorizontal,
 		HideCursor:      false,
+		InvertScroll:    false,
 		ShowPressedKeys: false,
 		ScrollThrottle:  scrollThrottleOff,
 	}

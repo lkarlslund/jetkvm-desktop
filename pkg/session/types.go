@@ -28,13 +28,26 @@ type AccessState struct {
 }
 
 type USBConfig struct {
-	VendorID  string
-	ProductID string
+	VendorID     string
+	ProductID    string
+	SerialNumber string
+	Manufacturer string
+	Product      string
+}
+
+type USBDevices struct {
+	AbsoluteMouse bool
+	RelativeMouse bool
+	Keyboard      bool
+	MassStorage   bool
+	SerialConsole bool
+	Network       bool
 }
 
 type HardwareState struct {
 	USBEmulation    *bool
 	USBConfig       USBConfig
+	USBDevices      USBDevices
 	USBDeviceCount  int
 	DisplayRotation DisplayRotation
 }

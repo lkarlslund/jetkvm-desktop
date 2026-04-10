@@ -107,11 +107,11 @@ func (i *launcherMode) UnmarshalText(text []byte) error {
 	return err
 }
 
-const _settingsActionGroupName = "keyboard_layoutvideo_qualitytls_modedisplay_rotationusb_emulationauto_updatedeveloper_modejiggler"
+const _settingsActionGroupName = "keyboard_layoutvideo_qualitytls_modedisplay_rotationusb_emulationusb_devicesauto_updatedeveloper_modejiggler"
 
-var _settingsActionGroupIndex = [...]uint8{0, 15, 28, 36, 52, 65, 76, 90, 97}
+var _settingsActionGroupIndex = [...]uint8{0, 15, 28, 36, 52, 65, 76, 87, 101, 108}
 
-const _settingsActionGroupLowerName = "keyboard_layoutvideo_qualitytls_modedisplay_rotationusb_emulationauto_updatedeveloper_modejiggler"
+const _settingsActionGroupLowerName = "keyboard_layoutvideo_qualitytls_modedisplay_rotationusb_emulationusb_devicesauto_updatedeveloper_modejiggler"
 
 func (i settingsActionGroup) String() string {
 	if i >= settingsActionGroup(len(_settingsActionGroupIndex)-1) {
@@ -129,30 +129,33 @@ func _settingsActionGroupNoOp() {
 	_ = x[settingsGroupTLSMode-(2)]
 	_ = x[settingsGroupDisplayRotate-(3)]
 	_ = x[settingsGroupUSBEmulation-(4)]
-	_ = x[settingsGroupAutoUpdate-(5)]
-	_ = x[settingsGroupDeveloperMode-(6)]
-	_ = x[settingsGroupJiggler-(7)]
+	_ = x[settingsGroupUSBDevices-(5)]
+	_ = x[settingsGroupAutoUpdate-(6)]
+	_ = x[settingsGroupDeveloperMode-(7)]
+	_ = x[settingsGroupJiggler-(8)]
 }
 
-var _settingsActionGroupValues = []settingsActionGroup{settingsGroupKeyboardLayout, settingsGroupVideoQuality, settingsGroupTLSMode, settingsGroupDisplayRotate, settingsGroupUSBEmulation, settingsGroupAutoUpdate, settingsGroupDeveloperMode, settingsGroupJiggler}
+var _settingsActionGroupValues = []settingsActionGroup{settingsGroupKeyboardLayout, settingsGroupVideoQuality, settingsGroupTLSMode, settingsGroupDisplayRotate, settingsGroupUSBEmulation, settingsGroupUSBDevices, settingsGroupAutoUpdate, settingsGroupDeveloperMode, settingsGroupJiggler}
 
 var _settingsActionGroupNameToValueMap = map[string]settingsActionGroup{
-	_settingsActionGroupName[0:15]:       settingsGroupKeyboardLayout,
-	_settingsActionGroupLowerName[0:15]:  settingsGroupKeyboardLayout,
-	_settingsActionGroupName[15:28]:      settingsGroupVideoQuality,
-	_settingsActionGroupLowerName[15:28]: settingsGroupVideoQuality,
-	_settingsActionGroupName[28:36]:      settingsGroupTLSMode,
-	_settingsActionGroupLowerName[28:36]: settingsGroupTLSMode,
-	_settingsActionGroupName[36:52]:      settingsGroupDisplayRotate,
-	_settingsActionGroupLowerName[36:52]: settingsGroupDisplayRotate,
-	_settingsActionGroupName[52:65]:      settingsGroupUSBEmulation,
-	_settingsActionGroupLowerName[52:65]: settingsGroupUSBEmulation,
-	_settingsActionGroupName[65:76]:      settingsGroupAutoUpdate,
-	_settingsActionGroupLowerName[65:76]: settingsGroupAutoUpdate,
-	_settingsActionGroupName[76:90]:      settingsGroupDeveloperMode,
-	_settingsActionGroupLowerName[76:90]: settingsGroupDeveloperMode,
-	_settingsActionGroupName[90:97]:      settingsGroupJiggler,
-	_settingsActionGroupLowerName[90:97]: settingsGroupJiggler,
+	_settingsActionGroupName[0:15]:         settingsGroupKeyboardLayout,
+	_settingsActionGroupLowerName[0:15]:    settingsGroupKeyboardLayout,
+	_settingsActionGroupName[15:28]:        settingsGroupVideoQuality,
+	_settingsActionGroupLowerName[15:28]:   settingsGroupVideoQuality,
+	_settingsActionGroupName[28:36]:        settingsGroupTLSMode,
+	_settingsActionGroupLowerName[28:36]:   settingsGroupTLSMode,
+	_settingsActionGroupName[36:52]:        settingsGroupDisplayRotate,
+	_settingsActionGroupLowerName[36:52]:   settingsGroupDisplayRotate,
+	_settingsActionGroupName[52:65]:        settingsGroupUSBEmulation,
+	_settingsActionGroupLowerName[52:65]:   settingsGroupUSBEmulation,
+	_settingsActionGroupName[65:76]:        settingsGroupUSBDevices,
+	_settingsActionGroupLowerName[65:76]:   settingsGroupUSBDevices,
+	_settingsActionGroupName[76:87]:        settingsGroupAutoUpdate,
+	_settingsActionGroupLowerName[76:87]:   settingsGroupAutoUpdate,
+	_settingsActionGroupName[87:101]:       settingsGroupDeveloperMode,
+	_settingsActionGroupLowerName[87:101]:  settingsGroupDeveloperMode,
+	_settingsActionGroupName[101:108]:      settingsGroupJiggler,
+	_settingsActionGroupLowerName[101:108]: settingsGroupJiggler,
 }
 
 var _settingsActionGroupNames = []string{
@@ -162,8 +165,9 @@ var _settingsActionGroupNames = []string{
 	_settingsActionGroupName[36:52],
 	_settingsActionGroupName[52:65],
 	_settingsActionGroupName[65:76],
-	_settingsActionGroupName[76:90],
-	_settingsActionGroupName[90:97],
+	_settingsActionGroupName[76:87],
+	_settingsActionGroupName[87:101],
+	_settingsActionGroupName[101:108],
 }
 
 // settingsActionGroupString retrieves an enum value from the enum constants string name.

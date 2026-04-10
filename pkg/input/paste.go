@@ -59,7 +59,7 @@ var textKeyMap = map[rune]textKey{
 }
 
 func BuildPasteMacro(layout, text string, delay uint16) ([]hidrpc.KeyboardMacroStep, []rune) {
-	_ = normalizeLayout(layout)
+	_ = NormalizeKeyboardLayoutCode(layout)
 	steps := make([]hidrpc.KeyboardMacroStep, 0, len(text)*2)
 	invalidMap := map[rune]bool{}
 	invalid := make([]rune, 0)
@@ -93,14 +93,4 @@ func InvalidRunesString(invalid []rune) string {
 		parts = append(parts, string(r))
 	}
 	return strings.Join(parts, ", ")
-}
-
-func normalizeLayout(layout string) string {
-	layout = strings.ReplaceAll(layout, "-", "_")
-	switch layout {
-	case "", "en_US", "en_UK", "da_DK", "de_DE", "fr_FR", "es_ES", "it_IT", "ja_JP":
-		return layout
-	default:
-		return "en_US"
-	}
 }

@@ -10,6 +10,7 @@ import (
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/vector"
 
+	"github.com/lkarlslund/jetkvm-desktop/pkg/input"
 	"github.com/lkarlslund/jetkvm-desktop/pkg/session"
 )
 
@@ -659,13 +660,20 @@ func (a *App) settingsWideBodyHeight(section settingsSection, w float64) float64
 		leftW := (w - 14) * 0.54
 		rightW := w - leftW - 14
 		descH := wrappedTextHeight("Throttle local wheel bursts before sending them to the device.", leftW-32, 12)
-		leftH := 48 + descH + 20 + 30 + 8 + 30 + 18
+		leftH := 48 + descH + 20 + 30 + 8 + 30 + 18 + 68
 		rightH := 244.0
+		if a.jigglerEditorOpen {
+			rightH = 560
+		}
 		a.mu.RLock()
 		state := a.sectionData.Mouse
 		a.mu.RUnlock()
 		if state.Error != "" {
-			rightH = max(rightH, 208+wrappedTextHeight(state.Error, rightW-32, 12)+24)
+			base := 208.0
+			if a.jigglerEditorOpen {
+				base = 520
+			}
+			rightH = max(rightH, base+wrappedTextHeight(state.Error, rightW-32, 12)+24)
 		}
 		return max(leftH, rightH)
 	case sectionVideo:
@@ -691,10 +699,10 @@ func (a *App) settingsWideBodyHeight(section settingsSection, w float64) float64
 		leftW := (w - 14) * 0.48
 		rightW := w - leftW - 14
 		leftH := max(220, 82+wrappedTextHeight("Rotate the displayed feed to match the connected panel orientation.", leftW-32, 12)+68)
-		rightH := max(220, 126+wrappedTextHeight(usbDevicesSummary(state.State.USBDeviceCount), rightW-32, 12)+68)
+		rightH := max(336, 126+wrappedTextHeight(usbDevicesSummary(state.State.USBDevices), rightW-32, 12)+184)
 		if state.Error != "" {
 			errH := wrappedTextHeight(state.Error, w-32, 12) + 24
-			return max(leftH, max(rightH, 192+errH))
+			return max(leftH, max(rightH, 312+errH))
 		}
 		return max(leftH, rightH)
 	case sectionAccess:
@@ -884,8 +892,9 @@ func (a *App) loadSettingsSection(section settingsSection, seq uint64) error {
 		if usbConfig, callErr := a.ctrl.GetUSBConfig(ctx); callErr == nil {
 			state.State.USBConfig = usbConfig
 		}
-		if count, callErr := a.ctrl.GetUSBDeviceCount(ctx); callErr == nil {
-			state.State.USBDeviceCount = count
+		if devices, callErr := a.ctrl.GetUSBDevices(ctx); callErr == nil {
+			state.State.USBDevices = devices
+			state.State.USBDeviceCount = usbDeviceCount(devices)
 		}
 		if rotation, callErr := a.ctrl.GetDisplayRotation(ctx); callErr == nil {
 			state.State.DisplayRotation = rotation
@@ -1016,6 +1025,26 @@ func (a *App) drawSettingsActionStatus(screen *ebiten.Image, group settingsActio
 	}
 }
 
+func (a *App) drawSettingsInput(screen *ebiten.Image, id string, x, y, w, h float64, value, placeholder string, focused bool) {
+	border := color.RGBA{R: 84, G: 104, B: 122, A: 120}
+	if focused {
+		border = color.RGBA{R: 96, G: 165, B: 250, A: 180}
+	}
+	vector.FillRect(screen, float32(x), float32(y), float32(w), float32(h), color.RGBA{R: 8, G: 12, B: 18, A: 255}, false)
+	vector.StrokeRect(screen, float32(x), float32(y), float32(w), float32(h), 1, border, false)
+	a.settingsButtons = append(a.settingsButtons, chromeButton{id: id, enabled: true, rect: rect{x: x, y: y, w: w, h: h}})
+	text := value
+	textColor := color.RGBA{R: 236, G: 241, B: 245, A: 255}
+	if text == "" {
+		text = placeholder
+		textColor = color.RGBA{R: 106, G: 120, B: 138, A: 255}
+	}
+	if focused && value != "" && time.Now().UnixNano()/500_000_000%2 == 0 {
+		text += "|"
+	}
+	drawText(screen, trimTextToWidth(text, w-24, 13), x+12, y+10, 13, textColor)
+}
+
 func (a *App) drawSettingsGeneral(screen *ebiten.Image, snap session.Snapshot, x, y, w float64) {
 	a.mu.RLock()
 	state := a.sectionData.General
@@ -1075,22 +1104,48 @@ func (a *App) drawSettingsMouse(screen *ebiten.Image, snap session.Snapshot, x, 
 	a.drawSettingsAction(screen, "scroll_25", "Medium", x+168, y+248, 84, settingsActionVisual{Enabled: true, Active: a.scrollThrottle == 25*time.Millisecond})
 	a.drawSettingsAction(screen, "scroll_50", "High", x+264, y+248, 72, settingsActionVisual{Enabled: true, Active: a.scrollThrottle == 50*time.Millisecond})
 	a.drawSettingsAction(screen, "scroll_100", "Very High", x+348, y+248, 108, settingsActionVisual{Enabled: true, Active: a.scrollThrottle == 100*time.Millisecond})
+	a.drawSettingsAction(screen, "scroll_invert", "Invert Scroll", x+16, y+286, 128, settingsActionVisual{Enabled: true, Active: a.invertScroll})
 	a.drawSettingsCard(screen, rightX, y, rightW, cardH, "Jiggler", "")
 	if state.Loading {
 		drawText(screen, "Loading jiggler state…", rightX+16, y+48, 13, color.RGBA{R: 236, G: 241, B: 245, A: 255})
 	} else {
 		drawSettingsKeyValue(screen, "State", boolPtrWord(state.JigglerEnabled), rightX+16, y+48, 70)
 		drawSettingsKeyValue(screen, "Preset", jigglerPresetLabel(state.JigglerEnabled, state.JigglerConfig), rightX+16, y+74, 70)
-		drawWrappedText(screen, "Use simple native presets that match the device jiggler configuration without exposing the full cron editor.", rightX+16, y+106, rightW-32, 12, color.RGBA{R: 166, G: 178, B: 190, A: 255})
+		drawWrappedText(screen, "Use native presets or open a compact custom editor for the device jiggler schedule.", rightX+16, y+106, rightW-32, 12, color.RGBA{R: 166, G: 178, B: 190, A: 255})
 		jiggler := a.settingsAction(settingsGroupJiggler)
 		a.drawSettingsAction(screen, "jiggler_disabled", "Disabled", rightX+16, y+156, 88, settingsActionVisual{Enabled: state.JigglerEnabled != nil && (!jiggler.Pending || jiggler.PendingChoice == "disabled"), Active: state.JigglerEnabled != nil && !*state.JigglerEnabled, Pending: jiggler.Pending && jiggler.PendingChoice == "disabled"})
 		a.drawSettingsAction(screen, "jiggler_frequent", "Frequent", rightX+116, y+156, 88, settingsActionVisual{Enabled: !jiggler.Pending || jiggler.PendingChoice == "frequent", Active: jigglerPresetLabel(state.JigglerEnabled, state.JigglerConfig) == "Frequent", Pending: jiggler.Pending && jiggler.PendingChoice == "frequent"})
 		a.drawSettingsAction(screen, "jiggler_standard", "Standard", rightX+216, y+156, 88, settingsActionVisual{Enabled: !jiggler.Pending || jiggler.PendingChoice == "standard", Active: jigglerPresetLabel(state.JigglerEnabled, state.JigglerConfig) == "Standard", Pending: jiggler.Pending && jiggler.PendingChoice == "standard"})
 		a.drawSettingsAction(screen, "jiggler_light", "Light", rightX+16, y+194, 72, settingsActionVisual{Enabled: !jiggler.Pending || jiggler.PendingChoice == "light", Active: jigglerPresetLabel(state.JigglerEnabled, state.JigglerConfig) == "Light", Pending: jiggler.Pending && jiggler.PendingChoice == "light"})
-		a.drawSettingsActionStatus(screen, settingsGroupJiggler, rightX+16, y+232, rightW-32)
+		a.drawSettingsAction(screen, "jiggler_custom", "Custom", rightX+100, y+194, 84, settingsActionVisual{Enabled: !jiggler.Pending, Active: a.jigglerEditorOpen || jigglerPresetLabel(state.JigglerEnabled, state.JigglerConfig) == "Custom"})
+		if a.jigglerEditorOpen {
+			drawSettingsSectionLabel(screen, "Custom config", rightX+16, y+236)
+			drawSettingsKeyValue(screen, "Idle (s)", fmt.Sprintf("%d", a.jigglerEditorConfig.InactivityLimitSeconds), rightX+16, y+258, 70)
+			a.drawSettingsAction(screen, "jiggler_custom_inactivity_minus", "-", rightX+148, y+246, 30, settingsActionVisual{Enabled: true})
+			a.drawSettingsAction(screen, "jiggler_custom_inactivity_plus", "+", rightX+186, y+246, 30, settingsActionVisual{Enabled: true})
+			drawSettingsKeyValue(screen, "Jitter", fmt.Sprintf("%d%%", a.jigglerEditorConfig.JitterPercentage), rightX+232, y+258, 56)
+			a.drawSettingsAction(screen, "jiggler_custom_jitter_minus", "-", rightX+320, y+246, 30, settingsActionVisual{Enabled: true})
+			a.drawSettingsAction(screen, "jiggler_custom_jitter_plus", "+", rightX+358, y+246, 30, settingsActionVisual{Enabled: true})
+			drawSettingsSectionLabel(screen, "Cron", rightX+16, y+298)
+			a.drawSettingsInput(screen, "jiggler_focus_cron", rightX+16, y+316, rightW-32, 34, a.jigglerEditorConfig.ScheduleCronTab, "0 * * * * *", a.settingsInputFocus == settingsInputJigglerCron)
+			drawSettingsSectionLabel(screen, "Timezone", rightX+16, y+366)
+			a.drawSettingsInput(screen, "jiggler_focus_timezone", rightX+16, y+384, rightW-32, 34, a.jigglerEditorConfig.Timezone, "UTC", a.settingsInputFocus == settingsInputJigglerTimezone)
+			a.drawSettingsAction(screen, "jiggler_custom_save", "Save Custom", rightX+16, y+434, 116, settingsActionVisual{Enabled: !jiggler.Pending})
+			a.drawSettingsAction(screen, "jiggler_custom_cancel", "Cancel", rightX+144, y+434, 86, settingsActionVisual{Enabled: !jiggler.Pending})
+			a.drawSettingsActionStatus(screen, settingsGroupJiggler, rightX+16, y+474, rightW-32)
+			if a.jigglerEditorError != "" {
+				drawWrappedText(screen, a.jigglerEditorError, rightX+16, y+496, rightW-32, 12, color.RGBA{R: 220, G: 132, B: 132, A: 255})
+			}
+		} else {
+			a.drawSettingsActionStatus(screen, settingsGroupJiggler, rightX+16, y+232, rightW-32)
+		}
 	}
 	if state.Error != "" {
-		drawWrappedText(screen, state.Error, rightX+16, y+232, rightW-32, 12, color.RGBA{R: 220, G: 132, B: 132, A: 255})
+		errY := y + 232.0
+		if a.jigglerEditorOpen {
+			errY = y + 520
+		}
+		drawWrappedText(screen, state.Error, rightX+16, errY, rightW-32, 12, color.RGBA{R: 220, G: 132, B: 132, A: 255})
 	}
 }
 
@@ -1106,34 +1161,21 @@ func (a *App) drawSettingsKeyboard(screen *ebiten.Image, snap session.Snapshot, 
 		layout = "en-US"
 	}
 	layoutState := a.settingsAction(settingsGroupKeyboardLayout)
-	drawText(screen, layout, x+118, bodyY, 13, color.RGBA{R: 236, G: 241, B: 245, A: 255})
+	drawText(screen, keyboardLayoutLabel(layout), x+118, bodyY, 13, color.RGBA{R: 236, G: 241, B: 245, A: 255})
 	a.drawSettingsAction(screen, "toggle_pressed_keys", "Show Pressed Keys", x+w-174, bodyY-14, 158, settingsActionVisual{Enabled: true, Active: a.showPressedKeys})
 	drawText(screen, "Layout presets", x+16, bodyY+40, 13, color.RGBA{R: 166, G: 178, B: 190, A: 255})
-	options := []struct {
-		id    string
-		label string
-	}{
-		{id: "layout:en-US", label: "US"},
-		{id: "layout:en-UK", label: "UK"},
-		{id: "layout:da-DK", label: "Danish"},
-		{id: "layout:de-DE", label: "German"},
-		{id: "layout:fr-FR", label: "French"},
-		{id: "layout:es-ES", label: "Spanish"},
-		{id: "layout:it-IT", label: "Italian"},
-		{id: "layout:ja-JP", label: "Japanese"},
-	}
+	options := input.SupportedKeyboardLayouts()
 	rowX := x + 16
 	rowY := bodyY + 64
 	for i, option := range options {
 		btnW := 94.0
-		if len(option.label) > 7 {
+		if len(option.Label) > 7 {
 			btnW = 112
 		}
-		optionLayout := option.id[7:]
-		a.drawSettingsAction(screen, option.id, option.label, rowX, rowY, btnW, settingsActionVisual{
-			Enabled: snap.Phase == session.PhaseConnected && (!layoutState.Pending || layoutState.PendingChoice == optionLayout),
-			Active:  layout == optionLayout,
-			Pending: layoutState.Pending && layoutState.PendingChoice == optionLayout,
+		a.drawSettingsAction(screen, "layout:"+option.Code, option.Label, rowX, rowY, btnW, settingsActionVisual{
+			Enabled: snap.Phase == session.PhaseConnected && (!layoutState.Pending || layoutState.PendingChoice == option.Code),
+			Active:  layout == option.Code,
+			Pending: layoutState.Pending && layoutState.PendingChoice == option.Code,
 		})
 		rowX += btnW + 10
 		if (i+1)%4 == 0 {
@@ -1154,7 +1196,8 @@ func (a *App) settingsKeyboardBodyHeight(w float64) float64 {
 	cardDesc := "This layout affects paste and keyboard macros. Live typing is sent as physical HID keys."
 	descH := wrappedTextHeight(cardDesc, w-32, 12)
 	noteH := wrappedTextHeight("Make this match the remote OS only for pasted text and macros.", w-32, 13)
-	return 18 + descH + 22 + 18 + 40 + 30 + 8 + 30 + 18 + 16 + noteH + 16
+	rows := (len(input.SupportedKeyboardLayouts()) + 3) / 4
+	return 18 + descH + 22 + 18 + 40 + float64(rows)*38 + 18 + 16 + noteH + 16
 }
 
 func (a *App) drawSettingsVideo(screen *ebiten.Image, snap session.Snapshot, x, y, w float64) {
@@ -1201,15 +1244,41 @@ func (a *App) drawSettingsHardware(screen *ebiten.Image, x, y, w float64) {
 	drawSettingsKeyValue(screen, "USB Emulation", boolPtrWord(state.State.USBEmulation), rightX+16, y+50, 112)
 	drawSettingsKeyValue(screen, "USB Config", usbConfigLabel(state.State.USBConfig), rightX+16, y+76, 112)
 	drawSettingsSectionLabel(screen, "Configured devices", rightX+16, y+108)
-	drawWrappedText(screen, usbDevicesSummary(state.State.USBDeviceCount), rightX+16, y+126, rightW-32, 12, color.RGBA{R: 236, G: 241, B: 245, A: 255})
+	drawWrappedText(screen, usbDevicesSummary(state.State.USBDevices), rightX+16, y+126, rightW-32, 12, color.RGBA{R: 236, G: 241, B: 245, A: 255})
 	if state.State.USBEmulation != nil {
 		usbState := a.settingsAction(settingsGroupUSBEmulation)
 		a.drawSettingsAction(screen, "usb_emulation_on", "USB On", rightX+16, y+150, 86, settingsActionVisual{Enabled: !usbState.Pending || usbState.PendingChoice == "on", Active: *state.State.USBEmulation, Pending: usbState.Pending && usbState.PendingChoice == "on"})
 		a.drawSettingsAction(screen, "usb_emulation_off", "USB Off", rightX+114, y+150, 92, settingsActionVisual{Enabled: !usbState.Pending || usbState.PendingChoice == "off", Active: !*state.State.USBEmulation, Pending: usbState.Pending && usbState.PendingChoice == "off"})
 		a.drawSettingsActionStatus(screen, settingsGroupUSBEmulation, rightX+16, y+188, rightW-32)
 	}
+	usbDevicesState := a.settingsAction(settingsGroupUSBDevices)
+	drawSettingsSectionLabel(screen, "Preset", rightX+16, y+226)
+	preset := usbDevicePresetLabel(state.State.USBDevices)
+	a.drawSettingsAction(screen, "usb_devices_default", "Default", rightX+16, y+244, 86, settingsActionVisual{Enabled: !usbDevicesState.Pending || usbDevicesState.PendingChoice == "default", Active: preset == "Default", Pending: usbDevicesState.Pending && usbDevicesState.PendingChoice == "default"})
+	a.drawSettingsAction(screen, "usb_devices_keyboard_only", "Keyboard Only", rightX+114, y+244, 122, settingsActionVisual{Enabled: !usbDevicesState.Pending || usbDevicesState.PendingChoice == "keyboard_only", Active: preset == "Keyboard Only", Pending: usbDevicesState.Pending && usbDevicesState.PendingChoice == "keyboard_only"})
+	drawText(screen, "Custom", rightX+248, y+254, 12, color.RGBA{R: 166, G: 178, B: 190, A: 255})
+	deviceToggles := []struct {
+		id, label string
+		active    bool
+		x, y, w   float64
+	}{
+		{id: "usb_toggle_keyboard", label: "Keyboard", active: state.State.USBDevices.Keyboard, x: rightX + 16, y: y + 286, w: 94},
+		{id: "usb_toggle_absolute_mouse", label: "Abs Mouse", active: state.State.USBDevices.AbsoluteMouse, x: rightX + 122, y: y + 286, w: 98},
+		{id: "usb_toggle_relative_mouse", label: "Rel Mouse", active: state.State.USBDevices.RelativeMouse, x: rightX + 232, y: y + 286, w: 96},
+		{id: "usb_toggle_mass_storage", label: "Mass Storage", active: state.State.USBDevices.MassStorage, x: rightX + 16, y: y + 324, w: 110},
+		{id: "usb_toggle_serial_console", label: "Serial", active: state.State.USBDevices.SerialConsole, x: rightX + 138, y: y + 324, w: 74},
+		{id: "usb_toggle_network", label: "Network", active: state.State.USBDevices.Network, x: rightX + 224, y: y + 324, w: 88},
+	}
+	for _, toggle := range deviceToggles {
+		a.drawSettingsAction(screen, toggle.id, toggle.label, toggle.x, toggle.y, toggle.w, settingsActionVisual{
+			Enabled: !usbDevicesState.Pending || usbDevicesState.PendingChoice == "custom",
+			Active:  toggle.active,
+			Pending: usbDevicesState.Pending && usbDevicesState.PendingChoice == "custom",
+		})
+	}
+	a.drawSettingsActionStatus(screen, settingsGroupUSBDevices, rightX+16, y+366, rightW-32)
 	if state.Error != "" {
-		drawWrappedText(screen, state.Error, x+16, y+192, w-32, 12, color.RGBA{R: 220, G: 132, B: 132, A: 255})
+		drawWrappedText(screen, state.Error, x+16, y+392, w-32, 12, color.RGBA{R: 220, G: 132, B: 132, A: 255})
 	}
 }
 
@@ -1335,7 +1404,9 @@ func usbConfigLabel(cfg session.USBConfig) string {
 	if cfg == (session.USBConfig{}) {
 		return ""
 	}
-	return fmt.Sprintf("%s / %s", cfg.VendorID, cfg.ProductID)
+	product := fallbackLabel(cfg.Product, cfg.ProductID)
+	vendor := fallbackLabel(cfg.Manufacturer, cfg.VendorID)
+	return fmt.Sprintf("%s / %s", vendor, product)
 }
 
 func jigglerPresetLabel(enabled *bool, cfg *session.JigglerConfig) string {
@@ -1357,8 +1428,51 @@ func jigglerPresetLabel(enabled *bool, cfg *session.JigglerConfig) string {
 	}
 }
 
-func usbDevicesSummary(count int) string {
-	return fmt.Sprintf("%d configured classes", count)
+func usbDevicesSummary(devices session.USBDevices) string {
+	return fmt.Sprintf("%d configured classes", usbDeviceCount(devices))
+}
+
+func usbDeviceCount(devices session.USBDevices) int {
+	count := 0
+	if devices.Keyboard {
+		count++
+	}
+	if devices.AbsoluteMouse {
+		count++
+	}
+	if devices.RelativeMouse {
+		count++
+	}
+	if devices.MassStorage {
+		count++
+	}
+	if devices.SerialConsole {
+		count++
+	}
+	if devices.Network {
+		count++
+	}
+	return count
+}
+
+func usbDevicePresetLabel(devices session.USBDevices) string {
+	switch devices {
+	case defaultUSBDevices():
+		return "Default"
+	case keyboardOnlyUSBDevices():
+		return "Keyboard Only"
+	default:
+		return "Custom"
+	}
+}
+
+func keyboardLayoutLabel(code string) string {
+	for _, layout := range input.SupportedKeyboardLayouts() {
+		if layout.Code == code {
+			return layout.Label
+		}
+	}
+	return fallbackLabel(code, "en-US")
 }
 
 func (a *App) drawSettingsPlanned(screen *ebiten.Image, section settingsSectionDef, x, y, w float64) {

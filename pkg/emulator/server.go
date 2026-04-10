@@ -69,6 +69,8 @@ type DeviceState struct {
 	TLSMode             string
 	DisplayRotation     string
 	USBEmulation        bool
+	USBConfig           map[string]any
+	USBDevices          map[string]any
 }
 
 type InputRecord struct {
@@ -148,6 +150,21 @@ func NewServer(cfg Config) (*Server, error) {
 			TLSMode:         "disabled",
 			DisplayRotation: "270",
 			USBEmulation:    true,
+			USBConfig: map[string]any{
+				"vendor_id":     "0xCafe",
+				"product_id":    "0x4000",
+				"serial_number": "JETKVM-DESKTOP",
+				"manufacturer":  "JetKVM",
+				"product":       "JetKVM Default",
+			},
+			USBDevices: map[string]any{
+				"keyboard":       true,
+				"absolute_mouse": true,
+				"relative_mouse": true,
+				"mass_storage":   true,
+				"serial_console": false,
+				"network":        false,
+			},
 		},
 		inputs: make([]InputRecord, 0, 32),
 		storage: map[string]storedFile{
@@ -898,9 +915,19 @@ func (s *session) handleRPC(data []byte) error {
 			resp = jsonrpc.NewErrorResponse(req.ID, -32602, "missing state", nil)
 		}
 	case "getUsbConfig":
-		resp = jsonrpc.NewResponse(req.ID, map[string]any{"vendor_id": "0xCafe", "product_id": "0x4000"})
+		resp = jsonrpc.NewResponse(req.ID, s.serverRef.state.USBConfig)
 	case "getUsbDevices":
-		resp = jsonrpc.NewResponse(req.ID, []any{})
+		resp = jsonrpc.NewResponse(req.ID, s.serverRef.state.USBDevices)
+	case "setUsbDevices":
+		if devices, ok := params["devices"].(map[string]any); ok {
+			s.serverRef.state.USBDevices = devices
+			if applyButDrop == req.Method {
+				return nil
+			}
+			resp = jsonrpc.NewResponse(req.ID, true)
+		} else {
+			resp = jsonrpc.NewErrorResponse(req.ID, -32602, "missing devices", nil)
+		}
 	case "getDisplayRotation":
 		resp = jsonrpc.NewResponse(req.ID, map[string]any{"rotation": s.serverRef.state.DisplayRotation})
 	case "setDisplayRotation":

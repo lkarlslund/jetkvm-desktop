@@ -156,6 +156,27 @@ func TestPreferencesNormalizeChromeLayout(t *testing.T) {
 	}
 }
 
+func TestNormalizeWheelDeltaRespectsInvertScroll(t *testing.T) {
+	if got := normalizeWheelDelta(1, false); got != -1 {
+		t.Fatalf("normalizeWheelDelta(1, false) = %d, want -1", got)
+	}
+	if got := normalizeWheelDelta(1, true); got != 1 {
+		t.Fatalf("normalizeWheelDelta(1, true) = %d, want 1", got)
+	}
+	if got := normalizeWheelDelta(-2, false); got != 2 {
+		t.Fatalf("normalizeWheelDelta(-2, false) = %d, want 2", got)
+	}
+}
+
+func TestValidateJigglerConfig(t *testing.T) {
+	if err := validateJigglerConfig(standardJigglerConfig()); err != nil {
+		t.Fatalf("standard config rejected: %v", err)
+	}
+	if err := validateJigglerConfig(session.JigglerConfig{}); err == nil {
+		t.Fatal("expected empty jiggler config to fail validation")
+	}
+}
+
 func TestChromeAnchorOrigin(t *testing.T) {
 	x, y := chromeAnchorOrigin(chromeAnchorTopLeft, 1280, 720, 200, 34)
 	if x != 18 || y != 18 {

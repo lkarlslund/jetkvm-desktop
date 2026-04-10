@@ -2,7 +2,6 @@ package client
 
 import (
 	"context"
-	"encoding/json"
 )
 
 func (c *Client) GetDeviceID(ctx context.Context) (string, error) {
@@ -125,10 +124,14 @@ func (c *Client) GetUSBConfig(ctx context.Context) (USBConfig, error) {
 	return cfg, err
 }
 
-func (c *Client) GetUSBDevices(ctx context.Context) ([]json.RawMessage, error) {
-	var devices rawList[json.RawMessage]
+func (c *Client) GetUSBDevices(ctx context.Context) (USBDevices, error) {
+	var devices USBDevices
 	err := c.Call(ctx, "getUsbDevices", nil, &devices)
-	return []json.RawMessage(devices), err
+	return devices, err
+}
+
+func (c *Client) SetUSBDevices(ctx context.Context, devices USBDevices) error {
+	return c.Call(ctx, "setUsbDevices", usbDevicesRequest{Devices: devices}, nil)
 }
 
 func (c *Client) GetDisplayRotation(ctx context.Context) (DisplayRotationState, error) {

@@ -289,6 +289,29 @@ func (c *Controller) SetUSBEmulation(enabled bool) error {
 	})
 }
 
+func (c *Controller) SetUSBDevices(devices USBDevices) error {
+	return c.mutateAndConfirm(func(ctx context.Context) error {
+		current := c.clientIfConnected()
+		if current == nil {
+			return errors.New("client not connected")
+		}
+		return current.SetUSBDevices(ctx, client.USBDevices{
+			AbsoluteMouse: devices.AbsoluteMouse,
+			RelativeMouse: devices.RelativeMouse,
+			Keyboard:      devices.Keyboard,
+			MassStorage:   devices.MassStorage,
+			SerialConsole: devices.SerialConsole,
+			Network:       devices.Network,
+		})
+	}, func(ctx context.Context) (bool, error) {
+		current, err := c.GetUSBDevices(ctx)
+		if err != nil {
+			return false, err
+		}
+		return current == devices, nil
+	})
+}
+
 func (c *Controller) SetNetworkSettings(settings NetworkSettings) error {
 	if settings.Hostname == "" && settings.IP == "" {
 		return errors.New("network settings are required")
@@ -357,21 +380,31 @@ func (c *Controller) GetUSBConfig(ctx context.Context) (USBConfig, error) {
 		return USBConfig{}, err
 	}
 	return USBConfig{
-		VendorID:  cfg.VendorID,
-		ProductID: cfg.ProductID,
+		VendorID:     cfg.VendorID,
+		ProductID:    cfg.ProductID,
+		SerialNumber: cfg.SerialNumber,
+		Manufacturer: cfg.Manufacturer,
+		Product:      cfg.Product,
 	}, nil
 }
 
-func (c *Controller) GetUSBDeviceCount(ctx context.Context) (int, error) {
+func (c *Controller) GetUSBDevices(ctx context.Context) (USBDevices, error) {
 	current := c.clientIfConnected()
 	if current == nil {
-		return 0, errors.New("client not connected")
+		return USBDevices{}, errors.New("client not connected")
 	}
 	devices, err := current.GetUSBDevices(ctx)
 	if err != nil {
-		return 0, err
+		return USBDevices{}, err
 	}
-	return len(devices), nil
+	return USBDevices{
+		AbsoluteMouse: devices.AbsoluteMouse,
+		RelativeMouse: devices.RelativeMouse,
+		Keyboard:      devices.Keyboard,
+		MassStorage:   devices.MassStorage,
+		SerialConsole: devices.SerialConsole,
+		Network:       devices.Network,
+	}, nil
 }
 
 func (c *Controller) GetDisplayRotation(ctx context.Context) (DisplayRotation, error) {
@@ -1062,17 +1095,11 @@ func isAuthError(err error) bool {
 }
 
 func normalizeKeyboardLayoutCode(layout string) string {
-	layout = strings.TrimSpace(layout)
-	if layout == "" {
+	trimmed := strings.TrimSpace(layout)
+	if trimmed == "" {
 		return ""
 	}
-	layout = strings.ReplaceAll(layout, "_", "-")
-	switch layout {
-	case "en-US", "en-UK", "da-DK", "de-DE", "fr-FR", "es-ES", "it-IT", "ja-JP":
-		return layout
-	default:
-		return layout
-	}
+	return input.NormalizeKeyboardLayoutCode(trimmed)
 }
 
 func extractString(v any, key string) string {

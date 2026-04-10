@@ -70,6 +70,7 @@ type App struct {
 	launcherButtons        []chromeButton
 	prefs                  Preferences
 	hideCursor             bool
+	invertScroll           bool
 	showPressedKeys        bool
 	scrollThrottle         time.Duration
 	lastWheelAt            time.Time
@@ -111,6 +112,10 @@ type App struct {
 	mediaUploadTotal       int64
 	mediaUploadSpeed       float64
 	mediaStorageLoaded     bool
+	settingsInputFocus     settingsInputField
+	jigglerEditorOpen      bool
+	jigglerEditorConfig    session.JigglerConfig
+	jigglerEditorError     string
 }
 
 type statsPoint struct {
@@ -138,6 +143,7 @@ const (
 	settingsGroupTLSMode                                   // tls_mode
 	settingsGroupDisplayRotate                             // display_rotation
 	settingsGroupUSBEmulation                              // usb_emulation
+	settingsGroupUSBDevices                                // usb_devices
 	settingsGroupAutoUpdate                                // auto_update
 	settingsGroupDeveloperMode                             // developer_mode
 	settingsGroupJiggler                                   // jiggler
@@ -157,6 +163,14 @@ const (
 	mediaViewURL                      // url
 	mediaViewStorage                  // storage
 	mediaViewUpload                   // upload
+)
+
+type settingsInputField uint8
+
+const (
+	settingsInputNone settingsInputField = iota
+	settingsInputJigglerCron
+	settingsInputJigglerTimezone
 )
 
 type mediaFileRow struct {
@@ -182,6 +196,7 @@ func New(cfg Config) (*App, error) {
 		settingsSection: sectionGeneral,
 		prefs:           prefs,
 		hideCursor:      prefs.HideCursor,
+		invertScroll:    prefs.InvertScroll,
 		showPressedKeys: prefs.ShowPressedKeys,
 		scrollThrottle:  scrollThrottleFromPref(prefs.ScrollThrottle),
 		pasteDelay:      100,
@@ -238,6 +253,7 @@ func (a *App) Update() error {
 	a.syncWindowTitle()
 	a.syncChromeVisibility()
 	a.syncStats()
+	a.syncSettingsInput()
 	nowFocused := ebiten.IsFocused()
 	if a.focused && !nowFocused {
 		a.releaseAllKeys(true)
@@ -400,7 +416,7 @@ func (a *App) syncMouse() {
 	}
 	_, wheelY := ebiten.Wheel()
 	if wheelY != 0 && (a.scrollThrottle == 0 || time.Since(a.lastWheelAt) >= a.scrollThrottle) {
-		delta := normalizeWheelDelta(wheelY)
+		delta := normalizeWheelDelta(wheelY, a.invertScroll)
 		if delta != 0 {
 			a.runAsync(func() {
 				_ = a.ctrl.SendWheel(delta)
@@ -423,7 +439,7 @@ func clamp(value, minValue, maxValue float64) float64 {
 	return value
 }
 
-func normalizeWheelDelta(value float64) int8 {
+func normalizeWheelDelta(value float64, invert bool) int8 {
 	if value == 0 {
 		return 0
 	}
@@ -434,7 +450,11 @@ func normalizeWheelDelta(value float64) int8 {
 	default:
 		value = math.Round(value)
 	}
-	return int8(clamp(-value, -127, 127))
+	sign := -1.0
+	if invert {
+		sign = 1
+	}
+	return int8(clamp(sign*value, -127, 127))
 }
 
 func min(a, b float64) float64 {
@@ -770,9 +790,60 @@ func (a *App) applyCursorMode() {
 
 func (a *App) savePreferences() {
 	a.prefs.HideCursor = a.hideCursor
+	a.prefs.InvertScroll = a.invertScroll
 	a.prefs.ShowPressedKeys = a.showPressedKeys
 	a.prefs.ScrollThrottle = scrollThrottlePref(a.scrollThrottle)
 	_ = savePreferences(a.prefs)
+}
+
+func (a *App) syncSettingsInput() {
+	if !a.settingsOpen || a.settingsSection != sectionMouse || !a.jigglerEditorOpen {
+		return
+	}
+	switch a.settingsInputFocus {
+	case settingsInputJigglerCron, settingsInputJigglerTimezone:
+	default:
+		return
+	}
+	if inpututil.IsKeyJustPressed(ebiten.KeyBackspace) {
+		switch a.settingsInputFocus {
+		case settingsInputJigglerCron:
+			runes := []rune(a.jigglerEditorConfig.ScheduleCronTab)
+			if len(runes) > 0 {
+				a.jigglerEditorConfig.ScheduleCronTab = string(runes[:len(runes)-1])
+			}
+		case settingsInputJigglerTimezone:
+			runes := []rune(a.jigglerEditorConfig.Timezone)
+			if len(runes) > 0 {
+				a.jigglerEditorConfig.Timezone = string(runes[:len(runes)-1])
+			}
+		}
+		a.jigglerEditorError = ""
+	}
+	if inpututil.IsKeyJustPressed(ebiten.KeyTab) {
+		if a.settingsInputFocus == settingsInputJigglerCron {
+			a.settingsInputFocus = settingsInputJigglerTimezone
+		} else {
+			a.settingsInputFocus = settingsInputJigglerCron
+		}
+		return
+	}
+	if inpututil.IsKeyJustPressed(ebiten.KeyEnter) {
+		a.invokeAction("jiggler_custom_save")
+		return
+	}
+	for _, r := range ebiten.AppendInputChars(nil) {
+		if r < 32 || r == 127 {
+			continue
+		}
+		switch a.settingsInputFocus {
+		case settingsInputJigglerCron:
+			a.jigglerEditorConfig.ScheduleCronTab += string(r)
+		case settingsInputJigglerTimezone:
+			a.jigglerEditorConfig.Timezone += string(r)
+		}
+		a.jigglerEditorError = ""
+	}
 }
 
 func (a *App) handleClick() {
@@ -958,6 +1029,9 @@ func (a *App) invokeAction(id string) {
 	case "scroll_100":
 		a.scrollThrottle = 100 * time.Millisecond
 		a.savePreferences()
+	case "scroll_invert":
+		a.invertScroll = !a.invertScroll
+		a.savePreferences()
 	case "toggle_pressed_keys":
 		a.showPressedKeys = !a.showPressedKeys
 		a.savePreferences()
@@ -1119,23 +1193,51 @@ func (a *App) invokeAction(id string) {
 			JitterPercentage:       25,
 			ScheduleCronTab:        "0 */5 * * * *",
 		})
+	case "jiggler_custom":
+		a.openJigglerEditor()
+	case "jiggler_custom_cancel":
+		a.closeJigglerEditor()
+	case "jiggler_focus_cron":
+		a.settingsInputFocus = settingsInputJigglerCron
+	case "jiggler_focus_timezone":
+		a.settingsInputFocus = settingsInputJigglerTimezone
+	case "jiggler_custom_inactivity_minus":
+		a.jigglerEditorConfig.InactivityLimitSeconds = maxInt(5, a.jigglerEditorConfig.InactivityLimitSeconds-5)
+		a.jigglerEditorError = ""
+	case "jiggler_custom_inactivity_plus":
+		a.jigglerEditorConfig.InactivityLimitSeconds = minInt(3600, a.jigglerEditorConfig.InactivityLimitSeconds+5)
+		a.jigglerEditorError = ""
+	case "jiggler_custom_jitter_minus":
+		a.jigglerEditorConfig.JitterPercentage = maxInt(0, a.jigglerEditorConfig.JitterPercentage-5)
+		a.jigglerEditorError = ""
+	case "jiggler_custom_jitter_plus":
+		a.jigglerEditorConfig.JitterPercentage = minInt(100, a.jigglerEditorConfig.JitterPercentage+5)
+		a.jigglerEditorError = ""
+	case "jiggler_custom_save":
+		a.invokeJigglerCustomSave()
+	case "usb_devices_default":
+		a.invokeUSBDevicesAction("default", defaultUSBDevices())
+	case "usb_devices_keyboard_only":
+		a.invokeUSBDevicesAction("keyboard_only", keyboardOnlyUSBDevices())
+	case "usb_toggle_keyboard":
+		a.toggleUSBDevice("keyboard")
+	case "usb_toggle_absolute_mouse":
+		a.toggleUSBDevice("absolute_mouse")
+	case "usb_toggle_relative_mouse":
+		a.toggleUSBDevice("relative_mouse")
+	case "usb_toggle_mass_storage":
+		a.toggleUSBDevice("mass_storage")
+	case "usb_toggle_serial_console":
+		a.toggleUSBDevice("serial_console")
+	case "usb_toggle_network":
+		a.toggleUSBDevice("network")
 	case "layout:en-US":
 		a.invokeKeyboardLayoutAction("en-US")
-	case "layout:en-UK":
-		a.invokeKeyboardLayoutAction("en-UK")
-	case "layout:da-DK":
-		a.invokeKeyboardLayoutAction("da-DK")
-	case "layout:de-DE":
-		a.invokeKeyboardLayoutAction("de-DE")
-	case "layout:fr-FR":
-		a.invokeKeyboardLayoutAction("fr-FR")
-	case "layout:es-ES":
-		a.invokeKeyboardLayoutAction("es-ES")
-	case "layout:it-IT":
-		a.invokeKeyboardLayoutAction("it-IT")
-	case "layout:ja-JP":
-		a.invokeKeyboardLayoutAction("ja-JP")
 	default:
+		if code, ok := strings.CutPrefix(id, "layout:"); ok {
+			a.invokeKeyboardLayoutAction(code)
+			return
+		}
 		if strings.HasPrefix(id, "discover:") {
 			a.connectFromLauncher(strings.TrimPrefix(id, "discover:"))
 			return
@@ -1146,6 +1248,9 @@ func (a *App) invokeAction(id string) {
 				return
 			}
 			a.settingsSection = section
+			if section != sectionMouse {
+				a.closeJigglerEditor()
+			}
 			a.refreshSettingsSection(a.settingsSection)
 		}
 	}
@@ -1173,8 +1278,149 @@ func (a *App) invokeJigglerPresetAction(choice string, enabled bool, cfg session
 		if err := a.ctrl.SetJigglerState(enabled); err != nil {
 			return err
 		}
+		a.closeJigglerEditor()
 		return a.refreshSettingsSectionSync(sectionMouse)
 	})
+}
+
+func (a *App) invokeJigglerCustomSave() {
+	if a.settingsActionPending(settingsGroupJiggler) {
+		return
+	}
+	if err := validateJigglerConfig(a.jigglerEditorConfig); err != nil {
+		a.jigglerEditorError = err.Error()
+		return
+	}
+	cfg := a.jigglerEditorConfig
+	a.withSettingsAction(settingsGroupJiggler, "custom", func() error {
+		if err := a.ctrl.SetJigglerConfig(cfg); err != nil {
+			return err
+		}
+		if err := a.ctrl.SetJigglerState(true); err != nil {
+			return err
+		}
+		a.closeJigglerEditor()
+		return a.refreshSettingsSectionSync(sectionMouse)
+	})
+}
+
+func (a *App) invokeUSBDevicesAction(choice string, devices session.USBDevices) {
+	if a.settingsActionPending(settingsGroupUSBDevices) {
+		return
+	}
+	a.withSettingsAction(settingsGroupUSBDevices, choice, func() error {
+		if err := a.ctrl.SetUSBDevices(devices); err != nil {
+			return err
+		}
+		return a.refreshSettingsSectionSync(sectionHardware)
+	})
+}
+
+func (a *App) toggleUSBDevice(kind string) {
+	a.mu.RLock()
+	devices := a.sectionData.Hardware.State.USBDevices
+	a.mu.RUnlock()
+	switch kind {
+	case "keyboard":
+		devices.Keyboard = !devices.Keyboard
+	case "absolute_mouse":
+		devices.AbsoluteMouse = !devices.AbsoluteMouse
+	case "relative_mouse":
+		devices.RelativeMouse = !devices.RelativeMouse
+	case "mass_storage":
+		devices.MassStorage = !devices.MassStorage
+	case "serial_console":
+		devices.SerialConsole = !devices.SerialConsole
+	case "network":
+		devices.Network = !devices.Network
+	default:
+		return
+	}
+	a.invokeUSBDevicesAction("custom", devices)
+}
+
+func (a *App) openJigglerEditor() {
+	if a.jigglerEditorOpen {
+		return
+	}
+	a.mu.RLock()
+	state := a.sectionData.Mouse
+	a.mu.RUnlock()
+	cfg := state.JigglerConfig
+	if cfg == nil {
+		defaultCfg := standardJigglerConfig()
+		cfg = &defaultCfg
+	}
+	a.jigglerEditorConfig = *cfg
+	if a.jigglerEditorConfig.InactivityLimitSeconds == 0 {
+		a.jigglerEditorConfig = standardJigglerConfig()
+	}
+	a.jigglerEditorOpen = true
+	a.jigglerEditorError = ""
+	a.settingsInputFocus = settingsInputJigglerCron
+}
+
+func (a *App) closeJigglerEditor() {
+	a.jigglerEditorOpen = false
+	a.jigglerEditorError = ""
+	a.settingsInputFocus = settingsInputNone
+}
+
+func defaultUSBDevices() session.USBDevices {
+	return session.USBDevices{
+		Keyboard:      true,
+		AbsoluteMouse: true,
+		RelativeMouse: true,
+		MassStorage:   true,
+		SerialConsole: false,
+		Network:       false,
+	}
+}
+
+func keyboardOnlyUSBDevices() session.USBDevices {
+	return session.USBDevices{
+		Keyboard:      true,
+		AbsoluteMouse: false,
+		RelativeMouse: false,
+		MassStorage:   false,
+		SerialConsole: false,
+		Network:       false,
+	}
+}
+
+func standardJigglerConfig() session.JigglerConfig {
+	return session.JigglerConfig{
+		InactivityLimitSeconds: 60,
+		JitterPercentage:       25,
+		ScheduleCronTab:        "0 * * * * *",
+	}
+}
+
+func validateJigglerConfig(cfg session.JigglerConfig) error {
+	switch {
+	case cfg.InactivityLimitSeconds <= 0:
+		return errors.New("inactivity limit must be greater than zero")
+	case cfg.JitterPercentage < 0:
+		return errors.New("jitter percentage cannot be negative")
+	case strings.TrimSpace(cfg.ScheduleCronTab) == "":
+		return errors.New("cron schedule is required")
+	default:
+		return nil
+	}
+}
+
+func maxInt(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}
+
+func minInt(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 func (a *App) syncChromeVisibility() {
@@ -1305,6 +1551,7 @@ func (a *App) closeSettingsOverlay() {
 		return
 	}
 	a.settingsOpen = false
+	a.closeJigglerEditor()
 	a.armOverlayDismissSuppression()
 	a.applyCursorMode()
 }

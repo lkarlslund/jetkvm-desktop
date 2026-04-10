@@ -202,6 +202,43 @@ func TestControllerSetKeyboardLayoutSucceedsWhenWriteAckIsDropped(t *testing.T) 
 	}
 }
 
+func TestControllerSetUSBDevicesSucceedsWhenWriteAckIsDropped(t *testing.T) {
+	srv, ctx, cancel := startFaultedEmulator(t, emulator.FaultConfig{
+		ApplyButDropRPCMethod: "setUsbDevices",
+	})
+	defer cancel()
+
+	controller := New(Config{
+		BaseURL:         srv.BaseURL(),
+		Password:        "secret",
+		RPCTimeout:      300 * time.Millisecond,
+		MutationTimeout: 2 * time.Second,
+		Reconnect:       true,
+	})
+	controller.Start(ctx)
+	defer controller.Stop()
+
+	waitForPhase(t, controller, PhaseConnected, 5*time.Second)
+	want := USBDevices{
+		Keyboard:      true,
+		AbsoluteMouse: false,
+		RelativeMouse: false,
+		MassStorage:   false,
+		SerialConsole: true,
+		Network:       false,
+	}
+	if err := controller.SetUSBDevices(want); err != nil {
+		t.Fatalf("SetUSBDevices returned error: %v", err)
+	}
+	got, err := controller.GetUSBDevices(context.Background())
+	if err != nil {
+		t.Fatalf("GetUSBDevices returned error: %v", err)
+	}
+	if got != want {
+		t.Fatalf("usb devices = %+v, want %+v", got, want)
+	}
+}
+
 func TestControllerVirtualMediaURLMountAndUnmount(t *testing.T) {
 	srv, ctx, cancel := startEmulator(t)
 	defer cancel()

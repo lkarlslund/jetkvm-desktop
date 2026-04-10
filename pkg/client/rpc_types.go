@@ -1,10 +1,6 @@
 package client
 
-import (
-	"encoding/json"
-
-	"github.com/lkarlslund/jetkvm-desktop/pkg/virtualmedia"
-)
+import "github.com/lkarlslund/jetkvm-desktop/pkg/virtualmedia"
 
 type LocalVersion struct {
 	AppVersion    string `json:"appVersion"`
@@ -38,8 +34,20 @@ type TLSState struct {
 }
 
 type USBConfig struct {
-	VendorID  string `json:"vendor_id"`
-	ProductID string `json:"product_id"`
+	VendorID     string `json:"vendor_id"`
+	ProductID    string `json:"product_id"`
+	SerialNumber string `json:"serial_number"`
+	Manufacturer string `json:"manufacturer"`
+	Product      string `json:"product"`
+}
+
+type USBDevices struct {
+	AbsoluteMouse bool `json:"absolute_mouse"`
+	RelativeMouse bool `json:"relative_mouse"`
+	Keyboard      bool `json:"keyboard"`
+	MassStorage   bool `json:"mass_storage"`
+	SerialConsole bool `json:"serial_console"`
+	Network       bool `json:"network"`
 }
 
 type DisplayRotationState struct {
@@ -88,6 +96,10 @@ type setDisplayRotationRequest struct {
 	Params DisplayRotationState `json:"params"`
 }
 
+type usbDevicesRequest struct {
+	Devices USBDevices `json:"devices"`
+}
+
 type setQualityRequest struct {
 	Factor float64 `json:"factor"`
 }
@@ -110,24 +122,4 @@ type wheelReportRequest struct {
 
 type storageFilesResponse struct {
 	Files []virtualmedia.StorageFile `json:"files"`
-}
-
-type rawList[T any] []T
-
-func (r *rawList[T]) UnmarshalJSON(data []byte) error {
-	var raw []json.RawMessage
-	if err := json.Unmarshal(data, &raw); err != nil {
-		return err
-	}
-	out := make([]T, len(raw))
-	for i := range raw {
-		if len(raw[i]) == 0 || string(raw[i]) == "null" {
-			continue
-		}
-		if err := json.Unmarshal(raw[i], &out[i]); err != nil {
-			return err
-		}
-	}
-	*r = out
-	return nil
 }
