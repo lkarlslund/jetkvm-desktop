@@ -185,6 +185,22 @@ func (c *Controller) Reboot() error {
 	return current.Reboot(withTimeout(context.Background(), c.cfg.MutationTimeout))
 }
 
+func (c *Controller) TryUpdate() error {
+	current := c.clientIfConnected()
+	if current == nil {
+		return errors.New("client not connected")
+	}
+	return current.TryUpdate(withTimeout(context.Background(), c.cfg.MutationTimeout))
+}
+
+func (c *Controller) FactoryReset() error {
+	current := c.clientIfConnected()
+	if current == nil {
+		return errors.New("client not connected")
+	}
+	return current.FactoryReset(withTimeout(context.Background(), c.cfg.MutationTimeout))
+}
+
 func (c *Controller) SetQuality(value float64) error {
 	if err := c.mutateAndConfirm(func(ctx context.Context) error {
 		current := c.clientIfConnected()
@@ -592,6 +608,55 @@ func (c *Controller) GetUpdateStatus(ctx context.Context) (UpdateStatus, error) 
 		},
 		AppUpdateAvailable:    status.AppUpdateAvailable,
 		SystemUpdateAvailable: status.SystemUpdateAvailable,
+	}, nil
+}
+
+func (c *Controller) GetPublicIPAddresses(ctx context.Context, refresh bool) ([]PublicIP, error) {
+	current := c.clientIfConnected()
+	if current == nil {
+		return nil, errors.New("client not connected")
+	}
+	addresses, err := current.GetPublicIPAddresses(ctx, refresh)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]PublicIP, 0, len(addresses))
+	for _, address := range addresses {
+		out = append(out, PublicIP{
+			IPAddress:   address.IPAddress,
+			LastUpdated: address.LastUpdated,
+		})
+	}
+	return out, nil
+}
+
+func (c *Controller) GetTailscaleStatus(ctx context.Context) (*TailscaleStatus, error) {
+	current := c.clientIfConnected()
+	if current == nil {
+		return nil, errors.New("client not connected")
+	}
+	status, err := current.GetTailscaleStatus(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var self *TailscalePeer
+	if status.Self != nil {
+		self = &TailscalePeer{
+			HostName:     status.Self.HostName,
+			DNSName:      status.Self.DNSName,
+			TailscaleIPs: append([]string(nil), status.Self.TailscaleIPs...),
+			Online:       status.Self.Online,
+			OS:           status.Self.OS,
+		}
+	}
+	return &TailscaleStatus{
+		Installed:    status.Installed,
+		Running:      status.Running,
+		BackendState: status.BackendState,
+		AuthURL:      status.AuthURL,
+		ControlURL:   status.ControlURL,
+		Self:         self,
+		Health:       append([]string(nil), status.Health...),
 	}, nil
 }
 

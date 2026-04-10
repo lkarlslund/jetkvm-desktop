@@ -24,6 +24,14 @@ func (c *Client) Reboot(ctx context.Context) error {
 	return c.Call(ctx, "reboot", rebootRequest{Force: false}, nil)
 }
 
+func (c *Client) TryUpdate(ctx context.Context) error {
+	return c.Call(ctx, "tryUpdate", nil, nil)
+}
+
+func (c *Client) FactoryReset(ctx context.Context) error {
+	return c.Call(ctx, "factoryReset", nil, nil)
+}
+
 func (c *Client) GetStreamQualityFactor(ctx context.Context) (float64, error) {
 	var quality float64
 	err := c.Call(ctx, "getStreamQualityFactor", nil, &quality)
@@ -75,6 +83,20 @@ func (c *Client) GetLocalVersion(ctx context.Context) (LocalVersion, error) {
 func (c *Client) GetUpdateStatus(ctx context.Context) (UpdateStatus, error) {
 	var status UpdateStatus
 	err := c.Call(ctx, "getUpdateStatus", nil, &status)
+	return status, err
+}
+
+func (c *Client) GetPublicIPAddresses(ctx context.Context, refresh bool) ([]PublicIP, error) {
+	var addresses []PublicIP
+	err := c.Call(ctx, "getPublicIPAddresses", struct {
+		Refresh bool `json:"refresh"`
+	}{Refresh: refresh}, &addresses)
+	return addresses, err
+}
+
+func (c *Client) GetTailscaleStatus(ctx context.Context) (TailscaleStatus, error) {
+	var status TailscaleStatus
+	err := c.Call(ctx, "getTailscaleStatus", nil, &status)
 	return status, err
 }
 

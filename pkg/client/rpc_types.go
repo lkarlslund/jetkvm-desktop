@@ -1,6 +1,10 @@
 package client
 
-import "github.com/lkarlslund/jetkvm-desktop/pkg/virtualmedia"
+import (
+	"time"
+
+	"github.com/lkarlslund/jetkvm-desktop/pkg/virtualmedia"
+)
 
 type LocalVersion struct {
 	AppVersion    string `json:"appVersion"`
@@ -12,6 +16,29 @@ type UpdateStatus struct {
 	Remote                LocalVersion `json:"remote"`
 	AppUpdateAvailable    bool         `json:"appUpdateAvailable"`
 	SystemUpdateAvailable bool         `json:"systemUpdateAvailable"`
+}
+
+type PublicIP struct {
+	IPAddress   string    `json:"ip"`
+	LastUpdated time.Time `json:"last_updated"`
+}
+
+type TailscalePeer struct {
+	HostName     string   `json:"hostName"`
+	DNSName      string   `json:"dnsName"`
+	TailscaleIPs []string `json:"tailscaleIPs"`
+	Online       bool     `json:"online"`
+	OS           string   `json:"os"`
+}
+
+type TailscaleStatus struct {
+	Installed    bool           `json:"installed"`
+	Running      bool           `json:"running"`
+	BackendState string         `json:"backendState,omitempty"`
+	AuthURL      string         `json:"authURL,omitempty"`
+	ControlURL   string         `json:"controlURL,omitempty"`
+	Self         *TailscalePeer `json:"self,omitempty"`
+	Health       []string       `json:"health,omitempty"`
 }
 
 type BacklightSettings struct {

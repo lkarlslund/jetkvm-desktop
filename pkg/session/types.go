@@ -1,5 +1,7 @@
 package session
 
+import "time"
+
 type LocalAuthMode uint8
 
 const (
@@ -80,6 +82,29 @@ type NetworkState struct {
 	Hostname string
 	IP       string
 	DHCP     *bool
+}
+
+type PublicIP struct {
+	IPAddress   string
+	LastUpdated time.Time
+}
+
+type TailscalePeer struct {
+	HostName     string
+	DNSName      string
+	TailscaleIPs []string
+	Online       bool
+	OS           string
+}
+
+type TailscaleStatus struct {
+	Installed    bool
+	Running      bool
+	BackendState string
+	AuthURL      string
+	ControlURL   string
+	Self         *TailscalePeer
+	Health       []string
 }
 
 type JigglerConfig struct {

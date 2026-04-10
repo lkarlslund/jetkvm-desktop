@@ -137,6 +137,11 @@ type App struct {
 	mqttEditorDirty        bool
 	mqttTestMessage        string
 	mqttTestSuccess        bool
+	updateActionMessage    string
+	updateActionSuccess    bool
+	factoryResetConfirm    bool
+	factoryResetMessage    string
+	factoryResetSuccess    bool
 }
 
 type statsPoint struct {
@@ -181,6 +186,9 @@ const (
 	settingsGroupLocalAuth                                 // local_auth
 	settingsGroupMQTTSave                                  // mqtt_save
 	settingsGroupMQTTTest                                  // mqtt_test
+	settingsGroupUpdateInstall                             // update_install
+	settingsGroupFactoryReset                              // factory_reset
+	settingsGroupNetworkRefresh                            // network_refresh
 )
 
 type settingsActionState struct {
@@ -1635,8 +1643,11 @@ func (a *App) invokeAction(id string) {
 			return
 		}
 		a.withSettingsAction(settingsGroupUpdateStatus, "refresh", func() error {
+			a.updateActionMessage = ""
 			return a.refreshSettingsSectionSync(sectionGeneral)
 		})
+	case "install_updates":
+		a.invokeInstallUpdates()
 	case "reboot":
 		a.runAsync(func() {
 			_ = a.ctrl.Reboot()
@@ -1990,6 +2001,15 @@ func (a *App) invokeAction(id string) {
 		a.invokeDevChannelToggle()
 	case "loopback_only_toggle":
 		a.invokeLoopbackOnlyToggle()
+	case "factory_reset":
+		a.factoryResetConfirm = true
+		a.factoryResetMessage = ""
+	case "factory_reset_cancel":
+		a.factoryResetConfirm = false
+	case "factory_reset_confirm":
+		a.invokeFactoryReset()
+	case "network_refresh":
+		a.invokeRefreshNetworkServices()
 	case "jiggler_disabled":
 		a.invokeJigglerPresetAction("disabled", false, session.JigglerConfig{})
 	case "jiggler_frequent":
@@ -2451,6 +2471,20 @@ func (a *App) invokeSaveSSHKey() {
 	})
 }
 
+func (a *App) invokeInstallUpdates() {
+	if a.settingsActionPending(settingsGroupUpdateInstall) {
+		return
+	}
+	a.withSettingsAction(settingsGroupUpdateInstall, "install", func() error {
+		if err := a.ctrl.TryUpdate(); err != nil {
+			return err
+		}
+		a.updateActionMessage = "Update install requested"
+		a.updateActionSuccess = true
+		return nil
+	})
+}
+
 func (a *App) invokeCustomTLS() {
 	if a.settingsActionPending(settingsGroupTLSMode) {
 		return
@@ -2485,6 +2519,30 @@ func (a *App) invokeNetworkSave() {
 		}
 		a.networkEditorDirty = false
 		return a.refreshSettingsSectionSync(sectionNetwork)
+	})
+}
+
+func (a *App) invokeRefreshNetworkServices() {
+	if a.settingsActionPending(settingsGroupNetworkRefresh) {
+		return
+	}
+	a.withSettingsAction(settingsGroupNetworkRefresh, "refresh", func() error {
+		return a.refreshSettingsSectionSync(sectionNetwork)
+	})
+}
+
+func (a *App) invokeFactoryReset() {
+	if a.settingsActionPending(settingsGroupFactoryReset) {
+		return
+	}
+	a.withSettingsAction(settingsGroupFactoryReset, "confirm", func() error {
+		if err := a.ctrl.FactoryReset(); err != nil {
+			return err
+		}
+		a.factoryResetConfirm = false
+		a.factoryResetMessage = "Factory reset requested"
+		a.factoryResetSuccess = true
+		return nil
 	})
 }
 

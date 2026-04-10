@@ -881,6 +881,25 @@ func (s *session) handleRPC(data []byte) error {
 		resp = jsonrpc.NewResponse(req.ID, map[string]any{"hostname": s.serverRef.state.Hostname, "ip": "127.0.0.1"})
 	case "getNetworkState":
 		resp = jsonrpc.NewResponse(req.ID, map[string]any{"hostname": s.serverRef.state.Hostname, "ip": "127.0.0.1", "dhcp": true})
+	case "getPublicIPAddresses":
+		resp = jsonrpc.NewResponse(req.ID, []map[string]any{
+			{"ip": "198.51.100.10", "last_updated": time.Now().Add(-4 * time.Minute)},
+			{"ip": "2001:db8::10", "last_updated": time.Now().Add(-4 * time.Minute)},
+		})
+	case "getTailscaleStatus":
+		resp = jsonrpc.NewResponse(req.ID, map[string]any{
+			"installed":    true,
+			"running":      true,
+			"backendState": "Running",
+			"controlURL":   "https://controlplane.tailscale.com",
+			"self": map[string]any{
+				"hostName":     "jetkvm-emulator",
+				"dnsName":      "jetkvm-emulator.tailnet.example.",
+				"tailscaleIPs": []string{"100.64.0.10", "fd7a:115c:a1e0::10"},
+				"online":       true,
+				"os":           "linux",
+			},
+		})
 	case "setNetworkSettings":
 		if settings, ok := params["settings"].(map[string]any); ok {
 			if hostname, ok := settings["hostname"].(string); ok && hostname != "" {
@@ -937,6 +956,10 @@ func (s *session) handleRPC(data []byte) error {
 			s.serverRef.mu.Unlock()
 			_ = s.sendEvent("videoInputState", "ready")
 		}()
+	case "tryUpdate":
+		resp = jsonrpc.NewResponse(req.ID, true)
+	case "factoryReset":
+		resp = jsonrpc.NewResponse(req.ID, true)
 	case "forceDisconnect":
 		resp = jsonrpc.NewResponse(req.ID, true)
 		go func() {

@@ -111,9 +111,13 @@ type hardwareState struct {
 }
 
 type networkState struct {
-	Loading bool
-	Error   string
-	State   session.NetworkState
+	Loading        bool
+	Error          string
+	State          session.NetworkState
+	PublicIPs      []session.PublicIP
+	PublicIPError  string
+	Tailscale      *session.TailscaleStatus
+	TailscaleError string
 }
 
 type macrosState struct {
@@ -1035,6 +1039,16 @@ func (a *App) loadSettingsSection(section settingsSection, seq uint64) error {
 			}
 			state.State.DHCP = current.DHCP
 		}
+		if addresses, callErr := a.ctrl.GetPublicIPAddresses(ctx, false); callErr == nil {
+			state.PublicIPs = addresses
+		} else {
+			state.PublicIPError = callErr.Error()
+		}
+		if tailscale, callErr := a.ctrl.GetTailscaleStatus(ctx); callErr == nil {
+			state.Tailscale = tailscale
+		} else {
+			state.TailscaleError = callErr.Error()
+		}
 		if state.State.Hostname == "" && state.State.IP == "" && state.State.DHCP == nil {
 			state.Error = "No network RPC state available on this target"
 			err = errors.New(state.Error)
@@ -1426,12 +1440,31 @@ func (a *App) settingsGeneralBody(snap session.Snapshot) ui.Element {
 		ui.Fixed(ui.Spacer{H: 14}),
 		ui.Fixed(settingsActionElement("check_updates", "Check for updates", settingsActionVisual{Enabled: !a.settingsActionPending(settingsGroupUpdateStatus)}, 0)),
 	}
+	if snap.AppUpdateAvailable || snap.SystemUpdateAvailable {
+		updateChildren = append(updateChildren,
+			ui.Fixed(ui.Spacer{H: 8}),
+			ui.Fixed(settingsActionElement("install_updates", "Install updates", settingsActionVisual{Enabled: !a.settingsActionPending(settingsGroupUpdateInstall)}, 0)),
+		)
+	}
 	updateState := a.settingsAction(settingsGroupUpdateStatus)
 	switch {
 	case updateState.Pending:
 		updateChildren = append(updateChildren, ui.Fixed(ui.Spacer{H: 12}), ui.Fixed(settingsStatusElement("Refreshing…", color.RGBA{R: 245, G: 200, B: 96, A: 255})))
 	case updateState.Error != "":
 		updateChildren = append(updateChildren, ui.Fixed(ui.Spacer{H: 12}), ui.Fixed(settingsStatusElement(updateState.Error, color.RGBA{R: 220, G: 132, B: 132, A: 255})))
+	}
+	installState := a.settingsAction(settingsGroupUpdateInstall)
+	switch {
+	case installState.Pending:
+		updateChildren = append(updateChildren, ui.Fixed(ui.Spacer{H: 12}), ui.Fixed(settingsStatusElement("Starting update…", color.RGBA{R: 245, G: 200, B: 96, A: 255})))
+	case installState.Error != "":
+		updateChildren = append(updateChildren, ui.Fixed(ui.Spacer{H: 12}), ui.Fixed(settingsStatusElement(installState.Error, color.RGBA{R: 220, G: 132, B: 132, A: 255})))
+	case a.updateActionMessage != "":
+		msgColor := color.RGBA{R: 245, G: 200, B: 96, A: 255}
+		if a.updateActionSuccess {
+			msgColor = color.RGBA{R: 134, G: 239, B: 172, A: 255}
+		}
+		updateChildren = append(updateChildren, ui.Fixed(ui.Spacer{H: 12}), ui.Fixed(settingsStatusElement(a.updateActionMessage, msgColor)))
 	}
 	updatesCard := settingsCardElement("Updates", ui.Column{Children: updateChildren})
 	autoUpdate := a.settingsAction(settingsGroupAutoUpdate)
@@ -1989,6 +2022,7 @@ func (a *App) settingsNetworkBody() ui.Element {
 	state := a.sectionData.Network
 	a.mu.RUnlock()
 	saveState := a.settingsAction(settingsGroupNetworkSave)
+	refreshState := a.settingsAction(settingsGroupNetworkRefresh)
 	editorChildren := []ui.Child{}
 	if state.Loading && !a.networkEditorLoaded {
 		editorChildren = append(editorChildren, ui.Fixed(ui.Label{Text: "Loading network settings…", Size: 13, Color: color.RGBA{R: 236, G: 241, B: 245, A: 255}}))
@@ -2024,12 +2058,92 @@ func (a *App) settingsNetworkBody() ui.Element {
 		ui.Fixed(ui.Spacer{H: 10}),
 		ui.Fixed(settingsKeyValueElement("DHCP", boolPtrWord(state.State.DHCP), 96)),
 	}
-	return settingsTwoPane(
-		settingsCardElement("Editable Settings", ui.Column{Children: editorChildren}),
-		54,
-		settingsCardElement("Current State", ui.Column{Children: stateChildren}),
-		46,
-	)
+
+	serviceChildren := []ui.Child{
+		ui.Fixed(settingsActionElement("network_refresh", "Refresh", settingsActionVisual{Enabled: !refreshState.Pending}, 0)),
+		ui.Fixed(ui.Spacer{H: 14}),
+		ui.Fixed(settingsSectionLabelElement("Public IP")),
+	}
+	switch {
+	case refreshState.Pending:
+		serviceChildren = append(serviceChildren, ui.Fixed(ui.Spacer{H: 8}), ui.Fixed(settingsStatusElement("Refreshing…", color.RGBA{R: 245, G: 200, B: 96, A: 255})))
+	case refreshState.Error != "":
+		serviceChildren = append(serviceChildren, ui.Fixed(ui.Spacer{H: 8}), ui.Fixed(settingsStatusElement(refreshState.Error, color.RGBA{R: 220, G: 132, B: 132, A: 255})))
+	case state.PublicIPError != "":
+		serviceChildren = append(serviceChildren, ui.Fixed(ui.Spacer{H: 8}), ui.Fixed(settingsStatusElement(state.PublicIPError, color.RGBA{R: 220, G: 132, B: 132, A: 255})))
+	case len(state.PublicIPs) == 0:
+		serviceChildren = append(serviceChildren, ui.Fixed(ui.Spacer{H: 8}), ui.Fixed(ui.Paragraph{Text: "No public IP information available.", Size: 12, Color: color.RGBA{R: 166, G: 178, B: 190, A: 255}}))
+	default:
+		for _, address := range state.PublicIPs {
+			serviceChildren = append(serviceChildren,
+				ui.Fixed(ui.Spacer{H: 8}),
+				ui.Fixed(settingsKeyValueElement(address.IPAddress, address.LastUpdated.Local().Format("2006-01-02 15:04"), 136)),
+			)
+		}
+	}
+
+	serviceChildren = append(serviceChildren, ui.Fixed(ui.Spacer{H: 18}), ui.Fixed(settingsSectionLabelElement("Tailscale")))
+	switch {
+	case state.TailscaleError != "":
+		serviceChildren = append(serviceChildren, ui.Fixed(ui.Spacer{H: 8}), ui.Fixed(settingsStatusElement(state.TailscaleError, color.RGBA{R: 220, G: 132, B: 132, A: 255})))
+	case state.Tailscale == nil:
+		serviceChildren = append(serviceChildren, ui.Fixed(ui.Spacer{H: 8}), ui.Fixed(ui.Paragraph{Text: "Tailscale state is unavailable.", Size: 12, Color: color.RGBA{R: 166, G: 178, B: 190, A: 255}}))
+	case !state.Tailscale.Installed:
+		serviceChildren = append(serviceChildren, ui.Fixed(ui.Spacer{H: 8}), ui.Fixed(ui.Paragraph{Text: "Tailscale is not installed on this device.", Size: 12, Color: color.RGBA{R: 166, G: 178, B: 190, A: 255}}))
+	default:
+		serviceChildren = append(serviceChildren,
+			ui.Fixed(ui.Spacer{H: 8}),
+			ui.Fixed(settingsKeyValueElement("Status", tailscaleStatusLabel(state.Tailscale), 96)),
+			ui.Fixed(ui.Spacer{H: 8}),
+			ui.Fixed(settingsKeyValueElement("Control URL", fallbackLabel(state.Tailscale.ControlURL, "Unavailable"), 96)),
+		)
+		if state.Tailscale.Self != nil {
+			if state.Tailscale.Self.HostName != "" {
+				serviceChildren = append(serviceChildren, ui.Fixed(ui.Spacer{H: 8}), ui.Fixed(settingsKeyValueElement("Hostname", state.Tailscale.Self.HostName, 96)))
+			}
+			if state.Tailscale.Self.DNSName != "" {
+				serviceChildren = append(serviceChildren, ui.Fixed(ui.Spacer{H: 8}), ui.Fixed(settingsKeyValueElement("DNS Name", strings.TrimSuffix(state.Tailscale.Self.DNSName, "."), 96)))
+			}
+			if len(state.Tailscale.Self.TailscaleIPs) > 0 {
+				serviceChildren = append(serviceChildren, ui.Fixed(ui.Spacer{H: 8}), ui.Fixed(settingsKeyValueElement("IPs", strings.Join(state.Tailscale.Self.TailscaleIPs, ", "), 96)))
+			}
+		}
+		if state.Tailscale.AuthURL != "" {
+			serviceChildren = append(serviceChildren, ui.Fixed(ui.Spacer{H: 8}), ui.Fixed(settingsKeyValueElement("Login URL", state.Tailscale.AuthURL, 96)))
+		}
+		if len(state.Tailscale.Health) > 0 {
+			serviceChildren = append(serviceChildren, ui.Fixed(ui.Spacer{H: 8}), ui.Fixed(ui.Paragraph{Text: strings.Join(state.Tailscale.Health, " | "), Size: 12, Color: color.RGBA{R: 166, G: 178, B: 190, A: 255}}))
+		}
+	}
+
+	return ui.Column{
+		Children: []ui.Child{
+			ui.Fixed(settingsTwoPane(
+				settingsCardElement("Editable Settings", ui.Column{Children: editorChildren}),
+				54,
+				settingsCardElement("Current State", ui.Column{Children: stateChildren}),
+				46,
+			)),
+			ui.Fixed(ui.Spacer{H: 14}),
+			ui.Fixed(settingsCardElement("Public Reachability", ui.Column{Children: serviceChildren})),
+		},
+	}
+}
+
+func tailscaleStatusLabel(status *session.TailscaleStatus) string {
+	if status == nil {
+		return "Unavailable"
+	}
+	if status.Running {
+		return "Connected"
+	}
+	if status.BackendState != "" {
+		return status.BackendState
+	}
+	if status.Installed {
+		return "Stopped"
+	}
+	return "Not installed"
 }
 
 func macroStepSummary(step session.KeyboardMacroStep) string {
@@ -2347,6 +2461,36 @@ func (a *App) settingsAdvancedBody() ui.Element {
 			children = append(children, ui.Fixed(ui.Spacer{H: 12}), ui.Fixed(settingsStatusElement("Saving…", color.RGBA{R: 245, G: 200, B: 96, A: 255})))
 		case sshState.Error != "":
 			children = append(children, ui.Fixed(ui.Spacer{H: 12}), ui.Fixed(settingsStatusElement(sshState.Error, color.RGBA{R: 220, G: 132, B: 132, A: 255})))
+		}
+		children = append(children, ui.Fixed(ui.Spacer{H: 18}), ui.Fixed(settingsSectionLabelElement("Reset Device State")))
+		if a.factoryResetConfirm {
+			children = append(children,
+				ui.Fixed(ui.Spacer{H: 8}),
+				ui.Fixed(ui.Paragraph{Text: "Factory reset removes stored configuration and restarts the device. This cannot be undone.", Size: 12, Color: color.RGBA{R: 220, G: 132, B: 132, A: 255}}),
+				ui.Fixed(ui.Spacer{H: 12}),
+				ui.Fixed(ui.Wrap{Children: []ui.Element{
+					settingsActionElement("factory_reset_confirm", "Confirm Reset", settingsActionVisual{Enabled: !a.settingsActionPending(settingsGroupFactoryReset)}, 128),
+					settingsActionElement("factory_reset_cancel", "Cancel", settingsActionVisual{Enabled: !a.settingsActionPending(settingsGroupFactoryReset)}, 76),
+				}, Spacing: 10, LineSpacing: 8}),
+			)
+		} else {
+			children = append(children,
+				ui.Fixed(ui.Spacer{H: 8}),
+				ui.Fixed(settingsActionElement("factory_reset", "Factory Reset", settingsActionVisual{Enabled: !a.settingsActionPending(settingsGroupFactoryReset)}, 128)),
+			)
+		}
+		factoryResetState := a.settingsAction(settingsGroupFactoryReset)
+		switch {
+		case factoryResetState.Pending:
+			children = append(children, ui.Fixed(ui.Spacer{H: 12}), ui.Fixed(settingsStatusElement("Resetting…", color.RGBA{R: 245, G: 200, B: 96, A: 255})))
+		case factoryResetState.Error != "":
+			children = append(children, ui.Fixed(ui.Spacer{H: 12}), ui.Fixed(settingsStatusElement(factoryResetState.Error, color.RGBA{R: 220, G: 132, B: 132, A: 255})))
+		case a.factoryResetMessage != "":
+			msgColor := color.RGBA{R: 245, G: 200, B: 96, A: 255}
+			if a.factoryResetSuccess {
+				msgColor = color.RGBA{R: 134, G: 239, B: 172, A: 255}
+			}
+			children = append(children, ui.Fixed(ui.Spacer{H: 12}), ui.Fixed(settingsStatusElement(a.factoryResetMessage, msgColor)))
 		}
 	}
 	if state.Error != "" {
