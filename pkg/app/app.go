@@ -346,6 +346,7 @@ func (a *App) syncKeyboard() {
 	if !a.focused || a.settingsOpen || a.pasteOpen || a.mediaOpen || a.ctrl.Snapshot().Phase != session.PhaseConnected {
 		return
 	}
+	now := time.Now()
 	rawKeys := inpututil.AppendPressedKeys(nil)
 	if a.suppressKeysUntilClear {
 		if len(rawKeys) == 0 {
@@ -361,8 +362,11 @@ func (a *App) syncKeyboard() {
 			keys = append(keys, key)
 		}
 	}
-	for _, evt := range a.keyboard.Update(keys) {
+	for _, evt := range a.keyboard.Update(keys, now) {
 		_ = a.ctrl.SendKeypress(evt.HID, evt.Press)
+	}
+	if a.keyboard.KeepAlive(now) {
+		_ = a.ctrl.SendKeypressKeepAlive()
 	}
 }
 

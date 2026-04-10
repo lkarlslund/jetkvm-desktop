@@ -1169,6 +1169,8 @@ func (s *session) handleHID(channel string, data []byte) error {
 	case hidrpc.Keypress:
 		s.serverRef.applyKeypress(v.Key, v.Press)
 		return s.sendEvent("keysDownState", map[string]any{"modifier": s.serverRef.state.KeyboardModifiers, "keys": s.serverRef.state.KeysDown})
+	case hidrpc.KeypressKeepAlive:
+		return nil
 	case hidrpc.KeyboardMacroReport:
 		if v.IsPaste {
 			stateMsg, err := hidrpc.KeyboardMacroState{State: true, IsPaste: true}.MarshalBinary()

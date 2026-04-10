@@ -245,7 +245,7 @@ func TestArmOverlayDismissSuppression(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_ = app.keyboard.Update([]input.Key{input.KeyEscape, input.KeyShiftLeft})
+	_ = app.keyboard.Update([]input.Key{input.KeyEscape, input.KeyShiftLeft}, time.Unix(0, 0))
 	app.lastButtons = 1
 	app.armOverlayDismissSuppression()
 

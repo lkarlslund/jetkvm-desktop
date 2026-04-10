@@ -2,12 +2,14 @@ package input
 
 import (
 	"testing"
+	"time"
 )
 
 func TestKeyboardUpdatePressAndRelease(t *testing.T) {
 	k := NewKeyboard()
+	now := time.Unix(0, 0)
 
-	events := k.Update([]Key{KeyA, KeyShiftLeft})
+	events := k.Update([]Key{KeyA, KeyShiftLeft}, now)
 	if len(events) != 2 {
 		t.Fatalf("expected 2 press events, got %d", len(events))
 	}
@@ -18,7 +20,7 @@ func TestKeyboardUpdatePressAndRelease(t *testing.T) {
 		t.Fatalf("unexpected second event: %+v", events[1])
 	}
 
-	events = k.Update([]Key{KeyShiftLeft})
+	events = k.Update([]Key{KeyShiftLeft}, now.Add(time.Second))
 	if len(events) != 1 {
 		t.Fatalf("expected 1 release event, got %d", len(events))
 	}
@@ -29,7 +31,7 @@ func TestKeyboardUpdatePressAndRelease(t *testing.T) {
 
 func TestKeyboardReleaseAll(t *testing.T) {
 	k := NewKeyboard()
-	_ = k.Update([]Key{KeyB, KeyControlRight})
+	_ = k.Update([]Key{KeyB, KeyControlRight}, time.Unix(0, 0))
 
 	events := k.ReleaseAll()
 	if len(events) != 2 {
@@ -48,7 +50,7 @@ func TestKeyboardReleaseAll(t *testing.T) {
 func TestKeyboardIgnoresUnknownKeys(t *testing.T) {
 	k := NewKeyboard()
 
-	events := k.Update([]Key{KeyUnknown})
+	events := k.Update([]Key{KeyUnknown}, time.Unix(0, 0))
 	if len(events) != 0 {
 		t.Fatalf("expected unknown key to be ignored, got %+v", events)
 	}
@@ -57,7 +59,7 @@ func TestKeyboardIgnoresUnknownKeys(t *testing.T) {
 func TestKeyboardSortsPressesDeterministically(t *testing.T) {
 	k := NewKeyboard()
 
-	events := k.Update([]Key{KeyShiftRight, KeyA, KeyControlLeft})
+	events := k.Update([]Key{KeyShiftRight, KeyA, KeyControlLeft}, time.Unix(0, 0))
 	if len(events) != 3 {
 		t.Fatalf("expected 3 press events, got %d", len(events))
 	}
@@ -75,7 +77,7 @@ func TestKeyboardSortsPressesDeterministically(t *testing.T) {
 
 func TestKeyboardReleaseAllCoversModifiersAndKeypad(t *testing.T) {
 	k := NewKeyboard()
-	_ = k.Update([]Key{KeyControlLeft, KeyAltRight, KeyNumpadEnter, KeySlash})
+	_ = k.Update([]Key{KeyControlLeft, KeyAltRight, KeyNumpadEnter, KeySlash}, time.Unix(0, 0))
 
 	events := k.ReleaseAll()
 	if len(events) != 4 {
@@ -90,7 +92,7 @@ func TestKeyboardReleaseAllCoversModifiersAndKeypad(t *testing.T) {
 
 func TestKeyboardPressedReturnsSortedKeys(t *testing.T) {
 	k := NewKeyboard()
-	_ = k.Update([]Key{KeyShiftRight, KeyA, KeyControlLeft})
+	_ = k.Update([]Key{KeyShiftRight, KeyA, KeyControlLeft}, time.Unix(0, 0))
 
 	pressed := k.Pressed()
 	expected := []Key{KeyA, KeyControlLeft, KeyShiftRight}
@@ -101,6 +103,41 @@ func TestKeyboardPressedReturnsSortedKeys(t *testing.T) {
 		if pressed[i] != expected[i] {
 			t.Fatalf("unexpected pressed key at %d: got %v want %v", i, pressed[i], expected[i])
 		}
+	}
+}
+
+func TestKeyboardKeepAliveAfterInterval(t *testing.T) {
+	k := NewKeyboard()
+	start := time.Unix(0, 0)
+
+	events := k.Update([]Key{KeyA}, start)
+	if len(events) != 1 || !events[0].Press {
+		t.Fatalf("initial key press = %+v, want single press", events)
+	}
+	if k.KeepAlive(start.Add(keyKeepAliveInterval - time.Millisecond)) {
+		t.Fatal("keepalive fired before interval elapsed")
+	}
+	if !k.KeepAlive(start.Add(keyKeepAliveInterval)) {
+		t.Fatal("expected keepalive at interval")
+	}
+	if k.KeepAlive(start.Add(keyKeepAliveInterval + keyKeepAliveInterval - time.Millisecond)) {
+		t.Fatal("keepalive fired before next interval elapsed")
+	}
+	if !k.KeepAlive(start.Add(keyKeepAliveInterval + keyKeepAliveInterval)) {
+		t.Fatal("expected second keepalive at interval")
+	}
+}
+
+func TestKeyboardKeepAliveIncludesModifierOnlyHold(t *testing.T) {
+	k := NewKeyboard()
+	start := time.Unix(0, 0)
+
+	events := k.Update([]Key{KeyShiftLeft}, start)
+	if len(events) != 1 || !events[0].Press {
+		t.Fatalf("modifier press = %+v, want single press", events)
+	}
+	if !k.KeepAlive(start.Add(keyKeepAliveInterval)) {
+		t.Fatal("modifier-only hold should still keep key state alive")
 	}
 }
 

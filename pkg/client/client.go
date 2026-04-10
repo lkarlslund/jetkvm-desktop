@@ -366,6 +366,18 @@ func (c *Client) SendKeypress(key byte, press bool) error {
 	return c.hidDC.Send(data)
 }
 
+func (c *Client) SendKeypressKeepAlive() error {
+	if c.hidDC == nil {
+		return fmt.Errorf("hid channel not ready")
+	}
+	msg := hidrpc.KeypressKeepAlive{}
+	data, err := msg.MarshalBinary()
+	if err != nil {
+		return err
+	}
+	return c.hidDC.Send(data)
+}
+
 func (c *Client) SendAbsPointer(x, y int32, buttons byte) error {
 	if c.hidUnreliable == nil {
 		return fmt.Errorf("pointer channel not ready")
