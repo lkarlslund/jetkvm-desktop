@@ -366,7 +366,7 @@ func drawChromeButton(screen *ebiten.Image, btn chromeButton, alpha float64) {
 		stroke = rgba(86, 96, 108, 100, alpha)
 		icon = rgba(126, 136, 146, 180, alpha)
 	}
-	vector.DrawFilledRect(screen, float32(btn.rect.x), float32(btn.rect.y), float32(btn.rect.w), float32(btn.rect.h), fill, false)
+	vector.FillRect(screen, float32(btn.rect.x), float32(btn.rect.y), float32(btn.rect.w), float32(btn.rect.h), fill, false)
 	vector.StrokeRect(screen, float32(btn.rect.x), float32(btn.rect.y), float32(btn.rect.w), float32(btn.rect.h), 1, stroke, false)
 	drawIcon(screen, btn.icon, btn.rect, icon, alpha, btn.active)
 }
@@ -474,7 +474,7 @@ func (a *App) drawHint(screen *ebiten.Image) {
 			}
 			bw := w + 20
 			by := btn.rect.y + btn.rect.h + 8
-			vector.DrawFilledRect(screen, float32(bx), float32(by), float32(bw), 28, rgba(8, 12, 18, 220, alpha), false)
+			vector.FillRect(screen, float32(bx), float32(by), float32(bw), 28, rgba(8, 12, 18, 220, alpha), false)
 			vector.StrokeRect(screen, float32(bx), float32(by), float32(bw), 28, 1, rgba(112, 128, 148, 120, alpha), false)
 			drawText(screen, btn.hint, bx+10, by+8, 13, rgba(236, 241, 245, 255, alpha))
 			return
@@ -523,7 +523,7 @@ func (a *App) drawSettingsOverlay(screen *ebiten.Image, snap session.Snapshot) {
 	}
 
 	bounds := screen.Bounds()
-	vector.DrawFilledRect(screen, 0, 0, float32(bounds.Dx()), float32(bounds.Dy()), color.RGBA{A: 170}, false)
+	vector.FillRect(screen, 0, 0, float32(bounds.Dx()), float32(bounds.Dy()), color.RGBA{A: 170}, false)
 
 	sections := settingsSections(snap)
 	section := a.currentSection(sections)
@@ -537,9 +537,9 @@ func (a *App) drawSettingsOverlay(screen *ebiten.Image, snap session.Snapshot) {
 	panelY := (float64(bounds.Dy()) - panelH) / 2
 
 	a.settingsPanel = rect{x: panelX, y: panelY, w: panelW, h: panelH}
-	vector.DrawFilledRect(screen, float32(panelX), float32(panelY), float32(panelW), float32(panelH), color.RGBA{R: 13, G: 20, B: 30, A: 246}, false)
+	vector.FillRect(screen, float32(panelX), float32(panelY), float32(panelW), float32(panelH), color.RGBA{R: 13, G: 20, B: 30, A: 246}, false)
 	vector.StrokeRect(screen, float32(panelX), float32(panelY), float32(panelW), float32(panelH), 1, color.RGBA{R: 88, G: 102, B: 118, A: 180}, false)
-	vector.DrawFilledRect(screen, float32(panelX), float32(panelY), float32(sidebarW), float32(panelH), color.RGBA{R: 18, G: 28, B: 40, A: 255}, false)
+	vector.FillRect(screen, float32(panelX), float32(panelY), float32(sidebarW), float32(panelH), color.RGBA{R: 18, G: 28, B: 40, A: 255}, false)
 	drawText(screen, "Settings", panelX+18, panelY+16, 20, color.RGBA{R: 240, G: 244, B: 248, A: 255})
 	drawWrappedText(screen, fallbackLabel(snap.DeviceID, snap.Hostname, snap.BaseURL), panelX+18, panelY+40, sidebarW-36, 11, color.RGBA{R: 166, G: 178, B: 190, A: 255})
 
@@ -572,7 +572,7 @@ func (a *App) drawSettingsOverlay(screen *ebiten.Image, snap session.Snapshot) {
 			stroke = color.RGBA{R: 134, G: 186, B: 248, A: 180}
 			textClr = color.RGBA{R: 240, G: 244, B: 248, A: 255}
 		}
-		vector.DrawFilledRect(screen, float32(btn.rect.x), float32(btn.rect.y), float32(btn.rect.w), float32(btn.rect.h), fill, false)
+		vector.FillRect(screen, float32(btn.rect.x), float32(btn.rect.y), float32(btn.rect.w), float32(btn.rect.h), fill, false)
 		vector.StrokeRect(screen, float32(btn.rect.x), float32(btn.rect.y), float32(btn.rect.w), float32(btn.rect.h), 1, stroke, false)
 		drawText(screen, section.label, btn.rect.x+10, btn.rect.y+(btn.rect.h-sideFontSize)/2-1, sideFontSize, textClr)
 		sideY += sideBtnH + sideGap
@@ -900,7 +900,7 @@ func (a *App) currentSection(sections []settingsSectionDef) settingsSectionDef {
 }
 
 func (a *App) drawSettingsCard(screen *ebiten.Image, x, y, w, h float64, title, desc string) rect {
-	vector.DrawFilledRect(screen, float32(x), float32(y), float32(w), float32(h), color.RGBA{R: 18, G: 28, B: 40, A: 255}, false)
+	vector.FillRect(screen, float32(x), float32(y), float32(w), float32(h), color.RGBA{R: 18, G: 28, B: 40, A: 255}, false)
 	vector.StrokeRect(screen, float32(x), float32(y), float32(w), float32(h), 1, color.RGBA{R: 54, G: 68, B: 84, A: 180}, false)
 	descY := y + 36
 	if title != "" {
@@ -942,7 +942,7 @@ func (a *App) drawSettingsAction(screen *ebiten.Image, id, label string, x, y, w
 		stroke = color.RGBA{R: 60, G: 68, B: 76, A: 150}
 		textClr = color.RGBA{R: 128, G: 136, B: 144, A: 255}
 	}
-	vector.DrawFilledRect(screen, float32(x), float32(y), float32(w), 30, fill, false)
+	vector.FillRect(screen, float32(x), float32(y), float32(w), 30, fill, false)
 	vector.StrokeRect(screen, float32(x), float32(y), float32(w), 30, 1, stroke, false)
 	drawText(screen, label, x+12, y+8, 13, textClr)
 }

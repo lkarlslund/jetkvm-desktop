@@ -386,8 +386,8 @@ func (a *App) drawMediaOverlay(screen *ebiten.Image, snap session.Snapshot) {
 	a.mediaPanel = rect{x: panelX, y: panelY, w: panelW, h: panelH}
 	a.mediaButtons = a.mediaButtons[:0]
 
-	vector.DrawFilledRect(screen, 0, 0, float32(bounds.Dx()), float32(bounds.Dy()), color.RGBA{A: 160}, false)
-	vector.DrawFilledRect(screen, float32(panelX), float32(panelY), float32(panelW), float32(panelH), color.RGBA{R: 10, G: 16, B: 24, A: 244}, false)
+	vector.FillRect(screen, 0, 0, float32(bounds.Dx()), float32(bounds.Dy()), color.RGBA{A: 160}, false)
+	vector.FillRect(screen, float32(panelX), float32(panelY), float32(panelW), float32(panelH), color.RGBA{R: 10, G: 16, B: 24, A: 244}, false)
 	vector.StrokeRect(screen, float32(panelX), float32(panelY), float32(panelW), float32(panelH), 1, color.RGBA{R: 110, G: 130, B: 152, A: 110}, false)
 
 	drawText(screen, "Virtual Media", panelX+18, panelY+18, 26, color.RGBA{R: 236, G: 241, B: 245, A: 255})
@@ -401,7 +401,7 @@ func (a *App) drawMediaOverlay(screen *ebiten.Image, snap session.Snapshot) {
 
 	stateY := panelY + 88
 	stateH := 112.0
-	vector.DrawFilledRect(screen, float32(panelX+18), float32(stateY), float32(panelW-36), float32(stateH), color.RGBA{R: 18, G: 26, B: 38, A: 236}, false)
+	vector.FillRect(screen, float32(panelX+18), float32(stateY), float32(panelW-36), float32(stateH), color.RGBA{R: 18, G: 26, B: 38, A: 236}, false)
 	vector.StrokeRect(screen, float32(panelX+18), float32(stateY), float32(panelW-36), float32(stateH), 1, color.RGBA{R: 94, G: 115, B: 136, A: 110}, false)
 	drawText(screen, "Current mount", panelX+34, stateY+16, 15, color.RGBA{R: 236, G: 241, B: 245, A: 255})
 	if a.mediaState == nil {
@@ -452,7 +452,7 @@ func (a *App) drawMediaOverlay(screen *ebiten.Image, snap session.Snapshot) {
 	bodyY := tabY + 44
 	bodyW := panelW - 36
 	bodyH := panelH - (bodyY - panelY) - 18
-	vector.DrawFilledRect(screen, float32(bodyX), float32(bodyY), float32(bodyW), float32(bodyH), color.RGBA{R: 14, G: 22, B: 32, A: 234}, false)
+	vector.FillRect(screen, float32(bodyX), float32(bodyY), float32(bodyW), float32(bodyH), color.RGBA{R: 14, G: 22, B: 32, A: 234}, false)
 	vector.StrokeRect(screen, float32(bodyX), float32(bodyY), float32(bodyW), float32(bodyH), 1, color.RGBA{R: 84, G: 104, B: 122, A: 110}, false)
 
 	switch a.mediaView {
@@ -513,7 +513,7 @@ func (a *App) drawMediaStorageView(screen *ebiten.Image, x, y, w, h float64) {
 		if active {
 			fill = color.RGBA{R: 32, G: 74, B: 122, A: 255}
 		}
-		vector.DrawFilledRect(screen, float32(rowRect.x), float32(rowRect.y), float32(rowRect.w), float32(rowRect.h), fill, false)
+		vector.FillRect(screen, float32(rowRect.x), float32(rowRect.y), float32(rowRect.w), float32(rowRect.h), fill, false)
 		vector.StrokeRect(screen, float32(rowRect.x), float32(rowRect.y), float32(rowRect.w), float32(rowRect.h), 1, color.RGBA{R: 84, G: 104, B: 122, A: 110}, false)
 		a.mediaButtons = append(a.mediaButtons, chromeButton{id: "media_select:" + file.Filename, enabled: true, rect: rect{x: rowRect.x, y: rowRect.y, w: rowRect.w - 92, h: rowRect.h}})
 		drawText(screen, file.Filename, rowRect.x+12, rowRect.y+10, 13, color.RGBA{R: 236, G: 241, B: 245, A: 255})
@@ -547,8 +547,8 @@ func (a *App) drawMediaUploadView(screen *ebiten.Image, x, y, w float64) {
 	a.drawMediaButton(screen, chromeButton{id: "media_start_upload", label: "Start Upload", enabled: !a.mediaUploading && strings.TrimSpace(a.mediaUploadPath) != "", rect: rect{x: x + 18, y: y + 206, w: 118, h: 34}}, false)
 	if a.mediaUploadTotal > 0 {
 		barY := y + 264.0
-		vector.DrawFilledRect(screen, float32(x+18), float32(barY), float32(w-36), 18, color.RGBA{R: 22, G: 30, B: 44, A: 255}, false)
-		vector.DrawFilledRect(screen, float32(x+18), float32(barY), float32((w-36)*a.mediaUploadProgress), 18, color.RGBA{R: 48, G: 123, B: 206, A: 255}, false)
+		vector.FillRect(screen, float32(x+18), float32(barY), float32(w-36), 18, color.RGBA{R: 22, G: 30, B: 44, A: 255}, false)
+		vector.FillRect(screen, float32(x+18), float32(barY), float32((w-36)*a.mediaUploadProgress), 18, color.RGBA{R: 48, G: 123, B: 206, A: 255}, false)
 		vector.StrokeRect(screen, float32(x+18), float32(barY), float32(w-36), 18, 1, color.RGBA{R: 84, G: 104, B: 122, A: 110}, false)
 		drawText(screen, fmt.Sprintf("%s / %s", humanBytes(a.mediaUploadSent), humanBytes(a.mediaUploadTotal)), x+18, y+292, 12, color.RGBA{R: 236, G: 241, B: 245, A: 255})
 		if a.mediaUploadSpeed > 0 {
@@ -565,7 +565,7 @@ func (a *App) drawMediaInput(screen *ebiten.Image, id string, x, y, w, h float64
 	if focused {
 		border = color.RGBA{R: 96, G: 165, B: 250, A: 180}
 	}
-	vector.DrawFilledRect(screen, float32(x), float32(y), float32(w), float32(h), color.RGBA{R: 8, G: 12, B: 18, A: 255}, false)
+	vector.FillRect(screen, float32(x), float32(y), float32(w), float32(h), color.RGBA{R: 8, G: 12, B: 18, A: 255}, false)
 	vector.StrokeRect(screen, float32(x), float32(y), float32(w), float32(h), 1, border, false)
 	a.mediaButtons = append(a.mediaButtons, chromeButton{id: id, enabled: true, rect: rect{x: x, y: y, w: w, h: h}})
 	text := value
@@ -592,7 +592,7 @@ func (a *App) drawMediaButton(screen *ebiten.Image, btn chromeButton, active boo
 		fill = color.RGBA{R: 18, G: 24, B: 32, A: 200}
 		label = color.RGBA{R: 110, G: 120, B: 132, A: 255}
 	}
-	vector.DrawFilledRect(screen, float32(btn.rect.x), float32(btn.rect.y), float32(btn.rect.w), float32(btn.rect.h), fill, false)
+	vector.FillRect(screen, float32(btn.rect.x), float32(btn.rect.y), float32(btn.rect.w), float32(btn.rect.h), fill, false)
 	vector.StrokeRect(screen, float32(btn.rect.x), float32(btn.rect.y), float32(btn.rect.w), float32(btn.rect.h), 1, stroke, false)
 	a.mediaButtons = append(a.mediaButtons, btn)
 	tw, th := measureText(btn.label, 13)

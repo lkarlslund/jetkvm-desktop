@@ -1289,7 +1289,7 @@ func (a *App) drawOverlay(screen *ebiten.Image, snap session.Snapshot, hasVideo 
 	if title == "" {
 		return
 	}
-	vector.DrawFilledRect(screen, 26, 84, float32(screen.Bounds().Dx()-52), 86, color.RGBA{R: 8, G: 12, B: 18, A: 228}, false)
+	vector.FillRect(screen, 26, 84, float32(screen.Bounds().Dx()-52), 86, color.RGBA{R: 8, G: 12, B: 18, A: 228}, false)
 	drawText(screen, title, 42, 104, 22, color.RGBA{R: 240, G: 244, B: 248, A: 255})
 	if detail == "" && snap.LastError != "" && snap.Phase != session.PhaseConnected {
 		detail = snap.LastError
@@ -1307,7 +1307,7 @@ func (a *App) drawOverlay(screen *ebiten.Image, snap session.Snapshot, hasVideo 
 		a.overlayButtons = append(a.overlayButtons, btn)
 		fill := color.RGBA{R: 28, G: 66, B: 116, A: 255}
 		stroke := color.RGBA{R: 134, G: 186, B: 248, A: 180}
-		vector.DrawFilledRect(screen, float32(btn.rect.x), float32(btn.rect.y), float32(btn.rect.w), float32(btn.rect.h), fill, false)
+		vector.FillRect(screen, float32(btn.rect.x), float32(btn.rect.y), float32(btn.rect.w), float32(btn.rect.h), fill, false)
 		vector.StrokeRect(screen, float32(btn.rect.x), float32(btn.rect.y), float32(btn.rect.w), float32(btn.rect.h), 1, stroke, false)
 		drawText(screen, btn.label, btn.rect.x+12, btn.rect.y+9, 13, color.RGBA{R: 240, G: 244, B: 248, A: 255})
 	}
@@ -1331,7 +1331,7 @@ func (a *App) drawPressedKeysOverlay(screen *ebiten.Image) {
 	w, _ := measureText(line, 12)
 	x := 14.0
 	y := float64(screen.Bounds().Dy()) - 58
-	vector.DrawFilledRect(screen, float32(x), float32(y), float32(w+20), 28, color.RGBA{R: 8, G: 12, B: 18, A: 212}, false)
+	vector.FillRect(screen, float32(x), float32(y), float32(w+20), 28, color.RGBA{R: 8, G: 12, B: 18, A: 212}, false)
 	vector.StrokeRect(screen, float32(x), float32(y), float32(w+20), 28, 1, color.RGBA{R: 112, G: 128, B: 148, A: 120}, false)
 	drawText(screen, line, x+10, y+8, 12, color.RGBA{R: 236, G: 241, B: 245, A: 255})
 }

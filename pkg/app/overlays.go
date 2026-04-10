@@ -190,7 +190,7 @@ func (a *App) drawStatsOverlay(screen *ebiten.Image) {
 	boxH := float64(len(lines))*18 + pad*2 + 18 + float64(len(graphs))*72
 	x := float64(screen.Bounds().Dx()) - boxW - 16
 	y := 58.0
-	vector.DrawFilledRect(screen, float32(x), float32(y), float32(boxW), float32(boxH), color.RGBA{R: 9, G: 14, B: 22, A: 224}, false)
+	vector.FillRect(screen, float32(x), float32(y), float32(boxW), float32(boxH), color.RGBA{R: 9, G: 14, B: 22, A: 224}, false)
 	vector.StrokeRect(screen, float32(x), float32(y), float32(boxW), float32(boxH), 1, color.RGBA{R: 88, G: 108, B: 126, A: 180}, false)
 	drawText(screen, "Connection Stats", x+pad, y+12, 14, color.RGBA{R: 240, G: 244, B: 248, A: 255})
 	for i, line := range lines {
@@ -259,7 +259,7 @@ func formatGraphValue(value float64, unit string) string {
 }
 
 func (a *App) drawStatsGraph(screen *ebiten.Image, x, y, w, h float64, metric graphMetric) {
-	vector.DrawFilledRect(screen, float32(x), float32(y), float32(w), float32(h), color.RGBA{R: 15, G: 23, B: 34, A: 220}, false)
+	vector.FillRect(screen, float32(x), float32(y), float32(w), float32(h), color.RGBA{R: 15, G: 23, B: 34, A: 220}, false)
 	vector.StrokeRect(screen, float32(x), float32(y), float32(w), float32(h), 1, color.RGBA{R: 62, G: 80, B: 96, A: 180}, false)
 
 	drawText(screen, metric.Title, x+10, y+10, 12, color.RGBA{R: 240, G: 244, B: 248, A: 255})
@@ -325,7 +325,7 @@ func (a *App) drawPasteOverlay(screen *ebiten.Image, snap session.Snapshot) {
 		return
 	}
 	bounds := screen.Bounds()
-	vector.DrawFilledRect(screen, 0, 0, float32(bounds.Dx()), float32(bounds.Dy()), color.RGBA{A: 168}, false)
+	vector.FillRect(screen, 0, 0, float32(bounds.Dx()), float32(bounds.Dy()), color.RGBA{A: 168}, false)
 
 	panelW := min(760, float64(bounds.Dx()-72))
 	panelH := min(420, float64(bounds.Dy()-96))
@@ -333,7 +333,7 @@ func (a *App) drawPasteOverlay(screen *ebiten.Image, snap session.Snapshot) {
 	panelY := (float64(bounds.Dy()) - panelH) / 2
 	a.pastePanel = rect{x: panelX, y: panelY, w: panelW, h: panelH}
 
-	vector.DrawFilledRect(screen, float32(panelX), float32(panelY), float32(panelW), float32(panelH), color.RGBA{R: 13, G: 20, B: 30, A: 246}, false)
+	vector.FillRect(screen, float32(panelX), float32(panelY), float32(panelW), float32(panelH), color.RGBA{R: 13, G: 20, B: 30, A: 246}, false)
 	vector.StrokeRect(screen, float32(panelX), float32(panelY), float32(panelW), float32(panelH), 1, color.RGBA{R: 88, G: 102, B: 118, A: 180}, false)
 
 	drawText(screen, "Paste Text", panelX+22, panelY+18, 22, color.RGBA{R: 240, G: 244, B: 248, A: 255})
@@ -345,7 +345,7 @@ func (a *App) drawPasteOverlay(screen *ebiten.Image, snap session.Snapshot) {
 	drawText(screen, fmt.Sprintf("%dms", a.pasteDelay), panelX+286, panelY+88, 13, color.RGBA{R: 236, G: 241, B: 245, A: 255})
 
 	textRect := rect{x: panelX + 22, y: panelY + 114, w: panelW - 44, h: panelH - 182}
-	vector.DrawFilledRect(screen, float32(textRect.x), float32(textRect.y), float32(textRect.w), float32(textRect.h), color.RGBA{R: 18, G: 28, B: 40, A: 255}, false)
+	vector.FillRect(screen, float32(textRect.x), float32(textRect.y), float32(textRect.w), float32(textRect.h), color.RGBA{R: 18, G: 28, B: 40, A: 255}, false)
 	vector.StrokeRect(screen, float32(textRect.x), float32(textRect.y), float32(textRect.w), float32(textRect.h), 1, color.RGBA{R: 54, G: 68, B: 84, A: 180}, false)
 
 	text := a.pasteText
@@ -383,7 +383,7 @@ func (a *App) drawPasteButton(screen *ebiten.Image, id, label string, x, y, w fl
 		stroke = color.RGBA{R: 60, G: 68, B: 76, A: 150}
 		textClr = color.RGBA{R: 128, G: 136, B: 144, A: 255}
 	}
-	vector.DrawFilledRect(screen, float32(x), float32(y), float32(w), 32, fill, false)
+	vector.FillRect(screen, float32(x), float32(y), float32(w), 32, fill, false)
 	vector.StrokeRect(screen, float32(x), float32(y), float32(w), 32, 1, stroke, false)
 	drawText(screen, label, x+12, y+9, 13, textClr)
 }
