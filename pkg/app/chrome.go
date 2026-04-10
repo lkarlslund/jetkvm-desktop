@@ -622,110 +622,7 @@ func (a *App) settingsPanelHeight(section settingsSectionDef, contentW float64) 
 }
 
 func (a *App) settingsSectionBodyHeight(section settingsSection, w float64) float64 {
-	switch section {
-	case sectionKeyboard:
-		return a.settingsKeyboardBodyHeight(w)
-	case sectionGeneral, sectionHardware, sectionAccess:
-		return a.settingsWideBodyHeight(section, w)
-	case sectionMouse, sectionAdvanced:
-		return a.settingsWideBodyHeight(section, w)
-	case sectionVideo, sectionNetwork, sectionAppearance:
-		return a.settingsWideBodyHeight(section, w)
-	default:
-		return a.settingsPlannedBodyHeight(section, w)
-	}
-}
-
-func (a *App) settingsWideBodyHeight(section settingsSection, w float64) float64 {
-	switch section {
-	case sectionGeneral:
-		leftW := (w - 14) * 0.58
-		rightW := w - leftW - 14
-		descH := ui.WrappedTextHeight("Reconnect the native session, manage auto-updates, or force a device reboot.", rightW-32, 12)
-		rightH := 48 + descH + 20 + 30 + 8 + 30 + 8 + 30 + 18
-		return max(214, rightH)
-	case sectionMouse:
-		return a.measureSettingsBody(a.settingsMouseBody(a.ctrl.Snapshot()), w)
-	case sectionVideo:
-		leftW := (w - 14) * 0.48
-		rightW := w - leftW - 14
-		qualityState := a.settingsAction(settingsGroupVideoQuality)
-		leftH := 174.0
-		if qualityState.Pending || qualityState.Error != "" {
-			leftH += ui.WrappedTextHeight(fallbackLabel(qualityState.Error, "Applying…"), leftW-32, 12)
-		}
-		a.mu.RLock()
-		edid := a.ctrl.Snapshot().EDID
-		a.mu.RUnlock()
-		if edid == "" {
-			edid = "Unavailable on current target"
-		}
-		rightH := 48 + ui.WrappedTextHeight(edid, rightW-32, 12) + 24
-		return max(leftH, max(174, rightH))
-	case sectionHardware:
-		a.mu.RLock()
-		state := a.sectionData.Hardware
-		a.mu.RUnlock()
-		leftW := (w - 14) * 0.48
-		rightW := w - leftW - 14
-		leftH := max(220, 82+ui.WrappedTextHeight("Rotate the displayed feed to match the connected panel orientation.", leftW-32, 12)+68)
-		rightH := max(336, 126+ui.WrappedTextHeight(usbDevicesSummary(state.State.USBDevices), rightW-32, 12)+184)
-		if state.Error != "" {
-			errH := ui.WrappedTextHeight(state.Error, w-32, 12) + 24
-			return max(leftH, max(rightH, 312+errH))
-		}
-		return max(leftH, rightH)
-	case sectionAccess:
-		a.mu.RLock()
-		state := a.sectionData.Access
-		a.mu.RUnlock()
-		leftW := (w - 14) * 0.5
-		rightW := w - leftW - 14
-		leftH := max(220, 156+ui.WrappedTextHeight(fallbackLabel(state.State.Cloud.AppURL, "Unavailable"), leftW-32, 12)+24)
-		rightH := max(220, 84+ui.WrappedTextHeight("Use the target's currently exposed TLS mode. Native client transport follows whatever the device publishes.", rightW-32, 12)+66)
-		if state.Error != "" {
-			errH := ui.WrappedTextHeight(state.Error, w-32, 12) + 24
-			return max(leftH, max(rightH, 192+errH))
-		}
-		return max(leftH, rightH)
-	case sectionNetwork:
-		a.mu.RLock()
-		state := a.sectionData.Network
-		a.mu.RUnlock()
-		if state.Error == "" {
-			return 152
-		}
-		return max(152, 124+ui.WrappedTextHeight(state.Error, w-32, 12)+24)
-	case sectionAdvanced:
-		a.mu.RLock()
-		state := a.sectionData.Advanced
-		a.mu.RUnlock()
-		if state.Error == "" {
-			return 220
-		}
-		return max(220, 194+ui.WrappedTextHeight(state.Error, w-32, 12)+24)
-	case sectionAppearance:
-		return max(330, 280+ui.WrappedTextHeight("Position chooses where the chrome sits on screen. Layout changes whether the control buttons run across or down.", w-32, 12)+24)
-	default:
-		return 220
-	}
-}
-
-func (a *App) settingsPlannedBodyHeight(section settingsSection, w float64) float64 {
-	defs := settingsSections(session.Snapshot{})
-	var current settingsSectionDef
-	for _, def := range defs {
-		if def.id == section {
-			current = def
-			break
-		}
-	}
-	bodyH := 46 + ui.WrappedTextHeight(current.description, w-32, 12) + 24 + 24
-	for _, item := range current.items {
-		bodyH += ui.WrappedTextHeight("• "+item, w-40, 12) + 10
-	}
-	bodyH += ui.WrappedTextHeight("This section exists in the upstream product structure but is not currently exposed by this target or the desktop client.", w-32, 12) + 32
-	return max(220, bodyH)
+	return a.measureSettingsBody(a.settingsSectionBody(section, a.ctrl.Snapshot()), w)
 }
 
 func settingsSidebarHeight(count int) float64 {
@@ -935,79 +832,6 @@ func (a *App) currentSection(sections []settingsSectionDef) settingsSectionDef {
 		}
 	}
 	return sections[0]
-}
-
-func (a *App) drawSettingsCard(screen *ebiten.Image, x, y, w, h float64, title, desc string) rect {
-	ctx := a.newUIContext(screen, func(chromeButton) {})
-	children := make([]ui.Child, 0, 4)
-	if title != "" {
-		children = append(children,
-			ui.Fixed(ui.Label{Text: title, Size: 15, Color: color.RGBA{R: 240, G: 244, B: 248, A: 255}}),
-			ui.Fixed(ui.Spacer{H: 8}),
-		)
-	}
-	if desc != "" {
-		children = append(children, ui.Fixed(ui.Paragraph{Text: desc, Size: 12, Color: color.RGBA{R: 166, G: 178, B: 190, A: 255}}))
-	}
-	ui.Panel{
-		Fill:   color.RGBA{R: 18, G: 28, B: 40, A: 255},
-		Stroke: color.RGBA{R: 54, G: 68, B: 84, A: 180},
-		Insets: ui.UniformInsets(16),
-		Child:  ui.Column{Children: children},
-	}.Draw(ctx, ui.Rect{X: x, Y: y, W: w, H: h})
-	return rect{x: x, y: y, w: w, h: h}
-}
-
-func drawSettingsKeyValue(screen *ebiten.Image, label, value string, x, y, split float64) {
-	ctx := (&App{}).newUIContext(screen, func(chromeButton) {})
-	ui.KeyValue{
-		Label:      label,
-		Value:      fallbackLabel(value, "Unavailable"),
-		LabelWidth: split - 12,
-	}.Draw(ctx, ui.Rect{X: x, Y: y, W: 240, H: 16})
-}
-
-func drawSettingsSectionLabel(screen *ebiten.Image, label string, x, y float64) {
-	ctx := (&App{}).newUIContext(screen, func(chromeButton) {})
-	ui.Label{Text: label, Size: 12, Color: color.RGBA{R: 166, G: 178, B: 190, A: 255}}.
-		Draw(ctx, ui.Rect{X: x, Y: y, W: 240, H: 14})
-}
-
-func (a *App) drawSettingsAction(screen *ebiten.Image, id, label string, x, y, w float64, visual settingsActionVisual) {
-	ctx := a.newUIContext(screen, func(btn chromeButton) {
-		a.settingsButtons = append(a.settingsButtons, btn)
-	})
-	fill := color.RGBA{R: 30, G: 42, B: 58, A: 255}
-	stroke := color.RGBA{R: 80, G: 96, B: 112, A: 180}
-	textClr := color.RGBA{R: 228, G: 236, B: 244, A: 255}
-	if visual.Active {
-		fill = color.RGBA{R: 28, G: 66, B: 116, A: 255}
-		stroke = color.RGBA{R: 134, G: 186, B: 248, A: 180}
-	}
-	if visual.Pending {
-		fill = color.RGBA{R: 88, G: 70, B: 24, A: 255}
-		stroke = color.RGBA{R: 234, G: 179, B: 8, A: 180}
-	}
-	if !visual.Enabled {
-		fill = color.RGBA{R: 24, G: 30, B: 38, A: 255}
-		stroke = color.RGBA{R: 60, G: 68, B: 76, A: 150}
-		textClr = color.RGBA{R: 128, G: 136, B: 144, A: 255}
-	}
-	bounds := ui.Rect{X: x, Y: y, W: w, H: 30}
-	ctx.FillRect(bounds, fill)
-	ctx.StrokeRect(bounds, 1, stroke)
-	ctx.AddHit(id, bounds, visual.Enabled)
-	ui.Label{Text: label, Size: 13, Color: textClr}.Draw(ctx, ui.Rect{X: x + 12, Y: y + 8, W: w - 24, H: 14})
-}
-
-func (a *App) drawSettingsActionStatus(screen *ebiten.Image, group settingsActionGroup, x, y, w float64) {
-	state := a.settingsAction(group)
-	switch {
-	case state.Pending:
-		ui.DrawWrappedText(screen, "Applying…", x, y, w, 12, color.RGBA{R: 245, G: 200, B: 96, A: 255})
-	case state.Error != "":
-		ui.DrawWrappedText(screen, state.Error, x, y, w, 12, color.RGBA{R: 220, G: 132, B: 132, A: 255})
-	}
 }
 
 func (a *App) measureSettingsBody(body ui.Element, width float64) float64 {
@@ -1230,286 +1054,481 @@ func (a *App) settingsMouseBody(snap session.Snapshot) ui.Element {
 	}
 }
 
-func (a *App) drawSettingsGeneral(screen *ebiten.Image, snap session.Snapshot, x, y, w float64) {
+func settingsTwoPane(left ui.Element, leftFlex float64, right ui.Element, rightFlex float64) ui.Element {
+	return ui.Row{
+		Children: []ui.Child{
+			ui.Flex(left, leftFlex),
+			ui.Flex(right, rightFlex),
+		},
+		Spacing: 14,
+	}
+}
+
+func (a *App) settingsSectionBody(section settingsSection, snap session.Snapshot) ui.Element {
+	switch section {
+	case sectionGeneral:
+		return a.settingsGeneralBody(snap)
+	case sectionMouse:
+		return a.settingsMouseBody(snap)
+	case sectionKeyboard:
+		return a.settingsKeyboardBody(snap)
+	case sectionVideo:
+		return a.settingsVideoBody(snap)
+	case sectionHardware:
+		return a.settingsHardwareBody()
+	case sectionAccess:
+		return a.settingsAccessBody()
+	case sectionAppearance:
+		return a.settingsAppearanceBody()
+	case sectionNetwork:
+		return a.settingsNetworkBody()
+	case sectionAdvanced:
+		return a.settingsAdvancedBody()
+	default:
+		return a.settingsPlannedBody(section)
+	}
+}
+
+func (a *App) settingsGeneralBody(snap session.Snapshot) ui.Element {
 	a.mu.RLock()
 	state := a.sectionData.General
 	a.mu.RUnlock()
-	leftW := (w - 14) * 0.58
-	rightX := x + leftW + 14
-	rightW := w - leftW - 14
-	cardH := a.settingsWideBodyHeight(sectionGeneral, w)
-	a.drawSettingsCard(screen, x, y, leftW, cardH, "Device", "")
-	drawSettingsKeyValue(screen, "Base URL", snap.BaseURL, x+16, y+48, 116)
-	drawSettingsKeyValue(screen, "Phase", snap.Phase.String(), x+16, y+74, 116)
-	drawSettingsKeyValue(screen, "Signaling", signalingLabel(snap.SignalingMode), x+16, y+100, 116)
-	drawSettingsKeyValue(screen, "App Version", snap.AppVersion, x+16, y+132, 116)
-	drawSettingsKeyValue(screen, "System Version", snap.SystemVersion, x+16, y+158, 116)
 	updateLabel := "No updates reported"
 	if snap.AppUpdateAvailable || snap.SystemUpdateAvailable {
 		updateLabel = "Updates available"
 	}
-	drawSettingsKeyValue(screen, "Updates", updateLabel, x+16, y+184, 116)
-	a.drawSettingsCard(screen, rightX, y, rightW, cardH, "Actions", "")
-	ui.DrawWrappedText(screen, "Reconnect the native session, manage auto-updates, or force a device reboot.", rightX+16, y+48, rightW-32, 12, color.RGBA{R: 166, G: 178, B: 190, A: 255})
-	a.drawSettingsAction(screen, "reconnect", reconnectLabel(snap.Phase), rightX+16, y+98, rightW-32, settingsActionVisual{Enabled: true})
-	a.drawSettingsAction(screen, "reboot", "Reboot device", rightX+16, y+136, rightW-32, settingsActionVisual{Enabled: snap.Phase != session.PhaseConnecting})
+	deviceCard := settingsCardElement("Device", ui.Column{Children: []ui.Child{
+		ui.Fixed(settingsKeyValueElement("Base URL", snap.BaseURL, 116)),
+		ui.Fixed(ui.Spacer{H: 10}),
+		ui.Fixed(settingsKeyValueElement("Phase", snap.Phase.String(), 116)),
+		ui.Fixed(ui.Spacer{H: 10}),
+		ui.Fixed(settingsKeyValueElement("Signaling", signalingLabel(snap.SignalingMode), 116)),
+		ui.Fixed(ui.Spacer{H: 10}),
+		ui.Fixed(settingsKeyValueElement("App Version", snap.AppVersion, 116)),
+		ui.Fixed(ui.Spacer{H: 10}),
+		ui.Fixed(settingsKeyValueElement("System Version", snap.SystemVersion, 116)),
+		ui.Fixed(ui.Spacer{H: 10}),
+		ui.Fixed(settingsKeyValueElement("Updates", updateLabel, 116)),
+	}})
 	autoUpdate := a.settingsAction(settingsGroupAutoUpdate)
-	drawSettingsSectionLabel(screen, "Auto updates", rightX+16, y+184)
+	actionChildren := []ui.Child{
+		ui.Fixed(ui.Paragraph{Text: "Reconnect the native session, manage auto-updates, or force a device reboot.", Size: 12, Color: color.RGBA{R: 166, G: 178, B: 190, A: 255}}),
+		ui.Fixed(ui.Spacer{H: 14}),
+		ui.Fixed(settingsActionElement("reconnect", reconnectLabel(snap.Phase), settingsActionVisual{Enabled: true}, 0)),
+		ui.Fixed(ui.Spacer{H: 8}),
+		ui.Fixed(settingsActionElement("reboot", "Reboot device", settingsActionVisual{Enabled: snap.Phase != session.PhaseConnecting}, 0)),
+		ui.Fixed(ui.Spacer{H: 18}),
+		ui.Fixed(settingsSectionLabelElement("Auto updates")),
+		ui.Fixed(ui.Spacer{H: 8}),
+	}
 	if state.Loading {
-		ui.DrawText(screen, "Loading…", rightX+120, y+184, 12, color.RGBA{R: 166, G: 178, B: 190, A: 255})
+		actionChildren = append(actionChildren, ui.Fixed(ui.Label{Text: "Loading…", Size: 12, Color: color.RGBA{R: 166, G: 178, B: 190, A: 255}}))
 	} else {
-		drawSettingsKeyValue(screen, "State", boolPtrWord(state.AutoUpdate), rightX+16, y+206, 56)
-		a.drawSettingsAction(screen, "auto_update_on", "Enabled", rightX+16, y+228, 92, settingsActionVisual{Enabled: state.AutoUpdate != nil && (!autoUpdate.Pending || autoUpdate.PendingChoice == "on"), Active: state.AutoUpdate != nil && *state.AutoUpdate, Pending: autoUpdate.Pending && autoUpdate.PendingChoice == "on"})
-		a.drawSettingsAction(screen, "auto_update_off", "Disabled", rightX+120, y+228, 94, settingsActionVisual{Enabled: state.AutoUpdate != nil && (!autoUpdate.Pending || autoUpdate.PendingChoice == "off"), Active: state.AutoUpdate != nil && !*state.AutoUpdate, Pending: autoUpdate.Pending && autoUpdate.PendingChoice == "off"})
-		a.drawSettingsActionStatus(screen, settingsGroupAutoUpdate, rightX+16, y+266, rightW-32)
+		actionChildren = append(actionChildren,
+			ui.Fixed(settingsKeyValueElement("State", boolPtrWord(state.AutoUpdate), 56)),
+			ui.Fixed(ui.Spacer{H: 8}),
+			ui.Fixed(ui.Wrap{Children: []ui.Element{
+				settingsActionElement("auto_update_on", "Enabled", settingsActionVisual{Enabled: state.AutoUpdate != nil && (!autoUpdate.Pending || autoUpdate.PendingChoice == "on"), Active: state.AutoUpdate != nil && *state.AutoUpdate, Pending: autoUpdate.Pending && autoUpdate.PendingChoice == "on"}, 92),
+				settingsActionElement("auto_update_off", "Disabled", settingsActionVisual{Enabled: state.AutoUpdate != nil && (!autoUpdate.Pending || autoUpdate.PendingChoice == "off"), Active: state.AutoUpdate != nil && !*state.AutoUpdate, Pending: autoUpdate.Pending && autoUpdate.PendingChoice == "off"}, 94),
+			}, Spacing: 12, LineSpacing: 8}),
+		)
+		switch {
+		case autoUpdate.Pending:
+			actionChildren = append(actionChildren, ui.Fixed(ui.Spacer{H: 12}), ui.Fixed(settingsStatusElement("Applying…", color.RGBA{R: 245, G: 200, B: 96, A: 255})))
+		case autoUpdate.Error != "":
+			actionChildren = append(actionChildren, ui.Fixed(ui.Spacer{H: 12}), ui.Fixed(settingsStatusElement(autoUpdate.Error, color.RGBA{R: 220, G: 132, B: 132, A: 255})))
+		}
 	}
 	if state.Error != "" {
-		ui.DrawWrappedText(screen, state.Error, rightX+16, y+266, rightW-32, 12, color.RGBA{R: 220, G: 132, B: 132, A: 255})
+		actionChildren = append(actionChildren, ui.Fixed(ui.Spacer{H: 12}), ui.Fixed(settingsStatusElement(state.Error, color.RGBA{R: 220, G: 132, B: 132, A: 255})))
 	}
+	actionsCard := settingsCardElement("Actions", ui.Column{Children: actionChildren})
+	return settingsTwoPane(deviceCard, 58, actionsCard, 42)
 }
 
-func (a *App) drawSettingsMouse(screen *ebiten.Image, snap session.Snapshot, x, y, w float64) {
-	ctx := a.newUIContext(screen, func(btn chromeButton) {
-		a.settingsButtons = append(a.settingsButtons, btn)
-	})
-	a.settingsMouseBody(snap).Draw(ctx, ui.Rect{X: x, Y: y, W: w, H: a.settingsSectionBodyHeight(sectionMouse, w)})
-}
-
-func (a *App) drawSettingsKeyboard(screen *ebiten.Image, snap session.Snapshot, x, y, w float64) {
-	cardDesc := "This layout affects paste and keyboard macros. Live typing is sent as physical HID keys."
-	cardH := a.settingsKeyboardBodyHeight(w)
-	a.drawSettingsCard(screen, x, y, w, cardH, "", cardDesc)
-	descH := ui.WrappedTextHeight(cardDesc, w-32, 12)
-	bodyY := y + 18 + descH + 22
-	ui.DrawText(screen, "Active layout", x+16, bodyY, 13, color.RGBA{R: 166, G: 178, B: 190, A: 255})
+func (a *App) settingsKeyboardBody(snap session.Snapshot) ui.Element {
 	layout := snap.KeyboardLayout
 	if layout == "" {
 		layout = "en-US"
 	}
 	layoutState := a.settingsAction(settingsGroupKeyboardLayout)
-	ui.DrawText(screen, keyboardLayoutLabel(layout), x+118, bodyY, 13, color.RGBA{R: 236, G: 241, B: 245, A: 255})
-	a.drawSettingsAction(screen, "toggle_pressed_keys", "Show Pressed Keys", x+w-174, bodyY-14, 158, settingsActionVisual{Enabled: true, Active: a.showPressedKeys})
-	ui.DrawText(screen, "Layout presets", x+16, bodyY+40, 13, color.RGBA{R: 166, G: 178, B: 190, A: 255})
 	options := input.SupportedKeyboardLayouts()
-	rowX := x + 16
-	rowY := bodyY + 64
-	for i, option := range options {
+	buttons := make([]ui.Element, 0, len(options))
+	for _, option := range options {
 		btnW := 94.0
 		if len(option.Label) > 7 {
 			btnW = 112
 		}
-		a.drawSettingsAction(screen, "layout:"+option.Code, option.Label, rowX, rowY, btnW, settingsActionVisual{
+		buttons = append(buttons, settingsActionElement("layout:"+option.Code, option.Label, settingsActionVisual{
 			Enabled: snap.Phase == session.PhaseConnected && (!layoutState.Pending || layoutState.PendingChoice == option.Code),
 			Active:  layout == option.Code,
 			Pending: layoutState.Pending && layoutState.PendingChoice == option.Code,
-		})
-		rowX += btnW + 10
-		if (i+1)%4 == 0 {
-			rowX = x + 16
-			rowY += 38
-		}
+		}, btnW))
 	}
-	statusY := rowY + 4
-	a.drawSettingsActionStatus(screen, settingsGroupKeyboardLayout, x+16, statusY, w-32)
-	noteY := statusY
-	if layoutState.Pending || layoutState.Error != "" {
-		noteY += ui.WrappedTextHeight(fallbackLabel(layoutState.Error, "Applying…"), w-32, 12) + 8
+	children := []ui.Child{
+		ui.Fixed(ui.Paragraph{Text: "This layout affects paste and keyboard macros. Live typing is sent as physical HID keys.", Size: 12, Color: color.RGBA{R: 166, G: 178, B: 190, A: 255}}),
+		ui.Fixed(ui.Spacer{H: 18}),
+		ui.Fixed(ui.Row{Children: []ui.Child{
+			ui.Fixed(settingsKeyValueElement("Active layout", keyboardLayoutLabel(layout), 118)),
+			ui.Flex(ui.Spacer{}, 1),
+			ui.Fixed(settingsActionElement("toggle_pressed_keys", "Show Pressed Keys", settingsActionVisual{Enabled: true, Active: a.showPressedKeys}, 158)),
+		}, Spacing: 12}),
+		ui.Fixed(ui.Spacer{H: 18}),
+		ui.Fixed(settingsSectionLabelElement("Layout presets")),
+		ui.Fixed(ui.Spacer{H: 10}),
+		ui.Fixed(ui.Wrap{Children: buttons, Spacing: 10, LineSpacing: 8}),
 	}
-	ui.DrawWrappedText(screen, "Make this match the remote OS only for pasted text and macros.", x+16, noteY, w-32, 13, color.RGBA{R: 166, G: 178, B: 190, A: 255})
+	switch {
+	case layoutState.Pending:
+		children = append(children, ui.Fixed(ui.Spacer{H: 12}), ui.Fixed(settingsStatusElement("Applying…", color.RGBA{R: 245, G: 200, B: 96, A: 255})))
+	case layoutState.Error != "":
+		children = append(children, ui.Fixed(ui.Spacer{H: 12}), ui.Fixed(settingsStatusElement(layoutState.Error, color.RGBA{R: 220, G: 132, B: 132, A: 255})))
+	}
+	children = append(children,
+		ui.Fixed(ui.Spacer{H: 14}),
+		ui.Fixed(ui.Paragraph{Text: "Make this match the remote OS only for pasted text and macros.", Size: 13, Color: color.RGBA{R: 166, G: 178, B: 190, A: 255}}),
+	)
+	return settingsCardElement("", ui.Column{Children: children})
 }
 
-func (a *App) settingsKeyboardBodyHeight(w float64) float64 {
-	cardDesc := "This layout affects paste and keyboard macros. Live typing is sent as physical HID keys."
-	descH := ui.WrappedTextHeight(cardDesc, w-32, 12)
-	noteH := ui.WrappedTextHeight("Make this match the remote OS only for pasted text and macros.", w-32, 13)
-	rows := (len(input.SupportedKeyboardLayouts()) + 3) / 4
-	return 18 + descH + 22 + 18 + 40 + float64(rows)*38 + 18 + 16 + noteH + 16
-}
-
-func (a *App) drawSettingsVideo(screen *ebiten.Image, snap session.Snapshot, x, y, w float64) {
-	leftW := (w - 14) * 0.48
-	rightX := x + leftW + 14
-	rightW := w - leftW - 14
+func (a *App) settingsVideoBody(snap session.Snapshot) ui.Element {
 	qualityState := a.settingsAction(settingsGroupVideoQuality)
-	cardH := a.settingsWideBodyHeight(sectionVideo, w)
-	a.drawSettingsCard(screen, x, y, leftW, cardH, "Stream", "")
-	drawSettingsSectionLabel(screen, "Quality preset", x+16, y+48)
-	a.drawSettingsAction(screen, "quality_preset_high", "High", x+16, y+68, 96, settingsActionVisual{Enabled: snap.Phase == session.PhaseConnected && (!qualityState.Pending || qualityState.PendingChoice == "high"), Active: snap.Quality >= 0.95, Pending: qualityState.Pending && qualityState.PendingChoice == "high"})
-	a.drawSettingsAction(screen, "quality_preset_medium", "Medium", x+124, y+68, 96, settingsActionVisual{Enabled: snap.Phase == session.PhaseConnected && (!qualityState.Pending || qualityState.PendingChoice == "medium"), Active: snap.Quality >= 0.45 && snap.Quality < 0.95, Pending: qualityState.Pending && qualityState.PendingChoice == "medium"})
-	a.drawSettingsAction(screen, "quality_preset_low", "Low", x+232, y+68, 96, settingsActionVisual{Enabled: snap.Phase == session.PhaseConnected && (!qualityState.Pending || qualityState.PendingChoice == "low"), Active: snap.Quality < 0.45, Pending: qualityState.Pending && qualityState.PendingChoice == "low"})
-	ui.DrawText(screen, fmt.Sprintf("Current factor %.2f", snap.Quality), x+16, y+120, 13, color.RGBA{R: 236, G: 241, B: 245, A: 255})
-	a.drawSettingsActionStatus(screen, settingsGroupVideoQuality, x+16, y+144, leftW-32)
-	a.drawSettingsCard(screen, rightX, y, rightW, cardH, "EDID", "")
+	streamChildren := []ui.Child{
+		ui.Fixed(settingsSectionLabelElement("Quality preset")),
+		ui.Fixed(ui.Spacer{H: 8}),
+		ui.Fixed(ui.Wrap{Children: []ui.Element{
+			settingsActionElement("quality_preset_high", "High", settingsActionVisual{Enabled: snap.Phase == session.PhaseConnected && (!qualityState.Pending || qualityState.PendingChoice == "high"), Active: snap.Quality >= 0.95, Pending: qualityState.Pending && qualityState.PendingChoice == "high"}, 96),
+			settingsActionElement("quality_preset_medium", "Medium", settingsActionVisual{Enabled: snap.Phase == session.PhaseConnected && (!qualityState.Pending || qualityState.PendingChoice == "medium"), Active: snap.Quality >= 0.45 && snap.Quality < 0.95, Pending: qualityState.Pending && qualityState.PendingChoice == "medium"}, 96),
+			settingsActionElement("quality_preset_low", "Low", settingsActionVisual{Enabled: snap.Phase == session.PhaseConnected && (!qualityState.Pending || qualityState.PendingChoice == "low"), Active: snap.Quality < 0.45, Pending: qualityState.Pending && qualityState.PendingChoice == "low"}, 96),
+		}, Spacing: 12, LineSpacing: 8}),
+		ui.Fixed(ui.Spacer{H: 14}),
+		ui.Fixed(ui.Label{Text: fmt.Sprintf("Current factor %.2f", snap.Quality), Size: 13, Color: color.RGBA{R: 236, G: 241, B: 245, A: 255}}),
+	}
+	switch {
+	case qualityState.Pending:
+		streamChildren = append(streamChildren, ui.Fixed(ui.Spacer{H: 12}), ui.Fixed(settingsStatusElement("Applying…", color.RGBA{R: 245, G: 200, B: 96, A: 255})))
+	case qualityState.Error != "":
+		streamChildren = append(streamChildren, ui.Fixed(ui.Spacer{H: 12}), ui.Fixed(settingsStatusElement(qualityState.Error, color.RGBA{R: 220, G: 132, B: 132, A: 255})))
+	}
 	edid := snap.EDID
 	if edid == "" {
 		edid = "Unavailable on current target"
 	}
-	ui.DrawWrappedText(screen, edid, rightX+16, y+48, rightW-32, 12, color.RGBA{R: 236, G: 241, B: 245, A: 255})
+	return settingsTwoPane(
+		settingsCardElement("Stream", ui.Column{Children: streamChildren}),
+		48,
+		settingsCardElement("EDID", ui.Column{Children: []ui.Child{ui.Fixed(ui.Paragraph{Text: edid, Size: 12, Color: color.RGBA{R: 236, G: 241, B: 245, A: 255}})}}),
+		52,
+	)
 }
 
-func (a *App) drawSettingsHardware(screen *ebiten.Image, x, y, w float64) {
+func (a *App) settingsHardwareBody() ui.Element {
 	a.mu.RLock()
 	state := a.sectionData.Hardware
 	a.mu.RUnlock()
-	leftW := (w - 14) * 0.48
-	rightX := x + leftW + 14
-	rightW := w - leftW - 14
-	cardH := a.settingsWideBodyHeight(sectionHardware, w)
-	a.drawSettingsCard(screen, x, y, leftW, cardH, "Display", "")
-	a.drawSettingsCard(screen, rightX, y, rightW, cardH, "USB", "")
 	if state.Loading {
-		ui.DrawText(screen, "Loading hardware state…", x+16, y+48, 13, color.RGBA{R: 236, G: 241, B: 245, A: 255})
-		return
+		return settingsTwoPane(
+			settingsCardElement("Display", ui.Label{Text: "Loading hardware state…", Size: 13, Color: color.RGBA{R: 236, G: 241, B: 245, A: 255}}),
+			48,
+			settingsCardElement("USB", ui.Spacer{}),
+			52,
+		)
 	}
-	drawSettingsKeyValue(screen, "Rotation", string(state.State.DisplayRotation), x+16, y+50, 86)
-	ui.DrawWrappedText(screen, "Rotate the JetKVM device display. This does not rotate the remote host video feed.", x+16, y+82, leftW-32, 12, color.RGBA{R: 166, G: 178, B: 190, A: 255})
 	rotateState := a.settingsAction(settingsGroupDisplayRotate)
-	a.drawSettingsAction(screen, "rotate_normal", "Normal", x+16, y+150, 88, settingsActionVisual{Enabled: state.State.DisplayRotation != session.DisplayRotationUnknown && (!rotateState.Pending || rotateState.PendingChoice == "270"), Active: state.State.DisplayRotation == session.DisplayRotationNormal, Pending: rotateState.Pending && rotateState.PendingChoice == "270"})
-	a.drawSettingsAction(screen, "rotate_inverted", "Inverted", x+116, y+150, 98, settingsActionVisual{Enabled: state.State.DisplayRotation != session.DisplayRotationUnknown && (!rotateState.Pending || rotateState.PendingChoice == "90"), Active: state.State.DisplayRotation == session.DisplayRotationInverted, Pending: rotateState.Pending && rotateState.PendingChoice == "90"})
-	a.drawSettingsActionStatus(screen, settingsGroupDisplayRotate, x+16, y+188, leftW-32)
-	drawSettingsKeyValue(screen, "USB Emulation", boolPtrWord(state.State.USBEmulation), rightX+16, y+50, 112)
-	drawSettingsKeyValue(screen, "USB Config", usbConfigLabel(state.State.USBConfig), rightX+16, y+76, 112)
-	drawSettingsSectionLabel(screen, "Configured devices", rightX+16, y+108)
-	ui.DrawWrappedText(screen, usbDevicesSummary(state.State.USBDevices), rightX+16, y+126, rightW-32, 12, color.RGBA{R: 236, G: 241, B: 245, A: 255})
-	if state.State.USBEmulation != nil {
-		usbState := a.settingsAction(settingsGroupUSBEmulation)
-		a.drawSettingsAction(screen, "usb_emulation_on", "USB On", rightX+16, y+150, 86, settingsActionVisual{Enabled: !usbState.Pending || usbState.PendingChoice == "on", Active: *state.State.USBEmulation, Pending: usbState.Pending && usbState.PendingChoice == "on"})
-		a.drawSettingsAction(screen, "usb_emulation_off", "USB Off", rightX+114, y+150, 92, settingsActionVisual{Enabled: !usbState.Pending || usbState.PendingChoice == "off", Active: !*state.State.USBEmulation, Pending: usbState.Pending && usbState.PendingChoice == "off"})
-		a.drawSettingsActionStatus(screen, settingsGroupUSBEmulation, rightX+16, y+188, rightW-32)
+	displayChildren := []ui.Child{
+		ui.Fixed(settingsKeyValueElement("Rotation", string(state.State.DisplayRotation), 86)),
+		ui.Fixed(ui.Spacer{H: 14}),
+		ui.Fixed(ui.Paragraph{Text: "Rotate the JetKVM device display. This does not rotate the remote host video feed.", Size: 12, Color: color.RGBA{R: 166, G: 178, B: 190, A: 255}}),
+		ui.Fixed(ui.Spacer{H: 14}),
+		ui.Fixed(ui.Wrap{Children: []ui.Element{
+			settingsActionElement("rotate_normal", "Normal", settingsActionVisual{Enabled: state.State.DisplayRotation != session.DisplayRotationUnknown && (!rotateState.Pending || rotateState.PendingChoice == "270"), Active: state.State.DisplayRotation == session.DisplayRotationNormal, Pending: rotateState.Pending && rotateState.PendingChoice == "270"}, 88),
+			settingsActionElement("rotate_inverted", "Inverted", settingsActionVisual{Enabled: state.State.DisplayRotation != session.DisplayRotationUnknown && (!rotateState.Pending || rotateState.PendingChoice == "90"), Active: state.State.DisplayRotation == session.DisplayRotationInverted, Pending: rotateState.Pending && rotateState.PendingChoice == "90"}, 98),
+		}, Spacing: 12, LineSpacing: 8}),
 	}
+	switch {
+	case rotateState.Pending:
+		displayChildren = append(displayChildren, ui.Fixed(ui.Spacer{H: 12}), ui.Fixed(settingsStatusElement("Applying…", color.RGBA{R: 245, G: 200, B: 96, A: 255})))
+	case rotateState.Error != "":
+		displayChildren = append(displayChildren, ui.Fixed(ui.Spacer{H: 12}), ui.Fixed(settingsStatusElement(rotateState.Error, color.RGBA{R: 220, G: 132, B: 132, A: 255})))
+	}
+	usbState := a.settingsAction(settingsGroupUSBEmulation)
 	usbDevicesState := a.settingsAction(settingsGroupUSBDevices)
-	drawSettingsSectionLabel(screen, "Preset", rightX+16, y+226)
 	preset := usbDevicePresetLabel(state.State.USBDevices)
-	a.drawSettingsAction(screen, "usb_devices_default", "Default", rightX+16, y+244, 86, settingsActionVisual{Enabled: !usbDevicesState.Pending || usbDevicesState.PendingChoice == "default", Active: preset == "Default", Pending: usbDevicesState.Pending && usbDevicesState.PendingChoice == "default"})
-	a.drawSettingsAction(screen, "usb_devices_keyboard_only", "Keyboard Only", rightX+114, y+244, 122, settingsActionVisual{Enabled: !usbDevicesState.Pending || usbDevicesState.PendingChoice == "keyboard_only", Active: preset == "Keyboard Only", Pending: usbDevicesState.Pending && usbDevicesState.PendingChoice == "keyboard_only"})
-	ui.DrawText(screen, "Custom", rightX+248, y+254, 12, color.RGBA{R: 166, G: 178, B: 190, A: 255})
-	deviceToggles := []struct {
-		id, label string
-		active    bool
-		x, y, w   float64
-	}{
-		{id: "usb_toggle_keyboard", label: "Keyboard", active: state.State.USBDevices.Keyboard, x: rightX + 16, y: y + 286, w: 94},
-		{id: "usb_toggle_absolute_mouse", label: "Abs Mouse", active: state.State.USBDevices.AbsoluteMouse, x: rightX + 122, y: y + 286, w: 98},
-		{id: "usb_toggle_relative_mouse", label: "Rel Mouse", active: state.State.USBDevices.RelativeMouse, x: rightX + 232, y: y + 286, w: 96},
-		{id: "usb_toggle_mass_storage", label: "Mass Storage", active: state.State.USBDevices.MassStorage, x: rightX + 16, y: y + 324, w: 110},
-		{id: "usb_toggle_serial_console", label: "Serial", active: state.State.USBDevices.SerialConsole, x: rightX + 138, y: y + 324, w: 74},
-		{id: "usb_toggle_network", label: "Network", active: state.State.USBDevices.Network, x: rightX + 224, y: y + 324, w: 88},
+	usbChildren := []ui.Child{
+		ui.Fixed(settingsKeyValueElement("USB Emulation", boolPtrWord(state.State.USBEmulation), 112)),
+		ui.Fixed(ui.Spacer{H: 10}),
+		ui.Fixed(settingsKeyValueElement("USB Config", usbConfigLabel(state.State.USBConfig), 112)),
+		ui.Fixed(ui.Spacer{H: 14}),
+		ui.Fixed(settingsSectionLabelElement("Configured devices")),
+		ui.Fixed(ui.Spacer{H: 8}),
+		ui.Fixed(ui.Paragraph{Text: usbDevicesSummary(state.State.USBDevices), Size: 12, Color: color.RGBA{R: 236, G: 241, B: 245, A: 255}}),
 	}
-	for _, toggle := range deviceToggles {
-		a.drawSettingsAction(screen, toggle.id, toggle.label, toggle.x, toggle.y, toggle.w, settingsActionVisual{
-			Enabled: !usbDevicesState.Pending || usbDevicesState.PendingChoice == "custom",
-			Active:  toggle.active,
-			Pending: usbDevicesState.Pending && usbDevicesState.PendingChoice == "custom",
-		})
+	if state.State.USBEmulation != nil {
+		usbChildren = append(usbChildren,
+			ui.Fixed(ui.Spacer{H: 12}),
+			ui.Fixed(ui.Wrap{Children: []ui.Element{
+				settingsActionElement("usb_emulation_on", "USB On", settingsActionVisual{Enabled: !usbState.Pending || usbState.PendingChoice == "on", Active: *state.State.USBEmulation, Pending: usbState.Pending && usbState.PendingChoice == "on"}, 86),
+				settingsActionElement("usb_emulation_off", "USB Off", settingsActionVisual{Enabled: !usbState.Pending || usbState.PendingChoice == "off", Active: !*state.State.USBEmulation, Pending: usbState.Pending && usbState.PendingChoice == "off"}, 92),
+			}, Spacing: 12, LineSpacing: 8}),
+		)
+		switch {
+		case usbState.Pending:
+			usbChildren = append(usbChildren, ui.Fixed(ui.Spacer{H: 12}), ui.Fixed(settingsStatusElement("Applying…", color.RGBA{R: 245, G: 200, B: 96, A: 255})))
+		case usbState.Error != "":
+			usbChildren = append(usbChildren, ui.Fixed(ui.Spacer{H: 12}), ui.Fixed(settingsStatusElement(usbState.Error, color.RGBA{R: 220, G: 132, B: 132, A: 255})))
+		}
 	}
-	a.drawSettingsActionStatus(screen, settingsGroupUSBDevices, rightX+16, y+366, rightW-32)
+	usbChildren = append(usbChildren,
+		ui.Fixed(ui.Spacer{H: 14}),
+		ui.Fixed(settingsSectionLabelElement("Preset")),
+		ui.Fixed(ui.Spacer{H: 8}),
+		ui.Fixed(ui.Wrap{Children: []ui.Element{
+			settingsActionElement("usb_devices_default", "Default", settingsActionVisual{Enabled: !usbDevicesState.Pending || usbDevicesState.PendingChoice == "default", Active: preset == "Default", Pending: usbDevicesState.Pending && usbDevicesState.PendingChoice == "default"}, 86),
+			settingsActionElement("usb_devices_keyboard_only", "Keyboard Only", settingsActionVisual{Enabled: !usbDevicesState.Pending || usbDevicesState.PendingChoice == "keyboard_only", Active: preset == "Keyboard Only", Pending: usbDevicesState.Pending && usbDevicesState.PendingChoice == "keyboard_only"}, 122),
+		}, Spacing: 12, LineSpacing: 8}),
+		ui.Fixed(ui.Spacer{H: 10}),
+		ui.Fixed(settingsSectionLabelElement("Custom")),
+		ui.Fixed(ui.Spacer{H: 8}),
+		ui.Fixed(ui.Wrap{Children: []ui.Element{
+			settingsActionElement("usb_toggle_keyboard", "Keyboard", settingsActionVisual{Enabled: !usbDevicesState.Pending || usbDevicesState.PendingChoice == "custom", Active: state.State.USBDevices.Keyboard, Pending: usbDevicesState.Pending && usbDevicesState.PendingChoice == "custom"}, 94),
+			settingsActionElement("usb_toggle_absolute_mouse", "Abs Mouse", settingsActionVisual{Enabled: !usbDevicesState.Pending || usbDevicesState.PendingChoice == "custom", Active: state.State.USBDevices.AbsoluteMouse, Pending: usbDevicesState.Pending && usbDevicesState.PendingChoice == "custom"}, 98),
+			settingsActionElement("usb_toggle_relative_mouse", "Rel Mouse", settingsActionVisual{Enabled: !usbDevicesState.Pending || usbDevicesState.PendingChoice == "custom", Active: state.State.USBDevices.RelativeMouse, Pending: usbDevicesState.Pending && usbDevicesState.PendingChoice == "custom"}, 96),
+			settingsActionElement("usb_toggle_mass_storage", "Mass Storage", settingsActionVisual{Enabled: !usbDevicesState.Pending || usbDevicesState.PendingChoice == "custom", Active: state.State.USBDevices.MassStorage, Pending: usbDevicesState.Pending && usbDevicesState.PendingChoice == "custom"}, 110),
+			settingsActionElement("usb_toggle_serial_console", "Serial", settingsActionVisual{Enabled: !usbDevicesState.Pending || usbDevicesState.PendingChoice == "custom", Active: state.State.USBDevices.SerialConsole, Pending: usbDevicesState.Pending && usbDevicesState.PendingChoice == "custom"}, 74),
+			settingsActionElement("usb_toggle_network", "Network", settingsActionVisual{Enabled: !usbDevicesState.Pending || usbDevicesState.PendingChoice == "custom", Active: state.State.USBDevices.Network, Pending: usbDevicesState.Pending && usbDevicesState.PendingChoice == "custom"}, 88),
+		}, Spacing: 12, LineSpacing: 8}),
+	)
+	switch {
+	case usbDevicesState.Pending:
+		usbChildren = append(usbChildren, ui.Fixed(ui.Spacer{H: 12}), ui.Fixed(settingsStatusElement("Applying…", color.RGBA{R: 245, G: 200, B: 96, A: 255})))
+	case usbDevicesState.Error != "":
+		usbChildren = append(usbChildren, ui.Fixed(ui.Spacer{H: 12}), ui.Fixed(settingsStatusElement(usbDevicesState.Error, color.RGBA{R: 220, G: 132, B: 132, A: 255})))
+	}
 	if state.Error != "" {
-		ui.DrawWrappedText(screen, state.Error, x+16, y+392, w-32, 12, color.RGBA{R: 220, G: 132, B: 132, A: 255})
+		usbChildren = append(usbChildren, ui.Fixed(ui.Spacer{H: 12}), ui.Fixed(settingsStatusElement(state.Error, color.RGBA{R: 220, G: 132, B: 132, A: 255})))
 	}
+	return settingsTwoPane(settingsCardElement("Display", ui.Column{Children: displayChildren}), 48, settingsCardElement("USB", ui.Column{Children: usbChildren}), 52)
 }
 
-func (a *App) drawSettingsAccess(screen *ebiten.Image, x, y, w float64) {
+func (a *App) settingsAccessBody() ui.Element {
 	a.mu.RLock()
 	state := a.sectionData.Access
 	a.mu.RUnlock()
-	leftW := (w - 14) * 0.5
-	rightX := x + leftW + 14
-	rightW := w - leftW - 14
-	cardH := a.settingsWideBodyHeight(sectionAccess, w)
-	a.drawSettingsCard(screen, x, y, leftW, cardH, "Cloud", "")
-	a.drawSettingsCard(screen, rightX, y, rightW, cardH, "TLS", "")
 	if state.Loading {
-		ui.DrawText(screen, "Loading access state…", x+16, y+48, 13, color.RGBA{R: 236, G: 241, B: 245, A: 255})
-		return
+		return settingsTwoPane(
+			settingsCardElement("Cloud", ui.Label{Text: "Loading access state…", Size: 13, Color: color.RGBA{R: 236, G: 241, B: 245, A: 255}}),
+			50,
+			settingsCardElement("TLS", ui.Spacer{}),
+			50,
+		)
 	}
-	drawSettingsKeyValue(screen, "Connected", boolWord(state.State.Cloud.Connected), x+16, y+50, 96)
-	drawSettingsSectionLabel(screen, "Cloud API", x+16, y+84)
-	ui.DrawWrappedText(screen, fallbackLabel(state.State.Cloud.URL, "Unavailable"), x+16, y+102, leftW-32, 12, color.RGBA{R: 236, G: 241, B: 245, A: 255})
-	drawSettingsSectionLabel(screen, "Cloud App", x+16, y+138)
-	ui.DrawWrappedText(screen, fallbackLabel(state.State.Cloud.AppURL, "Unavailable"), x+16, y+156, leftW-32, 12, color.RGBA{R: 236, G: 241, B: 245, A: 255})
-	drawSettingsKeyValue(screen, "Mode", string(state.State.TLS), rightX+16, y+50, 70)
-	ui.DrawWrappedText(screen, "Use the target's currently exposed TLS mode. Native client transport follows whatever the device publishes.", rightX+16, y+84, rightW-32, 12, color.RGBA{R: 166, G: 178, B: 190, A: 255})
+	cloudChildren := []ui.Child{
+		ui.Fixed(settingsKeyValueElement("Connected", boolWord(state.State.Cloud.Connected), 96)),
+		ui.Fixed(ui.Spacer{H: 14}),
+		ui.Fixed(settingsSectionLabelElement("Cloud API")),
+		ui.Fixed(ui.Spacer{H: 8}),
+		ui.Fixed(ui.Paragraph{Text: fallbackLabel(state.State.Cloud.URL, "Unavailable"), Size: 12, Color: color.RGBA{R: 236, G: 241, B: 245, A: 255}}),
+		ui.Fixed(ui.Spacer{H: 14}),
+		ui.Fixed(settingsSectionLabelElement("Cloud App")),
+		ui.Fixed(ui.Spacer{H: 8}),
+		ui.Fixed(ui.Paragraph{Text: fallbackLabel(state.State.Cloud.AppURL, "Unavailable"), Size: 12, Color: color.RGBA{R: 236, G: 241, B: 245, A: 255}}),
+	}
 	tlsState := a.settingsAction(settingsGroupTLSMode)
-	a.drawSettingsAction(screen, "tls_disabled", "Disabled", rightX+16, y+150, 92, settingsActionVisual{Enabled: state.State.TLS != session.TLSModeUnknown && (!tlsState.Pending || tlsState.PendingChoice == "disabled"), Active: state.State.TLS == session.TLSModeDisabled, Pending: tlsState.Pending && tlsState.PendingChoice == "disabled"})
-	a.drawSettingsAction(screen, "tls_self_signed", "Self-Signed", rightX+120, y+150, 114, settingsActionVisual{Enabled: state.State.TLS != session.TLSModeUnknown && (!tlsState.Pending || tlsState.PendingChoice == "self-signed"), Active: state.State.TLS == session.TLSModeSelfSigned, Pending: tlsState.Pending && tlsState.PendingChoice == "self-signed"})
-	a.drawSettingsActionStatus(screen, settingsGroupTLSMode, rightX+16, y+188, rightW-32)
-	if state.Error != "" {
-		ui.DrawWrappedText(screen, state.Error, x+16, y+192, w-32, 12, color.RGBA{R: 220, G: 132, B: 132, A: 255})
+	tlsChildren := []ui.Child{
+		ui.Fixed(settingsKeyValueElement("Mode", string(state.State.TLS), 70)),
+		ui.Fixed(ui.Spacer{H: 14}),
+		ui.Fixed(ui.Paragraph{Text: "Use the target's currently exposed TLS mode. Native client transport follows whatever the device publishes.", Size: 12, Color: color.RGBA{R: 166, G: 178, B: 190, A: 255}}),
+		ui.Fixed(ui.Spacer{H: 14}),
+		ui.Fixed(ui.Wrap{Children: []ui.Element{
+			settingsActionElement("tls_disabled", "Disabled", settingsActionVisual{Enabled: state.State.TLS != session.TLSModeUnknown && (!tlsState.Pending || tlsState.PendingChoice == "disabled"), Active: state.State.TLS == session.TLSModeDisabled, Pending: tlsState.Pending && tlsState.PendingChoice == "disabled"}, 92),
+			settingsActionElement("tls_self_signed", "Self-Signed", settingsActionVisual{Enabled: state.State.TLS != session.TLSModeUnknown && (!tlsState.Pending || tlsState.PendingChoice == "self-signed"), Active: state.State.TLS == session.TLSModeSelfSigned, Pending: tlsState.Pending && tlsState.PendingChoice == "self-signed"}, 114),
+		}, Spacing: 12, LineSpacing: 8}),
 	}
+	switch {
+	case tlsState.Pending:
+		tlsChildren = append(tlsChildren, ui.Fixed(ui.Spacer{H: 12}), ui.Fixed(settingsStatusElement("Applying…", color.RGBA{R: 245, G: 200, B: 96, A: 255})))
+	case tlsState.Error != "":
+		tlsChildren = append(tlsChildren, ui.Fixed(ui.Spacer{H: 12}), ui.Fixed(settingsStatusElement(tlsState.Error, color.RGBA{R: 220, G: 132, B: 132, A: 255})))
+	}
+	if state.Error != "" {
+		tlsChildren = append(tlsChildren, ui.Fixed(ui.Spacer{H: 12}), ui.Fixed(settingsStatusElement(state.Error, color.RGBA{R: 220, G: 132, B: 132, A: 255})))
+	}
+	return settingsTwoPane(settingsCardElement("Cloud", ui.Column{Children: cloudChildren}), 50, settingsCardElement("TLS", ui.Column{Children: tlsChildren}), 50)
 }
 
-func (a *App) drawSettingsNetwork(screen *ebiten.Image, x, y, w float64) {
+func (a *App) settingsNetworkBody() ui.Element {
 	a.mu.RLock()
 	state := a.sectionData.Network
 	a.mu.RUnlock()
-	cardH := a.settingsWideBodyHeight(sectionNetwork, w)
-	a.drawSettingsCard(screen, x, y, w, cardH, "Current state", "")
+	children := []ui.Child{}
 	if state.Loading {
-		ui.DrawText(screen, "Loading network state…", x+16, y+48, 13, color.RGBA{R: 236, G: 241, B: 245, A: 255})
-		return
+		children = append(children, ui.Fixed(ui.Label{Text: "Loading network state…", Size: 13, Color: color.RGBA{R: 236, G: 241, B: 245, A: 255}}))
+	} else {
+		children = append(children,
+			ui.Fixed(settingsKeyValueElement("Hostname", state.State.Hostname, 96)),
+			ui.Fixed(ui.Spacer{H: 10}),
+			ui.Fixed(settingsKeyValueElement("IP", state.State.IP, 96)),
+			ui.Fixed(ui.Spacer{H: 10}),
+			ui.Fixed(settingsKeyValueElement("DHCP", boolPtrWord(state.State.DHCP), 96)),
+		)
 	}
-	drawSettingsKeyValue(screen, "Hostname", state.State.Hostname, x+16, y+48, 96)
-	drawSettingsKeyValue(screen, "IP", state.State.IP, x+16, y+74, 96)
-	drawSettingsKeyValue(screen, "DHCP", boolPtrWord(state.State.DHCP), x+16, y+100, 96)
 	if state.Error != "" {
-		ui.DrawWrappedText(screen, state.Error, x+16, y+124, w-32, 12, color.RGBA{R: 220, G: 132, B: 132, A: 255})
+		children = append(children, ui.Fixed(ui.Spacer{H: 12}), ui.Fixed(settingsStatusElement(state.Error, color.RGBA{R: 220, G: 132, B: 132, A: 255})))
 	}
+	return settingsCardElement("Current state", ui.Column{Children: children})
 }
 
-func (a *App) drawSettingsAdvanced(screen *ebiten.Image, x, y, w float64) {
+func (a *App) settingsAdvancedBody() ui.Element {
 	a.mu.RLock()
 	state := a.sectionData.Advanced
 	a.mu.RUnlock()
-	cardH := a.settingsWideBodyHeight(sectionAdvanced, w)
-	a.drawSettingsCard(screen, x, y, w, cardH, "Current state", "")
+	children := []ui.Child{}
 	if state.Loading {
-		ui.DrawText(screen, "Loading advanced state…", x+16, y+48, 13, color.RGBA{R: 236, G: 241, B: 245, A: 255})
-		return
-	}
-	drawSettingsKeyValue(screen, "Developer Mode", boolPtrWord(state.State.DevMode), x+16, y+48, 128)
-	drawSettingsKeyValue(screen, "USB Emulation", boolPtrWord(state.State.USBEmulation), x+16, y+74, 128)
-	drawSettingsKeyValue(screen, "App Version", state.State.Version.AppVersion, x+16, y+106, 128)
-	drawSettingsKeyValue(screen, "System Version", state.State.Version.SystemVersion, x+16, y+132, 128)
-	if state.State.DevMode != nil {
-		devModeState := a.settingsAction(settingsGroupDeveloperMode)
-		a.drawSettingsAction(screen, "developer_mode_on", "Developer Mode On", x+16, y+166, 156, settingsActionVisual{Enabled: !devModeState.Pending || devModeState.PendingChoice == "on", Active: *state.State.DevMode, Pending: devModeState.Pending && devModeState.PendingChoice == "on"})
-		a.drawSettingsAction(screen, "developer_mode_off", "Developer Mode Off", x+184, y+166, 160, settingsActionVisual{Enabled: !devModeState.Pending || devModeState.PendingChoice == "off", Active: !*state.State.DevMode, Pending: devModeState.Pending && devModeState.PendingChoice == "off"})
-		a.drawSettingsActionStatus(screen, settingsGroupDeveloperMode, x+16, y+204, w-32)
+		children = append(children, ui.Fixed(ui.Label{Text: "Loading advanced state…", Size: 13, Color: color.RGBA{R: 236, G: 241, B: 245, A: 255}}))
+	} else {
+		children = append(children,
+			ui.Fixed(settingsKeyValueElement("Developer Mode", boolPtrWord(state.State.DevMode), 128)),
+			ui.Fixed(ui.Spacer{H: 10}),
+			ui.Fixed(settingsKeyValueElement("USB Emulation", boolPtrWord(state.State.USBEmulation), 128)),
+			ui.Fixed(ui.Spacer{H: 10}),
+			ui.Fixed(settingsKeyValueElement("App Version", state.State.Version.AppVersion, 128)),
+			ui.Fixed(ui.Spacer{H: 10}),
+			ui.Fixed(settingsKeyValueElement("System Version", state.State.Version.SystemVersion, 128)),
+		)
+		if state.State.DevMode != nil {
+			devModeState := a.settingsAction(settingsGroupDeveloperMode)
+			children = append(children,
+				ui.Fixed(ui.Spacer{H: 14}),
+				ui.Fixed(ui.Wrap{Children: []ui.Element{
+					settingsActionElement("developer_mode_on", "Developer Mode On", settingsActionVisual{Enabled: !devModeState.Pending || devModeState.PendingChoice == "on", Active: *state.State.DevMode, Pending: devModeState.Pending && devModeState.PendingChoice == "on"}, 156),
+					settingsActionElement("developer_mode_off", "Developer Mode Off", settingsActionVisual{Enabled: !devModeState.Pending || devModeState.PendingChoice == "off", Active: !*state.State.DevMode, Pending: devModeState.Pending && devModeState.PendingChoice == "off"}, 160),
+				}, Spacing: 12, LineSpacing: 8}),
+			)
+			switch {
+			case devModeState.Pending:
+				children = append(children, ui.Fixed(ui.Spacer{H: 12}), ui.Fixed(settingsStatusElement("Applying…", color.RGBA{R: 245, G: 200, B: 96, A: 255})))
+			case devModeState.Error != "":
+				children = append(children, ui.Fixed(ui.Spacer{H: 12}), ui.Fixed(settingsStatusElement(devModeState.Error, color.RGBA{R: 220, G: 132, B: 132, A: 255})))
+			}
+		}
 	}
 	if state.Error != "" {
-		ui.DrawWrappedText(screen, state.Error, x+16, y+204, w-32, 12, color.RGBA{R: 220, G: 132, B: 132, A: 255})
+		children = append(children, ui.Fixed(ui.Spacer{H: 12}), ui.Fixed(settingsStatusElement(state.Error, color.RGBA{R: 220, G: 132, B: 132, A: 255})))
 	}
+	return settingsCardElement("Current state", ui.Column{Children: children})
+}
+
+func (a *App) settingsAppearanceBody() ui.Element {
+	positionButtons := []ui.Element{
+		settingsActionElement("chrome_anchor:top_left", "Top Left", settingsActionVisual{Enabled: true, Active: a.prefs.ChromeAnchor == chromeAnchorTopLeft}, 96),
+		settingsActionElement("chrome_anchor:top_center", "Top Center", settingsActionVisual{Enabled: true, Active: a.prefs.ChromeAnchor == chromeAnchorTopCenter}, 108),
+		settingsActionElement("chrome_anchor:top_right", "Top Right", settingsActionVisual{Enabled: true, Active: a.prefs.ChromeAnchor == chromeAnchorTopRight}, 100),
+		settingsActionElement("chrome_anchor:left_center", "Left Center", settingsActionVisual{Enabled: true, Active: a.prefs.ChromeAnchor == chromeAnchorLeftCenter}, 108),
+		settingsActionElement("chrome_anchor:right_center", "Right Center", settingsActionVisual{Enabled: true, Active: a.prefs.ChromeAnchor == chromeAnchorRightCenter}, 118),
+		settingsActionElement("chrome_anchor:bottom_left", "Bottom Left", settingsActionVisual{Enabled: true, Active: a.prefs.ChromeAnchor == chromeAnchorBottomLeft}, 108),
+		settingsActionElement("chrome_anchor:bottom_center", "Bottom Center", settingsActionVisual{Enabled: true, Active: a.prefs.ChromeAnchor == chromeAnchorBottomCenter}, 126),
+		settingsActionElement("chrome_anchor:bottom_right", "Bottom Right", settingsActionVisual{Enabled: true, Active: a.prefs.ChromeAnchor == chromeAnchorBottomRight}, 118),
+	}
+	return settingsCardElement("Chrome", ui.Column{Children: []ui.Child{
+		ui.Fixed(settingsSectionLabelElement("Top bar")),
+		ui.Fixed(ui.Spacer{H: 8}),
+		ui.Fixed(ui.Wrap{Children: []ui.Element{
+			settingsActionElement("pin_chrome_off", "Auto-hide", settingsActionVisual{Enabled: true, Active: !a.prefs.PinChrome}, 96),
+			settingsActionElement("pin_chrome_on", "Pinned", settingsActionVisual{Enabled: true, Active: a.prefs.PinChrome}, 84),
+		}, Spacing: 12, LineSpacing: 8}),
+		ui.Fixed(ui.Spacer{H: 14}),
+		ui.Fixed(settingsSectionLabelElement("Position")),
+		ui.Fixed(ui.Spacer{H: 8}),
+		ui.Fixed(ui.Wrap{Children: positionButtons, Spacing: 12, LineSpacing: 8}),
+		ui.Fixed(ui.Spacer{H: 14}),
+		ui.Fixed(settingsSectionLabelElement("Layout")),
+		ui.Fixed(ui.Spacer{H: 8}),
+		ui.Fixed(ui.Wrap{Children: []ui.Element{
+			settingsActionElement("chrome_layout:horizontal", "Horizontal", settingsActionVisual{Enabled: true, Active: a.prefs.ChromeLayout == chromeLayoutHorizontal}, 112),
+			settingsActionElement("chrome_layout:vertical", "Vertical", settingsActionVisual{Enabled: true, Active: a.prefs.ChromeLayout == chromeLayoutVertical}, 96),
+		}, Spacing: 12, LineSpacing: 8}),
+		ui.Fixed(ui.Spacer{H: 14}),
+		ui.Fixed(settingsSectionLabelElement("Window")),
+		ui.Fixed(ui.Spacer{H: 8}),
+		ui.Fixed(settingsActionElement("fullscreen", "Toggle Fullscreen", settingsActionVisual{Enabled: true, Active: ebiten.IsFullscreen()}, 160)),
+		ui.Fixed(ui.Spacer{H: 14}),
+		ui.Fixed(ui.Paragraph{Text: "Position chooses where the chrome sits on screen. Layout changes whether the control buttons run across or down.", Size: 12, Color: color.RGBA{R: 166, G: 178, B: 190, A: 255}}),
+	}})
+}
+
+func (a *App) settingsPlannedBody(section settingsSection) ui.Element {
+	defs := settingsSections(session.Snapshot{})
+	var current settingsSectionDef
+	for _, def := range defs {
+		if def.id == section {
+			current = def
+			break
+		}
+	}
+	children := []ui.Child{
+		ui.Fixed(ui.Paragraph{Text: current.description, Size: 12, Color: color.RGBA{R: 166, G: 178, B: 190, A: 255}}),
+		ui.Fixed(ui.Spacer{H: 14}),
+		ui.Fixed(settingsSectionLabelElement("Current upstream surface")),
+	}
+	for _, item := range current.items {
+		children = append(children,
+			ui.Fixed(ui.Spacer{H: 8}),
+			ui.Fixed(ui.Paragraph{Text: "• " + item, Size: 12, Color: color.RGBA{R: 236, G: 241, B: 245, A: 255}}),
+		)
+	}
+	children = append(children,
+		ui.Fixed(ui.Spacer{H: 16}),
+		ui.Fixed(ui.Paragraph{Text: "This section exists in the upstream product structure but is not currently exposed by this target or the desktop client.", Size: 12, Color: color.RGBA{R: 166, G: 178, B: 190, A: 255}}),
+	)
+	return settingsCardElement("Not exposed here", ui.Column{Children: children})
+}
+
+func (a *App) drawSettingsGeneral(screen *ebiten.Image, snap session.Snapshot, x, y, w float64) {
+	a.drawSettingsBody(screen, a.settingsGeneralBody(snap), x, y, w)
+}
+
+func (a *App) drawSettingsMouse(screen *ebiten.Image, snap session.Snapshot, x, y, w float64) {
+	a.drawSettingsBody(screen, a.settingsMouseBody(snap), x, y, w)
+}
+
+func (a *App) drawSettingsKeyboard(screen *ebiten.Image, snap session.Snapshot, x, y, w float64) {
+	a.drawSettingsBody(screen, a.settingsKeyboardBody(snap), x, y, w)
+}
+
+func (a *App) drawSettingsVideo(screen *ebiten.Image, snap session.Snapshot, x, y, w float64) {
+	a.drawSettingsBody(screen, a.settingsVideoBody(snap), x, y, w)
+}
+
+func (a *App) drawSettingsHardware(screen *ebiten.Image, x, y, w float64) {
+	a.drawSettingsBody(screen, a.settingsHardwareBody(), x, y, w)
+}
+
+func (a *App) drawSettingsAccess(screen *ebiten.Image, x, y, w float64) {
+	a.drawSettingsBody(screen, a.settingsAccessBody(), x, y, w)
+}
+
+func (a *App) drawSettingsNetwork(screen *ebiten.Image, x, y, w float64) {
+	a.drawSettingsBody(screen, a.settingsNetworkBody(), x, y, w)
+}
+
+func (a *App) drawSettingsAdvanced(screen *ebiten.Image, x, y, w float64) {
+	a.drawSettingsBody(screen, a.settingsAdvancedBody(), x, y, w)
 }
 
 func (a *App) drawSettingsAppearance(screen *ebiten.Image, x, y, w float64) {
-	cardH := a.settingsWideBodyHeight(sectionAppearance, w)
-	a.drawSettingsCard(screen, x, y, w, cardH, "Chrome", "")
-	drawSettingsSectionLabel(screen, "Top bar", x+16, y+48)
-	a.drawSettingsAction(screen, "pin_chrome_off", "Auto-hide", x+136, y+36, 96, settingsActionVisual{Enabled: true, Active: !a.prefs.PinChrome})
-	a.drawSettingsAction(screen, "pin_chrome_on", "Pinned", x+244, y+36, 84, settingsActionVisual{Enabled: true, Active: a.prefs.PinChrome})
-	drawSettingsSectionLabel(screen, "Position", x+16, y+90)
-	positionOptions := []struct {
-		id, label, value string
-		x, y, w          float64
-	}{
-		{id: "chrome_anchor:top_left", label: "Top Left", value: "top_left", x: x + 136, y: y + 78, w: 96},
-		{id: "chrome_anchor:top_center", label: "Top Center", value: "top_center", x: x + 244, y: y + 78, w: 108},
-		{id: "chrome_anchor:top_right", label: "Top Right", value: "top_right", x: x + 364, y: y + 78, w: 100},
-		{id: "chrome_anchor:left_center", label: "Left Center", value: "left_center", x: x + 136, y: y + 116, w: 108},
-		{id: "chrome_anchor:right_center", label: "Right Center", value: "right_center", x: x + 256, y: y + 116, w: 118},
-		{id: "chrome_anchor:bottom_left", label: "Bottom Left", value: "bottom_left", x: x + 386, y: y + 116, w: 108},
-		{id: "chrome_anchor:bottom_center", label: "Bottom Center", value: "bottom_center", x: x + 136, y: y + 154, w: 126},
-		{id: "chrome_anchor:bottom_right", label: "Bottom Right", value: "bottom_right", x: x + 274, y: y + 154, w: 118},
-	}
-	for _, option := range positionOptions {
-		a.drawSettingsAction(screen, option.id, option.label, option.x, option.y, option.w, settingsActionVisual{Enabled: true, Active: a.prefs.ChromeAnchor.String() == option.value})
-	}
-	drawSettingsSectionLabel(screen, "Layout", x+16, y+206)
-	a.drawSettingsAction(screen, "chrome_layout:horizontal", "Horizontal", x+136, y+194, 112, settingsActionVisual{Enabled: true, Active: a.prefs.ChromeLayout == chromeLayoutHorizontal})
-	a.drawSettingsAction(screen, "chrome_layout:vertical", "Vertical", x+260, y+194, 96, settingsActionVisual{Enabled: true, Active: a.prefs.ChromeLayout == chromeLayoutVertical})
-	drawSettingsSectionLabel(screen, "Window", x+16, y+248)
-	a.drawSettingsAction(screen, "fullscreen", "Toggle Fullscreen", x+136, y+236, 160, settingsActionVisual{Enabled: true, Active: ebiten.IsFullscreen()})
-	ui.DrawWrappedText(screen, "Position chooses where the chrome sits on screen. Layout changes whether the control buttons run across or down.", x+16, y+280, w-32, 12, color.RGBA{R: 166, G: 178, B: 190, A: 255})
+	a.drawSettingsBody(screen, a.settingsAppearanceBody(), x, y, w)
+}
+
+func (a *App) drawSettingsPlanned(screen *ebiten.Image, section settingsSectionDef, x, y, w float64) {
+	a.drawSettingsBody(screen, a.settingsPlannedBody(section.id), x, y, w)
+}
+
+func (a *App) drawSettingsBody(screen *ebiten.Image, body ui.Element, x, y, w float64) {
+	ctx := a.newUIContext(screen, func(btn chromeButton) {
+		a.settingsButtons = append(a.settingsButtons, btn)
+	})
+	height := a.measureSettingsBody(body, w)
+	body.Draw(ctx, ui.Rect{X: x, Y: y, W: w, H: height})
 }
 
 func boolWord(v bool) string {
@@ -1599,17 +1618,4 @@ func keyboardLayoutLabel(code string) string {
 		}
 	}
 	return fallbackLabel(code, "en-US")
-}
-
-func (a *App) drawSettingsPlanned(screen *ebiten.Image, section settingsSectionDef, x, y, w float64) {
-	cardH := a.settingsPlannedBodyHeight(section.id, w)
-	a.drawSettingsCard(screen, x, y, w, cardH, "Not exposed here", "")
-	ui.DrawWrappedText(screen, section.description, x+16, y+46, w-32, 12, color.RGBA{R: 166, G: 178, B: 190, A: 255})
-	ui.DrawText(screen, "Current upstream surface", x+16, y+86, 12, color.RGBA{R: 166, G: 178, B: 190, A: 255})
-	lineY := y + 110
-	for _, item := range section.items {
-		ui.DrawWrappedText(screen, "• "+item, x+24, lineY, w-40, 12, color.RGBA{R: 236, G: 241, B: 245, A: 255})
-		lineY += 22
-	}
-	ui.DrawWrappedText(screen, "This section exists in the upstream product structure but is not currently exposed by this target or the desktop client.", x+16, y+176, w-32, 12, color.RGBA{R: 166, G: 178, B: 190, A: 255})
 }
