@@ -37,7 +37,7 @@ func TestHandleTransportDisconnectEmitsLifecycleAndCloses(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	c.handleTransportDisconnect(webrtc.PeerConnectionStateDisconnected)
+	c.handleTransportDisconnect(webrtc.PeerConnectionStateDisconnected, "test")
 
 	select {
 	case evt := <-c.Lifecycle():
@@ -67,7 +67,7 @@ func TestHandleTransportDisconnectNoopsAfterClose(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	c.handleTransportDisconnect(webrtc.PeerConnectionStateDisconnected)
+	c.handleTransportDisconnect(webrtc.PeerConnectionStateDisconnected, "test")
 
 	select {
 	case evt := <-c.Lifecycle():

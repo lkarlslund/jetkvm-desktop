@@ -3,6 +3,7 @@ package emulator
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 	"testing"
@@ -502,17 +503,34 @@ func TestForcedDisconnectFaultClosesPeerConnection(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	lifecycle := make([]string, 0, 16)
 	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
 		select {
 		case evt := <-c.Lifecycle():
+			lifecycle = append(lifecycle, formatLifecycleEvent(evt))
 			if evt.Type == "peer_state" && (evt.Connection == webrtc.PeerConnectionStateClosed || evt.Connection == webrtc.PeerConnectionStateDisconnected || evt.Connection == webrtc.PeerConnectionStateFailed) {
 				return
 			}
 		case <-time.After(25 * time.Millisecond):
 		}
 	}
-	t.Fatal("expected peer connection to close after disconnect fault")
+	t.Fatalf("expected peer connection to close after disconnect fault: stats=%+v lifecycle=%v", c.Stats(), lifecycle)
+}
+
+func formatLifecycleEvent(evt client.LifecycleEvent) string {
+	switch evt.Type {
+	case "peer_state":
+		return fmt.Sprintf("%s:%s", evt.Type, evt.Connection)
+	case "connect_error", "video_error":
+		return fmt.Sprintf("%s:%s", evt.Type, evt.Err)
+	case "signaling_mode":
+		return fmt.Sprintf("%s:%s", evt.Type, evt.Signaling)
+	case "paste_state":
+		return fmt.Sprintf("%s:%t", evt.Type, evt.PasteState)
+	default:
+		return evt.Type
+	}
 }
 
 func waitForBaseURL(t *testing.T, srv *Server) {

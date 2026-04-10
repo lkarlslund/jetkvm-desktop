@@ -60,6 +60,7 @@ type StatsSnapshot struct {
 	FramesPerSecond float64
 	RoundTripMs     float64
 	LastError       string
+	TransportDebug  string
 }
 
 type Client struct {
@@ -86,6 +87,7 @@ type Client struct {
 	statsHistory   []statsSample
 	disconnectOnce sync.Once
 	lastError      atomic.Value
+	transportDebug atomic.Value
 }
 
 type statsSample struct {
@@ -160,11 +162,12 @@ func (c *Client) Connect(ctx context.Context) error {
 	c.pc = pc
 
 	pc.OnConnectionStateChange(func(state webrtc.PeerConnectionState) {
+		c.noteTransportDebug(fmt.Sprintf("pc_state=%s", state))
 		c.emitLifecycle(LifecycleEvent{Type: "peer_state", Connection: state})
 	})
 	if sctp := pc.SCTP(); sctp != nil {
 		sctp.OnClose(func(err error) {
-			c.handleTransportDisconnect(webrtc.PeerConnectionStateDisconnected)
+			c.handleTransportDisconnect(webrtc.PeerConnectionStateDisconnected, "sctp_close")
 		})
 	}
 
@@ -261,12 +264,13 @@ func (c *Client) Connect(ctx context.Context) error {
 	return nil
 }
 
-func (c *Client) handleTransportDisconnect(state webrtc.PeerConnectionState) {
+func (c *Client) handleTransportDisconnect(state webrtc.PeerConnectionState, source string) {
 	select {
 	case <-c.closeCh:
 		return
 	default:
 	}
+	c.noteTransportDebug(fmt.Sprintf("disconnect source=%s state=%s", source, state))
 	c.disconnectOnce.Do(func() {
 		c.emitLifecycle(LifecycleEvent{Type: "peer_state", Connection: state})
 		go func() {
@@ -282,6 +286,7 @@ func (c *Client) Close() error {
 	default:
 		close(c.closeCh)
 	}
+	c.noteTransportDebug("client_close")
 	if c.videoStream != nil {
 		c.videoStream.Close()
 		c.videoStream = nil
@@ -494,14 +499,18 @@ func (c *Client) watchControlChannel(dc *webrtc.DataChannel) {
 		return
 	}
 	dc.OnClose(func() {
-		c.handleTransportDisconnect(webrtc.PeerConnectionStateDisconnected)
+		c.handleTransportDisconnect(webrtc.PeerConnectionStateDisconnected, "datachannel:"+dc.Label()+":close")
 	})
 	dc.OnError(func(err error) {
 		if err != nil {
 			c.lastError.Store(err.Error())
 		}
-		c.handleTransportDisconnect(webrtc.PeerConnectionStateFailed)
+		c.handleTransportDisconnect(webrtc.PeerConnectionStateFailed, "datachannel:"+dc.Label()+":error")
 	})
+}
+
+func (c *Client) noteTransportDebug(msg string) {
+	c.transportDebug.Store(msg)
 }
 
 func (c *Client) HTTPClient() *http.Client {
@@ -545,6 +554,9 @@ func (c *Client) Stats() StatsSnapshot {
 		if err, ok := c.lastError.Load().(string); ok {
 			stats.LastError = err
 		}
+		if debug, ok := c.transportDebug.Load().(string); ok {
+			stats.TransportDebug = debug
+		}
 		return stats
 	default:
 	}
@@ -558,6 +570,9 @@ func (c *Client) Stats() StatsSnapshot {
 		if stats.RTCState == webrtc.PeerConnectionStateClosed {
 			if err, ok := c.lastError.Load().(string); ok {
 				stats.LastError = err
+			}
+			if debug, ok := c.transportDebug.Load().(string); ok {
+				stats.TransportDebug = debug
 			}
 			return stats
 		}
@@ -610,6 +625,9 @@ func (c *Client) Stats() StatsSnapshot {
 	stats.VideoReady = c.VideoStream() != nil && c.VideoStream().Latest() != nil
 	if err, ok := c.lastError.Load().(string); ok {
 		stats.LastError = err
+	}
+	if debug, ok := c.transportDebug.Load().(string); ok {
+		stats.TransportDebug = debug
 	}
 	return stats
 }
@@ -703,6 +721,7 @@ func (c *Client) readSignaling(conn *websocket.Conn, pc *webrtc.PeerConnection, 
 	for {
 		_, data, err := conn.ReadMessage()
 		if err != nil {
+			c.noteTransportDebug("signaling_read_error")
 			select {
 			case <-c.closeCh:
 			default:
