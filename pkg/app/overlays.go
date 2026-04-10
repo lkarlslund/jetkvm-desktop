@@ -15,6 +15,7 @@ import (
 	"github.com/lkarlslund/jetkvm-desktop/pkg/client"
 	"github.com/lkarlslund/jetkvm-desktop/pkg/input"
 	"github.com/lkarlslund/jetkvm-desktop/pkg/session"
+	"github.com/lkarlslund/jetkvm-desktop/pkg/ui"
 )
 
 var clipboardReady bool
@@ -148,7 +149,6 @@ func (a *App) drawStatsOverlay(screen *ebiten.Image) {
 		lines = append(lines, "Error: "+trimForFooter(stats.LastError))
 	}
 
-	const pad = 16.0
 	graphs := []graphMetric{
 		{
 			Title:  "Bitrate",
@@ -186,21 +186,22 @@ func (a *App) drawStatsOverlay(screen *ebiten.Image) {
 	if w > graphAreaW {
 		graphAreaW = w
 	}
+	const pad = 16.0
 	boxW := graphAreaW + pad*2
 	boxH := float64(len(lines))*18 + pad*2 + 18 + float64(len(graphs))*72
 	x := float64(screen.Bounds().Dx()) - boxW - 16
 	y := 58.0
-	vector.FillRect(screen, float32(x), float32(y), float32(boxW), float32(boxH), color.RGBA{R: 9, G: 14, B: 22, A: 224}, false)
-	vector.StrokeRect(screen, float32(x), float32(y), float32(boxW), float32(boxH), 1, color.RGBA{R: 88, G: 108, B: 126, A: 180}, false)
-	drawText(screen, "Connection Stats", x+pad, y+12, 14, color.RGBA{R: 240, G: 244, B: 248, A: 255})
-	for i, line := range lines {
-		drawText(screen, line, x+pad, y+34+float64(i*18), 12, color.RGBA{R: 210, G: 218, B: 226, A: 255})
-	}
-	graphY := y + 34 + float64(len(lines))*18 + 18
-	for _, graph := range graphs {
-		a.drawStatsGraph(screen, x+pad, graphY, boxW-pad*2, 58, graph)
-		graphY += 72
-	}
+	ctx := a.newUIContext(screen, func(chromeButton) {})
+	ui.Panel{
+		Fill:   color.RGBA{R: 9, G: 14, B: 22, A: 224},
+		Stroke: color.RGBA{R: 88, G: 108, B: 126, A: 180},
+		Insets: ui.UniformInsets(pad),
+		Child: statsOverlayElement{
+			app:    a,
+			lines:  lines,
+			graphs: graphs,
+		},
+	}.Draw(ctx, ui.Rect{X: x, Y: y, W: boxW, H: boxH})
 }
 
 type graphMetric struct {
@@ -325,65 +326,163 @@ func (a *App) drawPasteOverlay(screen *ebiten.Image, snap session.Snapshot) {
 		return
 	}
 	bounds := screen.Bounds()
-	vector.FillRect(screen, 0, 0, float32(bounds.Dx()), float32(bounds.Dy()), color.RGBA{A: 168}, false)
-
 	panelW := min(760, float64(bounds.Dx()-72))
 	panelH := min(420, float64(bounds.Dy()-96))
 	panelX := (float64(bounds.Dx()) - panelW) / 2
 	panelY := (float64(bounds.Dy()) - panelH) / 2
 	a.pastePanel = rect{x: panelX, y: panelY, w: panelW, h: panelH}
-
-	vector.FillRect(screen, float32(panelX), float32(panelY), float32(panelW), float32(panelH), color.RGBA{R: 13, G: 20, B: 30, A: 246}, false)
-	vector.StrokeRect(screen, float32(panelX), float32(panelY), float32(panelW), float32(panelH), 1, color.RGBA{R: 88, G: 102, B: 118, A: 180}, false)
-
-	drawText(screen, "Paste Text", panelX+22, panelY+18, 22, color.RGBA{R: 240, G: 244, B: 248, A: 255})
-	drawWrappedText(screen, "Send clipboard text to the remote host using keyboard macro steps over HID-RPC. Unsupported characters are skipped.", panelX+22, panelY+48, panelW-44, 13, color.RGBA{R: 166, G: 178, B: 190, A: 255})
-
-	drawText(screen, "Keyboard Layout", panelX+22, panelY+88, 13, color.RGBA{R: 166, G: 178, B: 190, A: 255})
-	drawText(screen, fallbackLabel(snap.KeyboardLayout, "en-US"), panelX+132, panelY+88, 13, color.RGBA{R: 236, G: 241, B: 245, A: 255})
-	drawText(screen, "Delay", panelX+246, panelY+88, 13, color.RGBA{R: 166, G: 178, B: 190, A: 255})
-	drawText(screen, fmt.Sprintf("%dms", a.pasteDelay), panelX+286, panelY+88, 13, color.RGBA{R: 236, G: 241, B: 245, A: 255})
-
-	textRect := rect{x: panelX + 22, y: panelY + 114, w: panelW - 44, h: panelH - 182}
-	vector.FillRect(screen, float32(textRect.x), float32(textRect.y), float32(textRect.w), float32(textRect.h), color.RGBA{R: 18, G: 28, B: 40, A: 255}, false)
-	vector.StrokeRect(screen, float32(textRect.x), float32(textRect.y), float32(textRect.w), float32(textRect.h), 1, color.RGBA{R: 54, G: 68, B: 84, A: 180}, false)
-
-	text := a.pasteText
-	if text == "" {
-		drawText(screen, "Paste from host clipboard or type here", textRect.x+14, textRect.y+14, 14, color.RGBA{R: 108, G: 122, B: 136, A: 255})
-	} else {
-		drawWrappedText(screen, text, textRect.x+14, textRect.y+14, textRect.w-28, 14, color.RGBA{R: 236, G: 241, B: 245, A: 255})
-	}
-
-	infoY := panelY + panelH - 58
-	if a.pasteInvalid != "" {
-		drawWrappedText(screen, "Skipped characters: "+a.pasteInvalid, panelX+22, infoY-18, panelW-240, 12, color.RGBA{R: 236, G: 180, B: 126, A: 255})
-	}
-	if a.pasteError != "" {
-		drawWrappedText(screen, a.pasteError, panelX+22, infoY, panelW-240, 12, color.RGBA{R: 228, G: 142, B: 142, A: 255})
-	}
-	if snap.PasteInProgress {
-		drawText(screen, "Paste in progress…", panelX+22, infoY, 12, color.RGBA{R: 166, G: 200, B: 255, A: 255})
-	}
-
 	a.pasteButtons = a.pasteButtons[:0]
-	a.drawPasteButton(screen, "paste_load_clipboard", "Load Clipboard", panelX+panelW-356, panelY+panelH-48, 120, true, false)
-	a.drawPasteButton(screen, "paste_cancel", "Cancel", panelX+panelW-224, panelY+panelH-48, 96, true, false)
-	a.drawPasteButton(screen, "paste_send", "Send", panelX+panelW-116, panelY+panelH-48, 96, !snap.PasteInProgress && strings.TrimSpace(a.pasteText) != "", false)
+	ctx := a.newUIContext(screen, func(btn chromeButton) {
+		a.pasteButtons = append(a.pasteButtons, btn)
+	})
+	ctx.FillRect(ui.Rect{W: float64(bounds.Dx()), H: float64(bounds.Dy())}, color.RGBA{A: 168})
+	ui.Panel{
+		Fill:   color.RGBA{R: 13, G: 20, B: 30, A: 246},
+		Stroke: color.RGBA{R: 88, G: 102, B: 118, A: 180},
+		Insets: ui.UniformInsets(22),
+		Child: pasteOverlayElement{
+			app:  a,
+			snap: snap,
+		},
+	}.Draw(ctx, ui.Rect{X: panelX, Y: panelY, W: panelW, H: panelH})
 }
 
-func (a *App) drawPasteButton(screen *ebiten.Image, id, label string, x, y, w float64, enabled, active bool) {
-	btn := chromeButton{id: id, label: label, enabled: enabled, active: active, rect: rect{x: x, y: y, w: w, h: 32}}
-	a.pasteButtons = append(a.pasteButtons, btn)
-	fill := color.RGBA{R: 30, G: 42, B: 58, A: 255}
-	stroke := color.RGBA{R: 80, G: 96, B: 112, A: 180}
-	textClr := color.RGBA{R: 228, G: 236, B: 244, A: 255}
-	if !enabled {
-		fill = color.RGBA{R: 24, G: 30, B: 38, A: 255}
-		stroke = color.RGBA{R: 60, G: 68, B: 76, A: 150}
-		textClr = color.RGBA{R: 128, G: 136, B: 144, A: 255}
+type statsOverlayElement struct {
+	app    *App
+	lines  []string
+	graphs []graphMetric
+}
+
+func (e statsOverlayElement) Measure(_ *ui.Context, constraints ui.Constraints) ui.Size {
+	return constraints.Clamp(ui.Size{W: constraints.MaxW, H: constraints.MaxH})
+}
+
+func (e statsOverlayElement) Draw(ctx *ui.Context, bounds ui.Rect) {
+	children := []ui.Child{
+		ui.Fixed(ui.Label{Text: "Connection Stats", Size: 14, Color: color.RGBA{R: 240, G: 244, B: 248, A: 255}}),
+		ui.Fixed(ui.Spacer{H: 8}),
 	}
-	vector.FillRect(screen, float32(x), float32(y), float32(w), 32, fill, false)
-	vector.StrokeRect(screen, float32(x), float32(y), float32(w), 32, 1, stroke, false)
-	drawText(screen, label, x+12, y+9, 13, textClr)
+	for i, line := range e.lines {
+		if i > 0 {
+			children = append(children, ui.Fixed(ui.Spacer{H: 6}))
+		}
+		children = append(children, ui.Fixed(ui.Label{Text: line, Size: 12, Color: color.RGBA{R: 210, G: 218, B: 226, A: 255}}))
+	}
+	children = append(children, ui.Fixed(ui.Spacer{H: 18}))
+	for i, graph := range e.graphs {
+		if i > 0 {
+			children = append(children, ui.Fixed(ui.Spacer{H: 14}))
+		}
+		children = append(children, ui.Fixed(statsGraphElement{app: e.app, metric: graph}))
+	}
+	ui.Column{Children: children}.Draw(ctx, bounds)
+}
+
+type statsGraphElement struct {
+	app    *App
+	metric graphMetric
+}
+
+func (statsGraphElement) Measure(_ *ui.Context, constraints ui.Constraints) ui.Size {
+	return constraints.Clamp(ui.Size{W: constraints.MaxW, H: 58})
+}
+
+func (e statsGraphElement) Draw(ctx *ui.Context, bounds ui.Rect) {
+	e.app.drawStatsGraph(ctx.Screen, bounds.X, bounds.Y, bounds.W, bounds.H, e.metric)
+}
+
+type pasteOverlayElement struct {
+	app  *App
+	snap session.Snapshot
+}
+
+func (e pasteOverlayElement) Measure(_ *ui.Context, constraints ui.Constraints) ui.Size {
+	return constraints.Clamp(ui.Size{W: constraints.MaxW, H: constraints.MaxH})
+}
+
+func (e pasteOverlayElement) Draw(ctx *ui.Context, bounds ui.Rect) {
+	metaRow := ui.Row{
+		Children: []ui.Child{
+			ui.Fixed(ui.KeyValue{Label: "Keyboard Layout", Value: fallbackLabel(e.snap.KeyboardLayout, "en-US"), LabelWidth: 98}),
+			ui.Fixed(ui.Spacer{W: 18}),
+			ui.Fixed(ui.KeyValue{Label: "Delay", Value: fmt.Sprintf("%dms", e.app.pasteDelay), LabelWidth: 28}),
+		},
+	}
+	bodyChildren := []ui.Child{
+		ui.Fixed(ui.Label{Text: "Paste Text", Size: 22, Color: color.RGBA{R: 240, G: 244, B: 248, A: 255}}),
+		ui.Fixed(ui.Spacer{H: 12}),
+		ui.Fixed(ui.Paragraph{
+			Text:  "Send clipboard text to the remote host using keyboard macro steps over HID-RPC. Unsupported characters are skipped.",
+			Size:  13,
+			Color: color.RGBA{R: 166, G: 178, B: 190, A: 255},
+		}),
+		ui.Fixed(ui.Spacer{H: 18}),
+		ui.Fixed(metaRow),
+		ui.Fixed(ui.Spacer{H: 16}),
+		ui.Flex(ui.Panel{
+			Fill:   color.RGBA{R: 18, G: 28, B: 40, A: 255},
+			Stroke: color.RGBA{R: 54, G: 68, B: 84, A: 180},
+			Insets: ui.UniformInsets(14),
+			Child:  pasteTextElement{app: e.app},
+		}, 1),
+		ui.Fixed(ui.Spacer{H: 16}),
+	}
+	if e.app.pasteInvalid != "" {
+		bodyChildren = append(bodyChildren,
+			ui.Fixed(ui.Paragraph{
+				Text:  "Skipped characters: " + e.app.pasteInvalid,
+				Size:  12,
+				Color: color.RGBA{R: 236, G: 180, B: 126, A: 255},
+			}),
+			ui.Fixed(ui.Spacer{H: 6}),
+		)
+	}
+	if e.app.pasteError != "" {
+		bodyChildren = append(bodyChildren,
+			ui.Fixed(ui.Paragraph{Text: e.app.pasteError, Size: 12, Color: color.RGBA{R: 228, G: 142, B: 142, A: 255}}),
+			ui.Fixed(ui.Spacer{H: 6}),
+		)
+	}
+	if e.snap.PasteInProgress {
+		bodyChildren = append(bodyChildren,
+			ui.Fixed(ui.Label{Text: "Paste in progress…", Size: 12, Color: color.RGBA{R: 166, G: 200, B: 255, A: 255}}),
+			ui.Fixed(ui.Spacer{H: 6}),
+		)
+	}
+	bodyChildren = append(bodyChildren,
+		ui.Fixed(ui.Row{
+			Children: []ui.Child{
+				ui.Flex(ui.Spacer{}, 1),
+				ui.Fixed(ui.Button{ID: "paste_load_clipboard", Label: "Load Clipboard", Enabled: true}),
+				ui.Fixed(ui.Button{ID: "paste_cancel", Label: "Cancel", Enabled: true}),
+				ui.Fixed(ui.Button{ID: "paste_send", Label: "Send", Enabled: !e.snap.PasteInProgress && strings.TrimSpace(e.app.pasteText) != ""}),
+			},
+			Spacing: 12,
+		}),
+	)
+	ui.Column{Children: bodyChildren}.Draw(ctx, bounds)
+}
+
+type pasteTextElement struct {
+	app *App
+}
+
+func (pasteTextElement) Measure(_ *ui.Context, constraints ui.Constraints) ui.Size {
+	return constraints.Clamp(ui.Size{W: constraints.MaxW, H: constraints.MaxH})
+}
+
+func (e pasteTextElement) Draw(ctx *ui.Context, bounds ui.Rect) {
+	if strings.TrimSpace(e.app.pasteText) == "" {
+		ui.Label{
+			Text:  "Paste from host clipboard or type here",
+			Size:  14,
+			Color: color.RGBA{R: 108, G: 122, B: 136, A: 255},
+		}.Draw(ctx, bounds)
+		return
+	}
+	ui.Paragraph{
+		Text:  e.app.pasteText,
+		Size:  14,
+		Color: color.RGBA{R: 236, G: 241, B: 245, A: 255},
+	}.Draw(ctx, bounds)
 }

@@ -12,6 +12,7 @@ import (
 
 	"github.com/lkarlslund/jetkvm-desktop/pkg/input"
 	"github.com/lkarlslund/jetkvm-desktop/pkg/session"
+	"github.com/lkarlslund/jetkvm-desktop/pkg/ui"
 )
 
 //go:generate go tool github.com/dmarkham/enumer -type=iconKind,settingsSection -linecomment -json -text -output chrome_enums.go
@@ -34,7 +35,6 @@ const (
 
 type chromeButton struct {
 	id      string
-	label   string
 	hint    string
 	icon    iconKind
 	enabled bool
@@ -539,8 +539,6 @@ func (a *App) drawSettingsOverlay(screen *ebiten.Image, snap session.Snapshot) {
 	}
 
 	bounds := screen.Bounds()
-	vector.FillRect(screen, 0, 0, float32(bounds.Dx()), float32(bounds.Dy()), color.RGBA{A: 170}, false)
-
 	sections := settingsSections(snap)
 	section := a.currentSection(sections)
 	sidebarW := 156.0
@@ -553,55 +551,37 @@ func (a *App) drawSettingsOverlay(screen *ebiten.Image, snap session.Snapshot) {
 	panelY := (float64(bounds.Dy()) - panelH) / 2
 
 	a.settingsPanel = rect{x: panelX, y: panelY, w: panelW, h: panelH}
-	vector.FillRect(screen, float32(panelX), float32(panelY), float32(panelW), float32(panelH), color.RGBA{R: 13, G: 20, B: 30, A: 246}, false)
-	vector.StrokeRect(screen, float32(panelX), float32(panelY), float32(panelW), float32(panelH), 1, color.RGBA{R: 88, G: 102, B: 118, A: 180}, false)
-	vector.FillRect(screen, float32(panelX), float32(panelY), float32(sidebarW), float32(panelH), color.RGBA{R: 18, G: 28, B: 40, A: 255}, false)
-	drawText(screen, "Settings", panelX+18, panelY+16, 20, color.RGBA{R: 240, G: 244, B: 248, A: 255})
-	drawWrappedText(screen, fallbackLabel(snap.DeviceID, snap.Hostname, snap.BaseURL), panelX+18, panelY+40, sidebarW-36, 11, color.RGBA{R: 166, G: 178, B: 190, A: 255})
-
-	closeBtn := chromeButton{
-		id:      "settings_close",
-		hint:    "Close settings",
-		icon:    iconClose,
-		enabled: true,
-		rect:    rect{x: panelX + panelW - 40, y: panelY + 12, w: 26, h: 26},
-	}
-	a.settingsButtons = append(a.settingsButtons[:0], closeBtn)
-	drawChromeButton(screen, closeBtn, 1)
-
-	sideY := panelY + 72
-	sideBtnH, sideGap, sideFontSize := settingsSidebarMetrics(panelH, len(sections))
-	for _, section := range sections {
-		btn := chromeButton{
-			id:      "section:" + section.id.String(),
-			label:   section.label,
-			enabled: true,
-			active:  a.settingsSection == section.id,
-			rect:    rect{x: panelX + 10, y: sideY, w: sidebarW - 20, h: sideBtnH},
-		}
+	a.settingsButtons = a.settingsButtons[:0]
+	ctx := a.newUIContext(screen, func(btn chromeButton) {
 		a.settingsButtons = append(a.settingsButtons, btn)
-		fill := color.RGBA{R: 18, G: 28, B: 40, A: 255}
-		stroke := color.RGBA{R: 54, G: 68, B: 84, A: 180}
-		textClr := color.RGBA{R: 184, G: 196, B: 208, A: 255}
-		if btn.active {
-			fill = color.RGBA{R: 28, G: 66, B: 116, A: 255}
-			stroke = color.RGBA{R: 134, G: 186, B: 248, A: 180}
-			textClr = color.RGBA{R: 240, G: 244, B: 248, A: 255}
-		}
-		vector.FillRect(screen, float32(btn.rect.x), float32(btn.rect.y), float32(btn.rect.w), float32(btn.rect.h), fill, false)
-		vector.StrokeRect(screen, float32(btn.rect.x), float32(btn.rect.y), float32(btn.rect.w), float32(btn.rect.h), 1, stroke, false)
-		drawText(screen, section.label, btn.rect.x+10, btn.rect.y+(btn.rect.h-sideFontSize)/2-1, sideFontSize, textClr)
-		sideY += sideBtnH + sideGap
-	}
+	})
+	ctx.FillRect(ui.Rect{W: float64(bounds.Dx()), H: float64(bounds.Dy())}, color.RGBA{A: 170})
+	ui.Panel{
+		Fill:   color.RGBA{R: 13, G: 20, B: 30, A: 246},
+		Stroke: color.RGBA{R: 88, G: 102, B: 118, A: 180},
+	}.Draw(ctx, ui.Rect{X: panelX, Y: panelY, W: panelW, H: panelH})
+	ui.Panel{
+		Fill:   color.RGBA{R: 18, G: 28, B: 40, A: 255},
+		Insets: ui.Insets{Top: 16, Right: 10, Bottom: 18, Left: 10},
+		Child: settingsSidebarElement{
+			app:      a,
+			snap:     snap,
+			sections: sections,
+			panelH:   panelH,
+		},
+	}.Draw(ctx, ui.Rect{X: panelX, Y: panelY, W: sidebarW, H: panelH})
+	ui.Button{ID: "settings_close", Label: "X", Enabled: true}.Draw(ctx, ui.Rect{X: panelX + panelW - 40, Y: panelY + 12, W: 26, H: 26})
 
 	contentX := panelX + sidebarW + 18
 	contentY := panelY + 18
 	contentW = panelW - sidebarW - 32
 	contentDescH := wrappedTextHeight(section.description, contentW-48, 12)
 	contentHeaderH := 28 + contentDescH + 18
-	drawText(screen, section.label, contentX, contentY, 22, color.RGBA{R: 240, G: 244, B: 248, A: 255})
-	drawWrappedText(screen, section.description, contentX, contentY+28, contentW-48, 12, color.RGBA{R: 166, G: 178, B: 190, A: 255})
-	vector.StrokeLine(screen, float32(contentX), float32(contentY+contentHeaderH), float32(contentX+contentW), float32(contentY+contentHeaderH), 1, color.RGBA{R: 42, G: 54, B: 68, A: 180}, false)
+	settingsHeaderElement{
+		title:       section.label,
+		description: section.description,
+	}.Draw(ctx, ui.Rect{X: contentX, Y: contentY, W: contentW, H: contentHeaderH})
+	ctx.StrokeLine(ui.Point{X: contentX, Y: contentY + contentHeaderH}, ui.Point{X: contentX + contentW, Y: contentY + contentHeaderH}, 1, color.RGBA{R: 42, G: 54, B: 68, A: 180})
 
 	switch section.id {
 	case sectionGeneral:
@@ -625,6 +605,81 @@ func (a *App) drawSettingsOverlay(screen *ebiten.Image, snap session.Snapshot) {
 	default:
 		a.drawSettingsPlanned(screen, section, contentX, contentY+contentHeaderH+18, contentW)
 	}
+}
+
+type settingsSidebarElement struct {
+	app      *App
+	snap     session.Snapshot
+	sections []settingsSectionDef
+	panelH   float64
+}
+
+func (e settingsSidebarElement) Measure(_ *ui.Context, constraints ui.Constraints) ui.Size {
+	return constraints.Clamp(ui.Size{W: constraints.MaxW, H: constraints.MaxH})
+}
+
+func (e settingsSidebarElement) Draw(ctx *ui.Context, bounds ui.Rect) {
+	sideBtnH, sideGap, _ := settingsSidebarMetrics(e.panelH, len(e.sections))
+	children := []ui.Child{
+		ui.Fixed(ui.Label{Text: "Settings", Size: 20, Color: color.RGBA{R: 240, G: 244, B: 248, A: 255}}),
+		ui.Fixed(ui.Spacer{H: 8}),
+		ui.Fixed(ui.Paragraph{
+			Text:  fallbackLabel(e.snap.DeviceID, e.snap.Hostname, e.snap.BaseURL),
+			Size:  11,
+			Color: color.RGBA{R: 166, G: 178, B: 190, A: 255},
+		}),
+		ui.Fixed(ui.Spacer{H: 18}),
+	}
+	for i, section := range e.sections {
+		if i > 0 {
+			children = append(children, ui.Fixed(ui.Spacer{H: sideGap}))
+		}
+		children = append(children, ui.Fixed(settingsSidebarButtonElement{
+			app:     e.app,
+			section: section,
+			height:  sideBtnH,
+		}))
+	}
+	ui.Column{Children: children}.Draw(ctx, bounds)
+}
+
+type settingsSidebarButtonElement struct {
+	app     *App
+	section settingsSectionDef
+	height  float64
+}
+
+func (e settingsSidebarButtonElement) Measure(_ *ui.Context, constraints ui.Constraints) ui.Size {
+	return constraints.Clamp(ui.Size{W: constraints.MaxW, H: e.height})
+}
+
+func (e settingsSidebarButtonElement) Draw(ctx *ui.Context, bounds ui.Rect) {
+	ui.Button{
+		ID:      "section:" + e.section.id.String(),
+		Label:   e.section.label,
+		Enabled: true,
+		Active:  e.app.settingsSection == e.section.id,
+	}.Draw(ctx, bounds)
+}
+
+type settingsHeaderElement struct {
+	title       string
+	description string
+}
+
+func (e settingsHeaderElement) Measure(ctx *ui.Context, constraints ui.Constraints) ui.Size {
+	descH := ctx.MeasureWrapped(e.description, constraints.MaxW-48, 12)
+	return constraints.Clamp(ui.Size{W: constraints.MaxW, H: 28 + descH + 18})
+}
+
+func (e settingsHeaderElement) Draw(ctx *ui.Context, bounds ui.Rect) {
+	ui.Label{Text: e.title, Size: 22, Color: color.RGBA{R: 240, G: 244, B: 248, A: 255}}.
+		Draw(ctx, ui.Rect{X: bounds.X, Y: bounds.Y, W: bounds.W, H: 22})
+	ui.Paragraph{
+		Text:  e.description,
+		Size:  12,
+		Color: color.RGBA{R: 166, G: 178, B: 190, A: 255},
+	}.Draw(ctx, ui.Rect{X: bounds.X, Y: bounds.Y + 28, W: bounds.W - 48, H: bounds.H - 28})
 }
 
 func (a *App) settingsPanelHeight(section settingsSectionDef, contentW float64) float64 {
@@ -968,32 +1023,45 @@ func (a *App) currentSection(sections []settingsSectionDef) settingsSectionDef {
 }
 
 func (a *App) drawSettingsCard(screen *ebiten.Image, x, y, w, h float64, title, desc string) rect {
-	vector.FillRect(screen, float32(x), float32(y), float32(w), float32(h), color.RGBA{R: 18, G: 28, B: 40, A: 255}, false)
-	vector.StrokeRect(screen, float32(x), float32(y), float32(w), float32(h), 1, color.RGBA{R: 54, G: 68, B: 84, A: 180}, false)
-	descY := y + 36
+	ctx := a.newUIContext(screen, func(chromeButton) {})
+	children := make([]ui.Child, 0, 4)
 	if title != "" {
-		drawText(screen, title, x+16, y+14, 15, color.RGBA{R: 240, G: 244, B: 248, A: 255})
-	} else {
-		descY = y + 14
+		children = append(children,
+			ui.Fixed(ui.Label{Text: title, Size: 15, Color: color.RGBA{R: 240, G: 244, B: 248, A: 255}}),
+			ui.Fixed(ui.Spacer{H: 8}),
+		)
 	}
 	if desc != "" {
-		drawWrappedText(screen, desc, x+16, descY, w-32, 12, color.RGBA{R: 166, G: 178, B: 190, A: 255})
+		children = append(children, ui.Fixed(ui.Paragraph{Text: desc, Size: 12, Color: color.RGBA{R: 166, G: 178, B: 190, A: 255}}))
 	}
+	ui.Panel{
+		Fill:   color.RGBA{R: 18, G: 28, B: 40, A: 255},
+		Stroke: color.RGBA{R: 54, G: 68, B: 84, A: 180},
+		Insets: ui.UniformInsets(16),
+		Child:  ui.Column{Children: children},
+	}.Draw(ctx, ui.Rect{X: x, Y: y, W: w, H: h})
 	return rect{x: x, y: y, w: w, h: h}
 }
 
 func drawSettingsKeyValue(screen *ebiten.Image, label, value string, x, y, split float64) {
-	drawText(screen, label, x, y, 13, color.RGBA{R: 166, G: 178, B: 190, A: 255})
-	drawText(screen, fallbackLabel(value, "Unavailable"), x+split, y, 13, color.RGBA{R: 236, G: 241, B: 245, A: 255})
+	ctx := (&App{}).newUIContext(screen, func(chromeButton) {})
+	ui.KeyValue{
+		Label:      label,
+		Value:      fallbackLabel(value, "Unavailable"),
+		LabelWidth: split - 12,
+	}.Draw(ctx, ui.Rect{X: x, Y: y, W: 240, H: 16})
 }
 
 func drawSettingsSectionLabel(screen *ebiten.Image, label string, x, y float64) {
-	drawText(screen, label, x, y, 12, color.RGBA{R: 166, G: 178, B: 190, A: 255})
+	ctx := (&App{}).newUIContext(screen, func(chromeButton) {})
+	ui.Label{Text: label, Size: 12, Color: color.RGBA{R: 166, G: 178, B: 190, A: 255}}.
+		Draw(ctx, ui.Rect{X: x, Y: y, W: 240, H: 14})
 }
 
 func (a *App) drawSettingsAction(screen *ebiten.Image, id, label string, x, y, w float64, visual settingsActionVisual) {
-	btn := chromeButton{id: id, label: label, enabled: visual.Enabled, active: visual.Active, rect: rect{x: x, y: y, w: w, h: 30}}
-	a.settingsButtons = append(a.settingsButtons, btn)
+	ctx := a.newUIContext(screen, func(btn chromeButton) {
+		a.settingsButtons = append(a.settingsButtons, btn)
+	})
 	fill := color.RGBA{R: 30, G: 42, B: 58, A: 255}
 	stroke := color.RGBA{R: 80, G: 96, B: 112, A: 180}
 	textClr := color.RGBA{R: 228, G: 236, B: 244, A: 255}
@@ -1010,9 +1078,11 @@ func (a *App) drawSettingsAction(screen *ebiten.Image, id, label string, x, y, w
 		stroke = color.RGBA{R: 60, G: 68, B: 76, A: 150}
 		textClr = color.RGBA{R: 128, G: 136, B: 144, A: 255}
 	}
-	vector.FillRect(screen, float32(x), float32(y), float32(w), 30, fill, false)
-	vector.StrokeRect(screen, float32(x), float32(y), float32(w), 30, 1, stroke, false)
-	drawText(screen, label, x+12, y+8, 13, textClr)
+	bounds := ui.Rect{X: x, Y: y, W: w, H: 30}
+	ctx.FillRect(bounds, fill)
+	ctx.StrokeRect(bounds, 1, stroke)
+	ctx.AddHit(id, bounds, visual.Enabled)
+	ui.Label{Text: label, Size: 13, Color: textClr}.Draw(ctx, ui.Rect{X: x + 12, Y: y + 8, W: w - 24, H: 14})
 }
 
 func (a *App) drawSettingsActionStatus(screen *ebiten.Image, group settingsActionGroup, x, y, w float64) {
@@ -1026,23 +1096,16 @@ func (a *App) drawSettingsActionStatus(screen *ebiten.Image, group settingsActio
 }
 
 func (a *App) drawSettingsInput(screen *ebiten.Image, id string, x, y, w, h float64, value, placeholder string, focused bool) {
-	border := color.RGBA{R: 84, G: 104, B: 122, A: 120}
-	if focused {
-		border = color.RGBA{R: 96, G: 165, B: 250, A: 180}
-	}
-	vector.FillRect(screen, float32(x), float32(y), float32(w), float32(h), color.RGBA{R: 8, G: 12, B: 18, A: 255}, false)
-	vector.StrokeRect(screen, float32(x), float32(y), float32(w), float32(h), 1, border, false)
-	a.settingsButtons = append(a.settingsButtons, chromeButton{id: id, enabled: true, rect: rect{x: x, y: y, w: w, h: h}})
-	text := value
-	textColor := color.RGBA{R: 236, G: 241, B: 245, A: 255}
-	if text == "" {
-		text = placeholder
-		textColor = color.RGBA{R: 106, G: 120, B: 138, A: 255}
-	}
-	if focused && value != "" && time.Now().UnixNano()/500_000_000%2 == 0 {
-		text += "|"
-	}
-	drawText(screen, trimTextToWidth(text, w-24, 13), x+12, y+10, 13, textColor)
+	ctx := a.newUIContext(screen, func(btn chromeButton) {
+		a.settingsButtons = append(a.settingsButtons, btn)
+	})
+	ui.TextField{
+		ID:          id,
+		Value:       trimTextToWidth(value, w-24, 13),
+		Placeholder: placeholder,
+		Focused:     focused,
+		Enabled:     true,
+	}.Draw(ctx, ui.Rect{X: x, Y: y, W: w, H: h})
 }
 
 func (a *App) drawSettingsGeneral(screen *ebiten.Image, snap session.Snapshot, x, y, w float64) {

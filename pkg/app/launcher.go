@@ -9,9 +9,9 @@ import (
 
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/inpututil"
-	"github.com/hajimehoshi/ebiten/v2/vector"
 
 	"github.com/lkarlslund/jetkvm-desktop/pkg/discovery"
+	"github.com/lkarlslund/jetkvm-desktop/pkg/ui"
 )
 
 func (a *App) syncDiscovery() {
@@ -93,90 +93,54 @@ func (a *App) drawLauncher(screen *ebiten.Image) {
 		return
 	}
 
-	drawText(screen, "JetKVM", 48, 42, 30, color.RGBA{R: 241, G: 245, B: 249, A: 255})
-	drawText(screen, "Available devices on your local network", 48, 72, 15, color.RGBA{R: 148, G: 163, B: 184, A: 255})
-
 	listX := 48.0
 	listY := 102.0
 	listW := float64(bounds.Dx()) - 96
 	listH := float64(bounds.Dy()) - 214
-
-	vector.FillRect(screen, float32(listX), float32(listY), float32(listW), float32(listH), color.RGBA{R: 15, G: 23, B: 34, A: 255}, false)
-	vector.StrokeRect(screen, float32(listX), float32(listY), float32(listW), float32(listH), 1, color.RGBA{R: 71, G: 85, B: 105, A: 180}, false)
-
 	a.launcherButtons = a.launcherButtons[:0]
-	if len(a.discovered) == 0 {
-		drawText(screen, "Scanning local subnets for JetKVM devices...", listX+24, listY+34, 16, color.RGBA{R: 191, G: 219, B: 254, A: 255})
-		drawWrappedText(screen, "Devices will appear here as soon as they answer the JetKVM HTTP status endpoint.", listX+24, listY+64, listW-48, 13, color.RGBA{R: 148, G: 163, B: 184, A: 255})
-	} else {
-		rowY := listY + 18
-		for i, device := range a.discovered {
-			if rowY+66 > listY+listH-12 {
-				break
-			}
-			btn := chromeButton{
-				id:      "discover:" + device.BaseURL,
-				enabled: true,
-				rect:    rect{x: listX + 14, y: rowY, w: listW - 28, h: 54},
-			}
-			a.launcherButtons = append(a.launcherButtons, btn)
-			fill := color.RGBA{R: 20, G: 31, B: 46, A: 255}
-			stroke := color.RGBA{R: 56, G: 189, B: 248, A: 80}
-			vector.FillRect(screen, float32(btn.rect.x), float32(btn.rect.y), float32(btn.rect.w), float32(btn.rect.h), fill, false)
-			vector.StrokeRect(screen, float32(btn.rect.x), float32(btn.rect.y), float32(btn.rect.w), float32(btn.rect.h), 1, stroke, false)
-			drawText(screen, device.Name, btn.rect.x+16, btn.rect.y+12, 17, color.RGBA{R: 241, G: 245, B: 249, A: 255})
-			drawText(screen, device.BaseURL, btn.rect.x+16, btn.rect.y+34, 13, color.RGBA{R: 148, G: 163, B: 184, A: 255})
-			state := "Configured"
-			if !device.IsSetup {
-				state = "Needs setup"
-			}
-			drawText(screen, state, btn.rect.x+btn.rect.w-98, btn.rect.y+22, 13, color.RGBA{R: 191, G: 219, B: 254, A: 255})
-			rowY += 62
-			if i == len(a.discovered)-1 {
-				drawText(screen, fmt.Sprintf("Updated %s", humanDiscoveryAge(device.UpdatedAt)), listX+22, listY+listH-20, 11, color.RGBA{R: 100, G: 116, B: 139, A: 255})
-			}
-		}
-	}
-
 	inputY := float64(bounds.Dy()) - 84
-	drawText(screen, "Connect by host, DNS name, or IP", 48, inputY-18, 13, color.RGBA{R: 148, G: 163, B: 184, A: 255})
-	vector.FillRect(screen, 48, float32(inputY), float32(listW-140), 40, color.RGBA{R: 15, G: 23, B: 34, A: 255}, false)
-	vector.StrokeRect(screen, 48, float32(inputY), float32(listW-140), 40, 1, color.RGBA{R: 71, G: 85, B: 105, A: 180}, false)
 	validInput := strings.TrimSpace(a.launcherInput) != "" && isValidConnectHost(strings.TrimSpace(a.launcherInput))
-	inputText := a.launcherInput
-	if inputText == "" {
-		inputText = "jetkvm.local or 192.168.1.50"
-		drawText(screen, inputText, 62, inputY+12, 15, color.RGBA{R: 100, G: 116, B: 139, A: 255})
-	} else {
-		drawText(screen, inputText, 62, inputY+12, 15, color.RGBA{R: 241, G: 245, B: 249, A: 255})
-		if time.Now().UnixMilli()/500%2 == 0 {
-			textW, _ := measureText(inputText, 15)
-			vector.FillRect(screen, float32(64+textW), float32(inputY+8), 2, 20, color.RGBA{R: 191, G: 219, B: 254, A: 255}, false)
-		}
-	}
-
-	connectBtn := chromeButton{
-		id:      "launcher_connect",
-		enabled: validInput,
-		rect:    rect{x: 48 + listW - 128, y: inputY, w: 128, h: 40},
-	}
-	a.launcherButtons = append(a.launcherButtons, connectBtn)
-	fill := color.RGBA{R: 37, G: 99, B: 235, A: 255}
-	stroke := color.RGBA{R: 147, G: 197, B: 253, A: 180}
-	textClr := color.RGBA{R: 239, G: 246, B: 255, A: 255}
-	if !connectBtn.enabled {
-		fill = color.RGBA{R: 30, G: 41, B: 59, A: 255}
-		stroke = color.RGBA{R: 71, G: 85, B: 105, A: 160}
-		textClr = color.RGBA{R: 148, G: 163, B: 184, A: 255}
-	}
-	vector.FillRect(screen, float32(connectBtn.rect.x), float32(connectBtn.rect.y), float32(connectBtn.rect.w), float32(connectBtn.rect.h), fill, false)
-	vector.StrokeRect(screen, float32(connectBtn.rect.x), float32(connectBtn.rect.y), float32(connectBtn.rect.w), float32(connectBtn.rect.h), 1, stroke, false)
-	drawText(screen, "Connect", connectBtn.rect.x+28, connectBtn.rect.y+12, 15, textClr)
-
+	ctx := a.newUIContext(screen, func(btn chromeButton) {
+		a.launcherButtons = append(a.launcherButtons, btn)
+	})
+	ui.Column{
+		Children: []ui.Child{
+			ui.Fixed(ui.Label{Text: "JetKVM", Size: 30, Color: color.RGBA{R: 241, G: 245, B: 249, A: 255}}),
+			ui.Fixed(ui.Spacer{H: 12}),
+			ui.Fixed(ui.Label{Text: "Available devices on your local network", Size: 15, Color: color.RGBA{R: 148, G: 163, B: 184, A: 255}}),
+		},
+	}.Draw(ctx, ui.Rect{X: 48, Y: 42, W: listW, H: 42})
+	ui.Panel{
+		Fill:   color.RGBA{R: 15, G: 23, B: 34, A: 255},
+		Stroke: color.RGBA{R: 71, G: 85, B: 105, A: 180},
+		Insets: ui.UniformInsets(18),
+		Child:  launcherListElement{app: a},
+	}.Draw(ctx, ui.Rect{X: listX, Y: listY, W: listW, H: listH})
+	ui.Column{
+		Children: []ui.Child{
+			ui.Fixed(ui.Label{Text: "Connect by host, DNS name, or IP", Size: 13, Color: color.RGBA{R: 148, G: 163, B: 184, A: 255}}),
+			ui.Fixed(ui.Spacer{H: 8}),
+			ui.Fixed(ui.Row{
+				Children: []ui.Child{
+					ui.Flex(launcherInputTextElement(launcherInputElement{app: a}), 1),
+					ui.Fixed(ui.Button{ID: "launcher_connect", Label: "Connect", Enabled: validInput}),
+				},
+				Spacing: 12,
+			}),
+		},
+	}.Draw(ctx, ui.Rect{X: 48, Y: inputY - 18, W: listW, H: 66})
 	if a.launcherError != "" {
-		drawWrappedText(screen, a.launcherError, 48, inputY+52, listW, 12, color.RGBA{R: 252, G: 165, B: 165, A: 255})
+		ui.Paragraph{
+			Text:  a.launcherError,
+			Size:  12,
+			Color: color.RGBA{R: 252, G: 165, B: 165, A: 255},
+		}.Draw(ctx, ui.Rect{X: 48, Y: inputY + 52, W: listW, H: 40})
 	} else if strings.TrimSpace(a.launcherInput) != "" && !validInput {
-		drawWrappedText(screen, "Enter a valid hostname or IP address.", 48, inputY+52, listW, 12, color.RGBA{R: 252, G: 165, B: 165, A: 255})
+		ui.Paragraph{
+			Text:  "Enter a valid hostname or IP address.",
+			Size:  12,
+			Color: color.RGBA{R: 252, G: 165, B: 165, A: 255},
+		}.Draw(ctx, ui.Rect{X: 48, Y: inputY + 52, W: listW, H: 40})
 	}
 }
 
@@ -191,63 +155,200 @@ func (a *App) drawPasswordPrompt(screen *ebiten.Image) {
 	panelX := (float64(bounds.Dx()) - panelW) / 2
 	panelY := (float64(bounds.Dy()) - panelH) / 2
 
-	drawText(screen, "JetKVM", panelX, panelY-56, 30, color.RGBA{R: 241, G: 245, B: 249, A: 255})
-	vector.FillRect(screen, float32(panelX), float32(panelY), float32(panelW), float32(panelH), color.RGBA{R: 15, G: 23, B: 34, A: 255}, false)
-	vector.StrokeRect(screen, float32(panelX), float32(panelY), float32(panelW), float32(panelH), 1, color.RGBA{R: 71, G: 85, B: 105, A: 180}, false)
-
 	targetLabel := a.pendingTarget
 	if targetLabel == "" {
 		targetLabel = a.launcherInput
 	}
-	drawText(screen, "Password Required", panelX+24, panelY+26, 24, color.RGBA{R: 241, G: 245, B: 249, A: 255})
-	drawWrappedText(screen, targetLabel, panelX+24, panelY+58, panelW-48, 14, color.RGBA{R: 148, G: 163, B: 184, A: 255})
-
-	fieldY := panelY + 112
-	vector.FillRect(screen, float32(panelX+24), float32(fieldY), float32(panelW-48), 44, color.RGBA{R: 11, G: 16, B: 24, A: 255}, false)
-	vector.StrokeRect(screen, float32(panelX+24), float32(fieldY), float32(panelW-48), 44, 1, color.RGBA{R: 127, G: 29, B: 29, A: 180}, false)
-	passDisplay := strings.Repeat("*", len([]rune(a.launcherPassword)))
-	if passDisplay == "" {
-		drawText(screen, "Local password", panelX+38, fieldY+14, 15, color.RGBA{R: 100, G: 116, B: 139, A: 255})
-	} else {
-		drawText(screen, passDisplay, panelX+38, fieldY+14, 15, color.RGBA{R: 241, G: 245, B: 249, A: 255})
-	}
-	if time.Now().UnixMilli()/500%2 == 0 {
-		textW, _ := measureText(passDisplay, 15)
-		vector.FillRect(screen, float32(panelX+40+textW), float32(fieldY+10), 2, 22, color.RGBA{R: 248, G: 113, B: 113, A: 255}, false)
-	}
-
 	a.launcherButtons = a.launcherButtons[:0]
-	buttonY := panelY + panelH - 56
-	backBtn := chromeButton{
-		id:      "launcher_back",
-		enabled: true,
-		rect:    rect{x: panelX + 24, y: buttonY, w: 110, h: 40},
-	}
-	connectBtn := chromeButton{
-		id:      "launcher_retry_password",
-		enabled: strings.TrimSpace(a.launcherPassword) != "",
-		rect:    rect{x: panelX + panelW - 152, y: buttonY, w: 128, h: 40},
-	}
-	a.launcherButtons = append(a.launcherButtons, backBtn, connectBtn)
+	ctx := a.newUIContext(screen, func(btn chromeButton) {
+		a.launcherButtons = append(a.launcherButtons, btn)
+	})
+	ui.Label{Text: "JetKVM", Size: 30, Color: color.RGBA{R: 241, G: 245, B: 249, A: 255}}.
+		Draw(ctx, ui.Rect{X: panelX, Y: panelY - 56, W: panelW, H: 30})
+	ui.Panel{
+		Fill:   color.RGBA{R: 15, G: 23, B: 34, A: 255},
+		Stroke: color.RGBA{R: 71, G: 85, B: 105, A: 180},
+		Insets: ui.UniformInsets(24),
+		Child: launcherPasswordElement{
+			app:         a,
+			targetLabel: targetLabel,
+		},
+	}.Draw(ctx, ui.Rect{X: panelX, Y: panelY, W: panelW, H: panelH})
+}
 
-	vector.FillRect(screen, float32(backBtn.rect.x), float32(backBtn.rect.y), float32(backBtn.rect.w), float32(backBtn.rect.h), color.RGBA{R: 30, G: 41, B: 59, A: 255}, false)
-	vector.StrokeRect(screen, float32(backBtn.rect.x), float32(backBtn.rect.y), float32(backBtn.rect.w), float32(backBtn.rect.h), 1, color.RGBA{R: 71, G: 85, B: 105, A: 160}, false)
-	drawText(screen, "Back", backBtn.rect.x+34, backBtn.rect.y+12, 15, color.RGBA{R: 226, G: 232, B: 240, A: 255})
+type launcherListElement struct {
+	app *App
+}
 
-	fill := color.RGBA{R: 37, G: 99, B: 235, A: 255}
-	stroke := color.RGBA{R: 147, G: 197, B: 253, A: 180}
-	textClr := color.RGBA{R: 239, G: 246, B: 255, A: 255}
-	if !connectBtn.enabled {
-		fill = color.RGBA{R: 30, G: 41, B: 59, A: 255}
-		stroke = color.RGBA{R: 71, G: 85, B: 105, A: 160}
-		textClr = color.RGBA{R: 148, G: 163, B: 184, A: 255}
+func (e launcherListElement) Measure(_ *ui.Context, constraints ui.Constraints) ui.Size {
+	return constraints.Clamp(ui.Size{W: constraints.MaxW, H: constraints.MaxH})
+}
+
+func (e launcherListElement) Draw(ctx *ui.Context, bounds ui.Rect) {
+	if len(e.app.discovered) == 0 {
+		ui.Column{
+			Children: []ui.Child{
+				ui.Fixed(ui.Label{Text: "Scanning local subnets for JetKVM devices...", Size: 16, Color: color.RGBA{R: 191, G: 219, B: 254, A: 255}}),
+				ui.Fixed(ui.Spacer{H: 12}),
+				ui.Fixed(ui.Paragraph{
+					Text:  "Devices will appear here as soon as they answer the JetKVM HTTP status endpoint.",
+					Size:  13,
+					Color: color.RGBA{R: 148, G: 163, B: 184, A: 255},
+				}),
+			},
+		}.Draw(ctx, bounds)
+		return
 	}
-	vector.FillRect(screen, float32(connectBtn.rect.x), float32(connectBtn.rect.y), float32(connectBtn.rect.w), float32(connectBtn.rect.h), fill, false)
-	vector.StrokeRect(screen, float32(connectBtn.rect.x), float32(connectBtn.rect.y), float32(connectBtn.rect.w), float32(connectBtn.rect.h), 1, stroke, false)
-	drawText(screen, "Connect", connectBtn.rect.x+28, connectBtn.rect.y+12, 15, textClr)
+	rowY := bounds.Y
+	lastUpdated := ""
+	for i, device := range e.app.discovered {
+		if rowY+54 > bounds.Bottom()-18 {
+			break
+		}
+		rowBounds := ui.Rect{X: bounds.X, Y: rowY, W: bounds.W, H: 54}
+		ui.Panel{
+			Fill:   color.RGBA{R: 20, G: 31, B: 46, A: 255},
+			Stroke: color.RGBA{R: 56, G: 189, B: 248, A: 80},
+			Insets: ui.SymmetricInsets(16, 12),
+			Child:  launcherDeviceRowElement{device: device},
+		}.Draw(ctx, rowBounds)
+		ctx.AddHit("discover:"+device.BaseURL, rowBounds, true)
+		rowY += 62
+		if i == len(e.app.discovered)-1 {
+			lastUpdated = fmt.Sprintf("Updated %s", humanDiscoveryAge(device.UpdatedAt))
+		}
+	}
+	if lastUpdated != "" {
+		ui.Label{Text: lastUpdated, Size: 11, Color: color.RGBA{R: 100, G: 116, B: 139, A: 255}}.
+			Draw(ctx, ui.Rect{X: bounds.X + 4, Y: bounds.Bottom() - 12, W: bounds.W, H: 12})
+	}
+}
 
-	if a.launcherError != "" {
-		drawWrappedText(screen, a.launcherError, panelX+24, fieldY+64, panelW-48, 12, color.RGBA{R: 252, G: 165, B: 165, A: 255})
+type launcherDeviceRowElement struct {
+	device discovery.Device
+}
+
+func (launcherDeviceRowElement) Measure(_ *ui.Context, constraints ui.Constraints) ui.Size {
+	return constraints.Clamp(ui.Size{W: constraints.MaxW, H: 54})
+}
+
+func (e launcherDeviceRowElement) Draw(ctx *ui.Context, bounds ui.Rect) {
+	state := "Configured"
+	if !e.device.IsSetup {
+		state = "Needs setup"
+	}
+	ui.Row{
+		Children: []ui.Child{
+			ui.Flex(ui.Column{
+				Children: []ui.Child{
+					ui.Fixed(ui.Label{Text: e.device.Name, Size: 17, Color: color.RGBA{R: 241, G: 245, B: 249, A: 255}}),
+					ui.Fixed(ui.Spacer{H: 8}),
+					ui.Fixed(ui.Label{Text: e.device.BaseURL, Size: 13, Color: color.RGBA{R: 148, G: 163, B: 184, A: 255}}),
+				},
+			}, 1),
+			ui.Fixed(ui.Label{Text: state, Size: 13, Color: color.RGBA{R: 191, G: 219, B: 254, A: 255}}),
+		},
+	}.Draw(ctx, bounds)
+}
+
+type launcherInputElement struct {
+	app *App
+}
+
+func (launcherInputElement) Measure(_ *ui.Context, constraints ui.Constraints) ui.Size {
+	return constraints.Clamp(ui.Size{W: constraints.MaxW, H: 40})
+}
+
+func (e launcherInputElement) Draw(ctx *ui.Context, bounds ui.Rect) {
+	ui.Panel{
+		Fill:   color.RGBA{R: 15, G: 23, B: 34, A: 255},
+		Stroke: color.RGBA{R: 71, G: 85, B: 105, A: 180},
+		Insets: ui.SymmetricInsets(14, 12),
+		Child:  launcherInputTextElement(e),
+	}.Draw(ctx, bounds)
+}
+
+type launcherInputTextElement struct {
+	app *App
+}
+
+func (launcherInputTextElement) Measure(_ *ui.Context, constraints ui.Constraints) ui.Size {
+	return constraints.Clamp(ui.Size{W: constraints.MaxW, H: constraints.MaxH})
+}
+
+func (e launcherInputTextElement) Draw(ctx *ui.Context, bounds ui.Rect) {
+	text := e.app.launcherInput
+	textColor := color.RGBA{R: 241, G: 245, B: 249, A: 255}
+	if text == "" {
+		text = "jetkvm.local or 192.168.1.50"
+		textColor = color.RGBA{R: 100, G: 116, B: 139, A: 255}
+	}
+	ui.Label{Text: text, Size: 15, Color: textColor}.Draw(ctx, bounds)
+	if strings.TrimSpace(e.app.launcherInput) != "" && time.Now().UnixMilli()/500%2 == 0 {
+		textW, _ := ctx.MeasureText(text, 15)
+		ctx.FillRect(ui.Rect{X: bounds.X + textW + 2, Y: bounds.Y - 4, W: 2, H: 20}, color.RGBA{R: 191, G: 219, B: 254, A: 255})
+	}
+}
+
+type launcherPasswordElement struct {
+	app         *App
+	targetLabel string
+}
+
+func (e launcherPasswordElement) Measure(_ *ui.Context, constraints ui.Constraints) ui.Size {
+	return constraints.Clamp(ui.Size{W: constraints.MaxW, H: constraints.MaxH})
+}
+
+func (e launcherPasswordElement) Draw(ctx *ui.Context, bounds ui.Rect) {
+	passDisplay := strings.Repeat("*", len([]rune(e.app.launcherPassword)))
+	children := []ui.Child{
+		ui.Fixed(ui.Label{Text: "Password Required", Size: 24, Color: color.RGBA{R: 241, G: 245, B: 249, A: 255}}),
+		ui.Fixed(ui.Spacer{H: 12}),
+		ui.Fixed(ui.Paragraph{Text: e.targetLabel, Size: 14, Color: color.RGBA{R: 148, G: 163, B: 184, A: 255}}),
+		ui.Fixed(ui.Spacer{H: 22}),
+		ui.Fixed(ui.Panel{
+			Fill:   color.RGBA{R: 11, G: 16, B: 24, A: 255},
+			Stroke: color.RGBA{R: 127, G: 29, B: 29, A: 180},
+			Insets: ui.SymmetricInsets(14, 14),
+			Child:  launcherPasswordFieldElement{app: e.app, passDisplay: passDisplay},
+		}),
+		ui.Flex(ui.Spacer{}, 1),
+	}
+	if e.app.launcherError != "" {
+		children = append(children,
+			ui.Fixed(ui.Paragraph{Text: e.app.launcherError, Size: 12, Color: color.RGBA{R: 252, G: 165, B: 165, A: 255}}),
+			ui.Fixed(ui.Spacer{H: 12}),
+		)
+	}
+	children = append(children, ui.Fixed(ui.Row{
+		Children: []ui.Child{
+			ui.Fixed(ui.Button{ID: "launcher_back", Label: "Back", Enabled: true}),
+			ui.Flex(ui.Spacer{}, 1),
+			ui.Fixed(ui.Button{ID: "launcher_retry_password", Label: "Connect", Enabled: strings.TrimSpace(e.app.launcherPassword) != ""}),
+		},
+		Spacing: 12,
+	}))
+	ui.Column{Children: children}.Draw(ctx, bounds)
+}
+
+type launcherPasswordFieldElement struct {
+	app         *App
+	passDisplay string
+}
+
+func (launcherPasswordFieldElement) Measure(_ *ui.Context, constraints ui.Constraints) ui.Size {
+	return constraints.Clamp(ui.Size{W: constraints.MaxW, H: 44})
+}
+
+func (e launcherPasswordFieldElement) Draw(ctx *ui.Context, bounds ui.Rect) {
+	if e.passDisplay == "" {
+		ui.Label{Text: "Local password", Size: 15, Color: color.RGBA{R: 100, G: 116, B: 139, A: 255}}.Draw(ctx, bounds)
+		return
+	}
+	ui.Label{Text: e.passDisplay, Size: 15, Color: color.RGBA{R: 241, G: 245, B: 249, A: 255}}.Draw(ctx, bounds)
+	if time.Now().UnixMilli()/500%2 == 0 {
+		textW, _ := ctx.MeasureText(e.passDisplay, 15)
+		ctx.FillRect(ui.Rect{X: bounds.X + textW + 2, Y: bounds.Y - 4, W: 2, H: 22}, color.RGBA{R: 248, G: 113, B: 113, A: 255})
 	}
 }
 

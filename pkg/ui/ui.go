@@ -201,6 +201,10 @@ func (c *Context) StrokeRect(r Rect, width float64, clr color.Color) {
 	vector.StrokeRect(c.Screen, float32(r.X), float32(r.Y), float32(r.W), float32(r.H), float32(width), clr, false)
 }
 
+func (c *Context) StrokeLine(from, to Point, width float64, clr color.Color) {
+	vector.StrokeLine(c.Screen, float32(from.X), float32(from.Y), float32(to.X), float32(to.Y), float32(width), clr, false)
+}
+
 func (c *Context) AddHit(id string, r Rect, enabled bool) {
 	if c.RegisterHitTarget == nil || id == "" {
 		return

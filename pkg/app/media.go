@@ -385,7 +385,9 @@ func (a *App) drawMediaOverlay(screen *ebiten.Image, snap session.Snapshot) {
 	panelY := float64(bounds.Dy())/2 - panelH/2
 	a.mediaPanel = rect{x: panelX, y: panelY, w: panelW, h: panelH}
 	a.mediaButtons = a.mediaButtons[:0]
-	ctx := a.newUIContext(screen)
+	ctx := a.newUIContext(screen, func(btn chromeButton) {
+		a.mediaButtons = append(a.mediaButtons, btn)
+	})
 	panelRect := ui.Rect{X: panelX, Y: panelY, W: panelW, H: panelH}
 	ctx.FillRect(ui.Rect{W: float64(bounds.Dx()), H: float64(bounds.Dy())}, ctx.Theme.Backdrop)
 	ui.Panel{
@@ -415,31 +417,6 @@ func (a *App) drawMediaOverlay(screen *ebiten.Image, snap session.Snapshot) {
 			Spacing: 0,
 		},
 	}.Draw(ctx, panelRect)
-}
-
-func (a *App) newUIContext(screen *ebiten.Image) *ui.Context {
-	return &ui.Context{
-		Screen:         screen,
-		Theme:          ui.DefaultTheme(),
-		MeasureText:    measureText,
-		MeasureWrapped: wrappedTextHeight,
-		DrawText:       drawText,
-		DrawWrappedText: func(dst *ebiten.Image, value string, x, y, width, size float64, clr color.Color) float64 {
-			return drawWrappedText(dst, value, x, y, width, size, clr)
-		},
-		RegisterHitTarget: func(hit ui.HitTarget) {
-			a.mediaButtons = append(a.mediaButtons, chromeButton{
-				id:      hit.ID,
-				enabled: hit.Enabled,
-				rect: rect{
-					x: hit.Rect.X,
-					y: hit.Rect.Y,
-					w: hit.Rect.W,
-					h: hit.Rect.H,
-				},
-			})
-		},
-	}
 }
 
 func (a *App) mediaBodyElement(snap session.Snapshot) ui.Element {

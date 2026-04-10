@@ -14,13 +14,13 @@ import (
 
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/inpututil"
-	"github.com/hajimehoshi/ebiten/v2/vector"
 	"github.com/pion/webrtc/v4"
 
 	"github.com/lkarlslund/jetkvm-desktop/pkg/client"
 	"github.com/lkarlslund/jetkvm-desktop/pkg/discovery"
 	"github.com/lkarlslund/jetkvm-desktop/pkg/input"
 	"github.com/lkarlslund/jetkvm-desktop/pkg/session"
+	"github.com/lkarlslund/jetkvm-desktop/pkg/ui"
 	"github.com/lkarlslund/jetkvm-desktop/pkg/virtualmedia"
 )
 
@@ -1615,28 +1615,22 @@ func (a *App) drawOverlay(screen *ebiten.Image, snap session.Snapshot, hasVideo 
 	if title == "" {
 		return
 	}
-	vector.FillRect(screen, 26, 84, float32(screen.Bounds().Dx()-52), 86, color.RGBA{R: 8, G: 12, B: 18, A: 228}, false)
-	drawText(screen, title, 42, 104, 22, color.RGBA{R: 240, G: 244, B: 248, A: 255})
 	if detail == "" && snap.LastError != "" && snap.Phase != session.PhaseConnected {
 		detail = snap.LastError
 	}
-	if detail != "" {
-		drawText(screen, detail, 42, 132, 14, color.RGBA{R: 178, G: 188, B: 198, A: 255})
-	}
-	if snap.Phase == session.PhaseOtherSession {
-		btn := chromeButton{
-			id:      "take_back_control",
-			label:   "Take Back Control",
-			enabled: true,
-			rect:    rect{x: 42, y: 148, w: 170, h: 32},
-		}
+	ctx := a.newUIContext(screen, func(btn chromeButton) {
 		a.overlayButtons = append(a.overlayButtons, btn)
-		fill := color.RGBA{R: 28, G: 66, B: 116, A: 255}
-		stroke := color.RGBA{R: 134, G: 186, B: 248, A: 180}
-		vector.FillRect(screen, float32(btn.rect.x), float32(btn.rect.y), float32(btn.rect.w), float32(btn.rect.h), fill, false)
-		vector.StrokeRect(screen, float32(btn.rect.x), float32(btn.rect.y), float32(btn.rect.w), float32(btn.rect.h), 1, stroke, false)
-		drawText(screen, btn.label, btn.rect.x+12, btn.rect.y+9, 13, color.RGBA{R: 240, G: 244, B: 248, A: 255})
-	}
+	})
+	ui.Panel{
+		Fill:   color.RGBA{R: 8, G: 12, B: 18, A: 228},
+		Insets: ui.Insets{Top: 20, Right: 16, Bottom: 12, Left: 16},
+		Child: overlayBannerElement{
+			title:      title,
+			detail:     detail,
+			takeover:   snap.Phase == session.PhaseOtherSession,
+			withButton: snap.Phase == session.PhaseOtherSession,
+		},
+	}.Draw(ctx, ui.Rect{X: 26, Y: 84, W: float64(screen.Bounds().Dx() - 52), H: 96})
 }
 
 func (a *App) drawPressedKeysOverlay(screen *ebiten.Image) {
@@ -1657,9 +1651,43 @@ func (a *App) drawPressedKeysOverlay(screen *ebiten.Image) {
 	w, _ := measureText(line, 12)
 	x := 14.0
 	y := float64(screen.Bounds().Dy()) - 58
-	vector.FillRect(screen, float32(x), float32(y), float32(w+20), 28, color.RGBA{R: 8, G: 12, B: 18, A: 212}, false)
-	vector.StrokeRect(screen, float32(x), float32(y), float32(w+20), 28, 1, color.RGBA{R: 112, G: 128, B: 148, A: 120}, false)
-	drawText(screen, line, x+10, y+8, 12, color.RGBA{R: 236, G: 241, B: 245, A: 255})
+	ctx := a.newUIContext(screen, func(chromeButton) {})
+	ui.Panel{
+		Fill:   color.RGBA{R: 8, G: 12, B: 18, A: 212},
+		Stroke: color.RGBA{R: 112, G: 128, B: 148, A: 120},
+		Insets: ui.SymmetricInsets(10, 8),
+		Child:  ui.Label{Text: line, Size: 12, Color: color.RGBA{R: 236, G: 241, B: 245, A: 255}},
+	}.Draw(ctx, ui.Rect{X: x, Y: y, W: w + 20, H: 28})
+}
+
+type overlayBannerElement struct {
+	title      string
+	detail     string
+	takeover   bool
+	withButton bool
+}
+
+func (e overlayBannerElement) Measure(_ *ui.Context, constraints ui.Constraints) ui.Size {
+	return constraints.Clamp(ui.Size{W: constraints.MaxW, H: constraints.MaxH})
+}
+
+func (e overlayBannerElement) Draw(ctx *ui.Context, bounds ui.Rect) {
+	children := []ui.Child{
+		ui.Fixed(ui.Label{Text: e.title, Size: 22, Color: color.RGBA{R: 240, G: 244, B: 248, A: 255}}),
+	}
+	if e.detail != "" {
+		children = append(children,
+			ui.Fixed(ui.Spacer{H: 10}),
+			ui.Fixed(ui.Label{Text: e.detail, Size: 14, Color: color.RGBA{R: 178, G: 188, B: 198, A: 255}}),
+		)
+	}
+	if e.withButton {
+		children = append(children,
+			ui.Fixed(ui.Spacer{H: 12}),
+			ui.Fixed(ui.Button{ID: "take_back_control", Label: "Take Back Control", Enabled: true, Active: true}),
+		)
+	}
+	ui.Column{Children: children}.Draw(ctx, bounds)
 }
 
 func rtcLabel(state webrtc.PeerConnectionState) string {
