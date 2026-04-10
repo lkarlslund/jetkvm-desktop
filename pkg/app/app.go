@@ -120,6 +120,10 @@ type App struct {
 	advancedSSHKey         string
 	advancedSSHLoaded      bool
 	advancedSSHDirty       bool
+	networkEditor          networkEditorState
+	networkEditorLoaded    bool
+	networkEditorDirty     bool
+	macroEditor            macroEditorState
 	mqttEditor             mqttEditorState
 	mqttEditorLoaded       bool
 	mqttEditorDirty        bool
@@ -163,6 +167,8 @@ const (
 	settingsGroupDevChannel                                // dev_channel
 	settingsGroupLoopbackOnly                              // loopback_only
 	settingsGroupSSHKey                                    // ssh_key
+	settingsGroupNetworkSave                               // network_save
+	settingsGroupMacrosSave                                // macros_save
 	settingsGroupJiggler                                   // jiggler
 	settingsGroupLocalAuth                                 // local_auth
 	settingsGroupMQTTSave                                  // mqtt_save
@@ -198,6 +204,12 @@ const (
 	settingsInputAccessConfirmNewPassword
 	settingsInputAccessDisablePassword
 	settingsInputAdvancedSSH
+	settingsInputNetworkHostname
+	settingsInputNetworkIP
+	settingsInputMacroName
+	settingsInputMacroKeys
+	settingsInputMacroModifiers
+	settingsInputMacroDelay
 	settingsInputMQTTBroker
 	settingsInputMQTTPort
 	settingsInputMQTTUsername
@@ -220,6 +232,11 @@ type mqttEditorState struct {
 	DebounceMs        string
 }
 
+type networkEditorState struct {
+	Hostname string
+	IP       string
+}
+
 type accessEditorMode uint8
 
 const (
@@ -239,6 +256,30 @@ type accessEditorState struct {
 	DisablePassword    string
 	Message            string
 	Success            bool
+}
+
+type macroEditorMode uint8
+
+const (
+	macroEditorModeNone macroEditorMode = iota
+	macroEditorModeCreate
+	macroEditorModeEdit
+)
+
+type macroEditorStep struct {
+	Keys      string
+	Modifiers string
+	Delay     string
+}
+
+type macroEditorState struct {
+	Mode       macroEditorMode
+	ExistingID string
+	Name       string
+	Steps      []macroEditorStep
+	Selected   int
+	Message    string
+	Success    bool
 }
 
 type mediaFileRow struct {
@@ -916,6 +957,24 @@ func (a *App) currentSettingsTextValue() *string {
 		return &a.accessEditor.DisablePassword
 	case settingsInputAdvancedSSH:
 		return &a.advancedSSHKey
+	case settingsInputNetworkHostname:
+		return &a.networkEditor.Hostname
+	case settingsInputNetworkIP:
+		return &a.networkEditor.IP
+	case settingsInputMacroName:
+		return &a.macroEditor.Name
+	case settingsInputMacroKeys:
+		if step := a.selectedMacroEditorStep(); step != nil {
+			return &step.Keys
+		}
+	case settingsInputMacroModifiers:
+		if step := a.selectedMacroEditorStep(); step != nil {
+			return &step.Modifiers
+		}
+	case settingsInputMacroDelay:
+		if step := a.selectedMacroEditorStep(); step != nil {
+			return &step.Delay
+		}
 	case settingsInputMQTTBroker:
 		return &a.mqttEditor.Broker
 	case settingsInputMQTTPort:
@@ -931,6 +990,14 @@ func (a *App) currentSettingsTextValue() *string {
 	default:
 		return nil
 	}
+	return nil
+}
+
+func (a *App) selectedMacroEditorStep() *macroEditorStep {
+	if a.macroEditor.Selected < 0 || a.macroEditor.Selected >= len(a.macroEditor.Steps) {
+		return nil
+	}
+	return &a.macroEditor.Steps[a.macroEditor.Selected]
 }
 
 func (a *App) mqttSettingsFromEditor() (session.MQTTSettings, error) {
@@ -962,6 +1029,18 @@ func (a *App) mqttSettingsFromEditor() (session.MQTTSettings, error) {
 		EnableHADiscovery: a.mqttEditor.EnableHADiscovery,
 		EnableActions:     a.mqttEditor.EnableActions,
 		DebounceMs:        debounce,
+	}, nil
+}
+
+func (a *App) networkSettingsFromEditor() (session.NetworkSettings, error) {
+	hostname := strings.TrimSpace(a.networkEditor.Hostname)
+	ip := strings.TrimSpace(a.networkEditor.IP)
+	if ip != "" && net.ParseIP(ip) == nil {
+		return session.NetworkSettings{}, errors.New("IP must be a valid IPv4 or IPv6 address")
+	}
+	return session.NetworkSettings{
+		Hostname: hostname,
+		IP:       ip,
 	}, nil
 }
 
@@ -1002,6 +1081,17 @@ func (a *App) syncAdvancedSSHKeyLocked(sshKey string) {
 	a.advancedSSHLoaded = true
 }
 
+func (a *App) syncNetworkEditorLocked(settings session.NetworkSettings) {
+	if a.networkEditorDirty {
+		return
+	}
+	a.networkEditor = networkEditorState{
+		Hostname: settings.Hostname,
+		IP:       settings.IP,
+	}
+	a.networkEditorLoaded = true
+}
+
 func (a *App) setAccessEditorMode(mode accessEditorMode) {
 	a.accessEditor = accessEditorState{Mode: mode}
 	switch mode {
@@ -1014,6 +1104,136 @@ func (a *App) setAccessEditorMode(mode accessEditorMode) {
 	default:
 		a.settingsInputFocus = settingsInputNone
 	}
+}
+
+func (a *App) setMacroEditorMode(mode macroEditorMode, macro *session.KeyboardMacro) {
+	switch mode {
+	case macroEditorModeCreate:
+		a.macroEditor = macroEditorState{
+			Mode: mode,
+			Steps: []macroEditorStep{
+				{Delay: "50"},
+			},
+			Selected: 0,
+		}
+		a.settingsInputFocus = settingsInputMacroName
+	case macroEditorModeEdit:
+		if macro == nil {
+			return
+		}
+		steps := make([]macroEditorStep, 0, len(macro.Steps))
+		for _, step := range macro.Steps {
+			steps = append(steps, macroEditorStep{
+				Keys:      strings.Join(step.Keys, ","),
+				Modifiers: strings.Join(step.Modifiers, ","),
+				Delay:     strconv.Itoa(maxInt(step.Delay, 0)),
+			})
+		}
+		if len(steps) == 0 {
+			steps = []macroEditorStep{{Delay: "50"}}
+		}
+		a.macroEditor = macroEditorState{
+			Mode:       mode,
+			ExistingID: macro.ID,
+			Name:       macro.Name,
+			Steps:      steps,
+			Selected:   0,
+		}
+		a.settingsInputFocus = settingsInputMacroName
+	default:
+		a.clearMacroEditor("", false)
+	}
+}
+
+func (a *App) clearMacroEditor(message string, success bool) {
+	a.macroEditor = macroEditorState{
+		Mode:    macroEditorModeNone,
+		Message: message,
+		Success: success,
+	}
+	switch a.settingsInputFocus {
+	case settingsInputMacroName, settingsInputMacroKeys, settingsInputMacroModifiers, settingsInputMacroDelay:
+		a.settingsInputFocus = settingsInputNone
+	}
+}
+
+func normalizeMacroSortOrders(macros []session.KeyboardMacro) []session.KeyboardMacro {
+	out := make([]session.KeyboardMacro, len(macros))
+	copy(out, macros)
+	for i := range out {
+		out[i].SortOrder = i + 1
+	}
+	return out
+}
+
+func generateMacroID() string {
+	return fmt.Sprintf("macro-%d", time.Now().UnixNano())
+}
+
+func parseMacroTokenList(raw string) []string {
+	parts := strings.Split(raw, ",")
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		token := strings.TrimSpace(part)
+		if token == "" {
+			continue
+		}
+		out = append(out, token)
+	}
+	return out
+}
+
+func (a *App) macroFromEditor() (session.KeyboardMacro, error) {
+	name := strings.TrimSpace(a.macroEditor.Name)
+	if name == "" {
+		return session.KeyboardMacro{}, errors.New("macro name is required")
+	}
+	if len(a.macroEditor.Steps) == 0 {
+		return session.KeyboardMacro{}, errors.New("at least one step is required")
+	}
+	steps := make([]session.KeyboardMacroStep, 0, len(a.macroEditor.Steps))
+	for i, step := range a.macroEditor.Steps {
+		delay, err := strconv.Atoi(strings.TrimSpace(step.Delay))
+		if err != nil || delay < 0 {
+			return session.KeyboardMacro{}, fmt.Errorf("step %d delay must be zero or greater", i+1)
+		}
+		keys := parseMacroTokenList(step.Keys)
+		modifiers := parseMacroTokenList(step.Modifiers)
+		if len(keys) == 0 && len(modifiers) == 0 {
+			return session.KeyboardMacro{}, fmt.Errorf("step %d must include keys or modifiers", i+1)
+		}
+		steps = append(steps, session.KeyboardMacroStep{
+			Keys:      keys,
+			Modifiers: modifiers,
+			Delay:     delay,
+		})
+	}
+	id := a.macroEditor.ExistingID
+	if id == "" {
+		id = generateMacroID()
+	}
+	return session.KeyboardMacro{
+		ID:    id,
+		Name:  name,
+		Steps: steps,
+	}, nil
+}
+
+func (a *App) currentMacros() []session.KeyboardMacro {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	out := make([]session.KeyboardMacro, len(a.sectionData.Macros.Macros))
+	copy(out, a.sectionData.Macros.Macros)
+	return out
+}
+
+func (a *App) findMacroByID(id string) (session.KeyboardMacro, bool) {
+	for _, macro := range a.currentMacros() {
+		if macro.ID == id {
+			return macro, true
+		}
+	}
+	return session.KeyboardMacro{}, false
 }
 
 func (a *App) invokeLocalAuthSubmit() {
@@ -1111,6 +1331,13 @@ func (a *App) syncSettingsInput() {
 		if a.settingsSection == sectionAdvanced {
 			a.advancedSSHDirty = true
 		}
+		if a.settingsSection == sectionNetwork {
+			a.networkEditorDirty = true
+		}
+		if a.settingsSection == sectionMacros {
+			a.macroEditor.Message = ""
+			a.macroEditor.Success = false
+		}
 		if a.settingsSection == sectionMQTT {
 			a.mqttEditorDirty = true
 			a.mqttTestMessage = ""
@@ -1164,6 +1391,23 @@ func (a *App) syncSettingsInput() {
 			}
 		case sectionAdvanced:
 			a.settingsInputFocus = settingsInputAdvancedSSH
+		case sectionNetwork:
+			if a.settingsInputFocus == settingsInputNetworkHostname {
+				a.settingsInputFocus = settingsInputNetworkIP
+			} else {
+				a.settingsInputFocus = settingsInputNetworkHostname
+			}
+		case sectionMacros:
+			switch a.settingsInputFocus {
+			case settingsInputMacroName:
+				a.settingsInputFocus = settingsInputMacroKeys
+			case settingsInputMacroKeys:
+				a.settingsInputFocus = settingsInputMacroModifiers
+			case settingsInputMacroModifiers:
+				a.settingsInputFocus = settingsInputMacroDelay
+			default:
+				a.settingsInputFocus = settingsInputMacroName
+			}
 		}
 		return
 	}
@@ -1175,6 +1419,10 @@ func (a *App) syncSettingsInput() {
 			a.invokeAction("access_submit")
 		case sectionAdvanced:
 			a.invokeAction("advanced_save_ssh")
+		case sectionNetwork:
+			a.invokeAction("network_save")
+		case sectionMacros:
+			a.invokeAction("macro_save")
 		case sectionMQTT:
 			a.invokeAction("mqtt_save_settings")
 		}
@@ -1194,6 +1442,13 @@ func (a *App) syncSettingsInput() {
 		}
 		if a.settingsSection == sectionAdvanced {
 			a.advancedSSHDirty = true
+		}
+		if a.settingsSection == sectionNetwork {
+			a.networkEditorDirty = true
+		}
+		if a.settingsSection == sectionMacros {
+			a.macroEditor.Message = ""
+			a.macroEditor.Success = false
 		}
 		if a.settingsSection == sectionMQTT {
 			a.mqttEditorDirty = true
@@ -1501,6 +1756,12 @@ func (a *App) invokeAction(id string) {
 		a.settingsInputFocus = settingsInputAdvancedSSH
 	case "advanced_save_ssh":
 		a.invokeSaveSSHKey()
+	case "network_focus_hostname":
+		a.settingsInputFocus = settingsInputNetworkHostname
+	case "network_focus_ip":
+		a.settingsInputFocus = settingsInputNetworkIP
+	case "network_save":
+		a.invokeNetworkSave()
 	case "rotate_normal":
 		if a.settingsActionPending(settingsGroupDisplayRotate) {
 			return
@@ -1770,6 +2031,61 @@ func (a *App) invokeAction(id string) {
 			}
 			return nil
 		})
+	case "macro_create":
+		a.setMacroEditorMode(macroEditorModeCreate, nil)
+	case "macro_focus_name":
+		a.settingsInputFocus = settingsInputMacroName
+	case "macro_focus_keys":
+		a.settingsInputFocus = settingsInputMacroKeys
+	case "macro_focus_modifiers":
+		a.settingsInputFocus = settingsInputMacroModifiers
+	case "macro_focus_delay":
+		a.settingsInputFocus = settingsInputMacroDelay
+	case "macro_editor_cancel":
+		a.clearMacroEditor("", false)
+	case "macro_step_prev":
+		if a.macroEditor.Selected > 0 {
+			a.macroEditor.Selected--
+		}
+	case "macro_step_next":
+		if a.macroEditor.Selected+1 < len(a.macroEditor.Steps) {
+			a.macroEditor.Selected++
+		}
+	case "macro_step_add":
+		if len(a.macroEditor.Steps) >= 10 {
+			a.macroEditor.Message = "Maximum of 10 steps reached"
+			a.macroEditor.Success = false
+			return
+		}
+		a.macroEditor.Steps = append(a.macroEditor.Steps, macroEditorStep{Delay: "50"})
+		a.macroEditor.Selected = len(a.macroEditor.Steps) - 1
+		a.settingsInputFocus = settingsInputMacroKeys
+		a.macroEditor.Message = ""
+	case "macro_step_remove":
+		if len(a.macroEditor.Steps) <= 1 || a.macroEditor.Selected < 0 || a.macroEditor.Selected >= len(a.macroEditor.Steps) {
+			return
+		}
+		a.macroEditor.Steps = append(a.macroEditor.Steps[:a.macroEditor.Selected], a.macroEditor.Steps[a.macroEditor.Selected+1:]...)
+		if a.macroEditor.Selected >= len(a.macroEditor.Steps) {
+			a.macroEditor.Selected = len(a.macroEditor.Steps) - 1
+		}
+		a.macroEditor.Message = ""
+	case "macro_step_up":
+		if a.macroEditor.Selected <= 0 || a.macroEditor.Selected >= len(a.macroEditor.Steps) {
+			return
+		}
+		i := a.macroEditor.Selected
+		a.macroEditor.Steps[i-1], a.macroEditor.Steps[i] = a.macroEditor.Steps[i], a.macroEditor.Steps[i-1]
+		a.macroEditor.Selected--
+	case "macro_step_down":
+		if a.macroEditor.Selected < 0 || a.macroEditor.Selected+1 >= len(a.macroEditor.Steps) {
+			return
+		}
+		i := a.macroEditor.Selected
+		a.macroEditor.Steps[i], a.macroEditor.Steps[i+1] = a.macroEditor.Steps[i+1], a.macroEditor.Steps[i]
+		a.macroEditor.Selected++
+	case "macro_save":
+		a.invokeSaveMacro()
 	case "layout:en-US":
 		a.invokeKeyboardLayoutAction("en-US")
 	default:
@@ -1779,6 +2095,26 @@ func (a *App) invokeAction(id string) {
 		}
 		if strings.HasPrefix(id, "discover:") {
 			a.connectFromLauncher(strings.TrimPrefix(id, "discover:"))
+			return
+		}
+		if macroID, ok := strings.CutPrefix(id, "macro_edit:"); ok {
+			a.invokeEditMacro(macroID)
+			return
+		}
+		if macroID, ok := strings.CutPrefix(id, "macro_duplicate:"); ok {
+			a.invokeDuplicateMacro(macroID)
+			return
+		}
+		if macroID, ok := strings.CutPrefix(id, "macro_delete:"); ok {
+			a.invokeDeleteMacro(macroID)
+			return
+		}
+		if macroID, ok := strings.CutPrefix(id, "macro_move_up:"); ok {
+			a.invokeMoveMacro(macroID, -1)
+			return
+		}
+		if macroID, ok := strings.CutPrefix(id, "macro_move_down:"); ok {
+			a.invokeMoveMacro(macroID, 1)
 			return
 		}
 		if len(id) > 8 && id[:8] == "section:" {
@@ -1801,6 +2137,21 @@ func (a *App) invokeAction(id string) {
 			}
 			if section != sectionAdvanced && a.settingsInputFocus == settingsInputAdvancedSSH {
 				a.settingsInputFocus = settingsInputNone
+			}
+			if section != sectionNetwork {
+				switch a.settingsInputFocus {
+				case settingsInputNetworkHostname, settingsInputNetworkIP:
+					a.settingsInputFocus = settingsInputNone
+				}
+			}
+			if section != sectionMacros {
+				switch a.settingsInputFocus {
+				case settingsInputMacroName, settingsInputMacroKeys, settingsInputMacroModifiers, settingsInputMacroDelay:
+					a.settingsInputFocus = settingsInputNone
+				}
+				if a.macroEditor.Mode != macroEditorModeNone {
+					a.clearMacroEditor("", false)
+				}
 			}
 			if section != sectionMQTT {
 				switch a.settingsInputFocus {
@@ -1985,6 +2336,150 @@ func (a *App) invokeSaveSSHKey() {
 		}
 		a.advancedSSHDirty = false
 		return a.refreshSettingsSectionSync(sectionAdvanced)
+	})
+}
+
+func (a *App) invokeNetworkSave() {
+	if a.settingsActionPending(settingsGroupNetworkSave) {
+		return
+	}
+	settings, err := a.networkSettingsFromEditor()
+	if err != nil {
+		a.finishSettingsAction(settingsGroupNetworkSave, a.beginSettingsAction(settingsGroupNetworkSave, "save"), err)
+		return
+	}
+	a.withSettingsAction(settingsGroupNetworkSave, "save", func() error {
+		if err := a.ctrl.SetNetworkSettings(settings); err != nil {
+			return err
+		}
+		a.networkEditorDirty = false
+		return a.refreshSettingsSectionSync(sectionNetwork)
+	})
+}
+
+func (a *App) invokeEditMacro(id string) {
+	macro, ok := a.findMacroByID(id)
+	if !ok {
+		return
+	}
+	a.setMacroEditorMode(macroEditorModeEdit, &macro)
+}
+
+func (a *App) invokeDuplicateMacro(id string) {
+	if a.settingsActionPending(settingsGroupMacrosSave) {
+		return
+	}
+	macro, ok := a.findMacroByID(id)
+	if !ok {
+		return
+	}
+	macros := a.currentMacros()
+	copyMacro := macro
+	copyMacro.ID = generateMacroID()
+	copyMacro.Name = strings.TrimSpace(copyMacro.Name + " (copy)")
+	macros = append(macros, copyMacro)
+	macros = normalizeMacroSortOrders(macros)
+	a.withSettingsAction(settingsGroupMacrosSave, "duplicate", func() error {
+		if err := a.ctrl.SetKeyboardMacros(macros); err != nil {
+			return err
+		}
+		a.clearMacroEditor("Macro duplicated", true)
+		return a.refreshSettingsSectionSync(sectionMacros)
+	})
+}
+
+func (a *App) invokeDeleteMacro(id string) {
+	if a.settingsActionPending(settingsGroupMacrosSave) {
+		return
+	}
+	macros := a.currentMacros()
+	filtered := make([]session.KeyboardMacro, 0, len(macros))
+	for _, macro := range macros {
+		if macro.ID != id {
+			filtered = append(filtered, macro)
+		}
+	}
+	filtered = normalizeMacroSortOrders(filtered)
+	a.withSettingsAction(settingsGroupMacrosSave, "delete", func() error {
+		if err := a.ctrl.SetKeyboardMacros(filtered); err != nil {
+			return err
+		}
+		if a.macroEditor.ExistingID == id {
+			a.clearMacroEditor("Macro deleted", true)
+		}
+		return a.refreshSettingsSectionSync(sectionMacros)
+	})
+}
+
+func (a *App) invokeMoveMacro(id string, delta int) {
+	if a.settingsActionPending(settingsGroupMacrosSave) {
+		return
+	}
+	macros := a.currentMacros()
+	index := -1
+	for i, macro := range macros {
+		if macro.ID == id {
+			index = i
+			break
+		}
+	}
+	if index == -1 {
+		return
+	}
+	target := index + delta
+	if target < 0 || target >= len(macros) {
+		return
+	}
+	macros[index], macros[target] = macros[target], macros[index]
+	macros = normalizeMacroSortOrders(macros)
+	a.withSettingsAction(settingsGroupMacrosSave, "reorder", func() error {
+		if err := a.ctrl.SetKeyboardMacros(macros); err != nil {
+			return err
+		}
+		return a.refreshSettingsSectionSync(sectionMacros)
+	})
+}
+
+func (a *App) invokeSaveMacro() {
+	if a.settingsActionPending(settingsGroupMacrosSave) {
+		return
+	}
+	macro, err := a.macroFromEditor()
+	if err != nil {
+		a.finishSettingsAction(settingsGroupMacrosSave, a.beginSettingsAction(settingsGroupMacrosSave, "save"), err)
+		return
+	}
+	macros := a.currentMacros()
+	switch a.macroEditor.Mode {
+	case macroEditorModeCreate:
+		macros = append(macros, macro)
+	case macroEditorModeEdit:
+		replaced := false
+		for i := range macros {
+			if macros[i].ID == macro.ID {
+				macros[i].Name = macro.Name
+				macros[i].Steps = macro.Steps
+				replaced = true
+				break
+			}
+		}
+		if !replaced {
+			macros = append(macros, macro)
+		}
+	default:
+		return
+	}
+	macros = normalizeMacroSortOrders(macros)
+	message := "Macro saved"
+	if a.macroEditor.Mode == macroEditorModeCreate {
+		message = "Macro created"
+	}
+	a.withSettingsAction(settingsGroupMacrosSave, "save", func() error {
+		if err := a.ctrl.SetKeyboardMacros(macros); err != nil {
+			return err
+		}
+		a.clearMacroEditor(message, true)
+		return a.refreshSettingsSectionSync(sectionMacros)
 	})
 }
 

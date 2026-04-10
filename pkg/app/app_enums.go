@@ -107,11 +107,11 @@ func (i *launcherMode) UnmarshalText(text []byte) error {
 	return err
 }
 
-const _settingsActionGroupName = "keyboard_layoutvideo_qualityvideo_codecvideo_edidtls_modedisplay_rotationbacklightvideo_sleepusb_emulationusb_devicesauto_updateupdate_statusdeveloper_modedev_channelloopback_onlyssh_keyjigglerlocal_authmqtt_savemqtt_test"
+const _settingsActionGroupName = "keyboard_layoutvideo_qualityvideo_codecvideo_edidtls_modedisplay_rotationbacklightvideo_sleepusb_emulationusb_devicesauto_updateupdate_statusdeveloper_modedev_channelloopback_onlyssh_keynetwork_savemacros_savejigglerlocal_authmqtt_savemqtt_test"
 
-var _settingsActionGroupIndex = [...]uint8{0, 15, 28, 39, 49, 57, 73, 82, 93, 106, 117, 128, 141, 155, 166, 179, 186, 193, 203, 212, 221}
+var _settingsActionGroupIndex = [...]uint8{0, 15, 28, 39, 49, 57, 73, 82, 93, 106, 117, 128, 141, 155, 166, 179, 186, 198, 209, 216, 226, 235, 244}
 
-const _settingsActionGroupLowerName = "keyboard_layoutvideo_qualityvideo_codecvideo_edidtls_modedisplay_rotationbacklightvideo_sleepusb_emulationusb_devicesauto_updateupdate_statusdeveloper_modedev_channelloopback_onlyssh_keyjigglerlocal_authmqtt_savemqtt_test"
+const _settingsActionGroupLowerName = "keyboard_layoutvideo_qualityvideo_codecvideo_edidtls_modedisplay_rotationbacklightvideo_sleepusb_emulationusb_devicesauto_updateupdate_statusdeveloper_modedev_channelloopback_onlyssh_keynetwork_savemacros_savejigglerlocal_authmqtt_savemqtt_test"
 
 func (i settingsActionGroup) String() string {
 	if i >= settingsActionGroup(len(_settingsActionGroupIndex)-1) {
@@ -140,13 +140,15 @@ func _settingsActionGroupNoOp() {
 	_ = x[settingsGroupDevChannel-(13)]
 	_ = x[settingsGroupLoopbackOnly-(14)]
 	_ = x[settingsGroupSSHKey-(15)]
-	_ = x[settingsGroupJiggler-(16)]
-	_ = x[settingsGroupLocalAuth-(17)]
-	_ = x[settingsGroupMQTTSave-(18)]
-	_ = x[settingsGroupMQTTTest-(19)]
+	_ = x[settingsGroupNetworkSave-(16)]
+	_ = x[settingsGroupMacrosSave-(17)]
+	_ = x[settingsGroupJiggler-(18)]
+	_ = x[settingsGroupLocalAuth-(19)]
+	_ = x[settingsGroupMQTTSave-(20)]
+	_ = x[settingsGroupMQTTTest-(21)]
 }
 
-var _settingsActionGroupValues = []settingsActionGroup{settingsGroupKeyboardLayout, settingsGroupVideoQuality, settingsGroupVideoCodec, settingsGroupVideoEDID, settingsGroupTLSMode, settingsGroupDisplayRotate, settingsGroupBacklight, settingsGroupVideoSleep, settingsGroupUSBEmulation, settingsGroupUSBDevices, settingsGroupAutoUpdate, settingsGroupUpdateStatus, settingsGroupDeveloperMode, settingsGroupDevChannel, settingsGroupLoopbackOnly, settingsGroupSSHKey, settingsGroupJiggler, settingsGroupLocalAuth, settingsGroupMQTTSave, settingsGroupMQTTTest}
+var _settingsActionGroupValues = []settingsActionGroup{settingsGroupKeyboardLayout, settingsGroupVideoQuality, settingsGroupVideoCodec, settingsGroupVideoEDID, settingsGroupTLSMode, settingsGroupDisplayRotate, settingsGroupBacklight, settingsGroupVideoSleep, settingsGroupUSBEmulation, settingsGroupUSBDevices, settingsGroupAutoUpdate, settingsGroupUpdateStatus, settingsGroupDeveloperMode, settingsGroupDevChannel, settingsGroupLoopbackOnly, settingsGroupSSHKey, settingsGroupNetworkSave, settingsGroupMacrosSave, settingsGroupJiggler, settingsGroupLocalAuth, settingsGroupMQTTSave, settingsGroupMQTTTest}
 
 var _settingsActionGroupNameToValueMap = map[string]settingsActionGroup{
 	_settingsActionGroupName[0:15]:         settingsGroupKeyboardLayout,
@@ -181,14 +183,18 @@ var _settingsActionGroupNameToValueMap = map[string]settingsActionGroup{
 	_settingsActionGroupLowerName[166:179]: settingsGroupLoopbackOnly,
 	_settingsActionGroupName[179:186]:      settingsGroupSSHKey,
 	_settingsActionGroupLowerName[179:186]: settingsGroupSSHKey,
-	_settingsActionGroupName[186:193]:      settingsGroupJiggler,
-	_settingsActionGroupLowerName[186:193]: settingsGroupJiggler,
-	_settingsActionGroupName[193:203]:      settingsGroupLocalAuth,
-	_settingsActionGroupLowerName[193:203]: settingsGroupLocalAuth,
-	_settingsActionGroupName[203:212]:      settingsGroupMQTTSave,
-	_settingsActionGroupLowerName[203:212]: settingsGroupMQTTSave,
-	_settingsActionGroupName[212:221]:      settingsGroupMQTTTest,
-	_settingsActionGroupLowerName[212:221]: settingsGroupMQTTTest,
+	_settingsActionGroupName[186:198]:      settingsGroupNetworkSave,
+	_settingsActionGroupLowerName[186:198]: settingsGroupNetworkSave,
+	_settingsActionGroupName[198:209]:      settingsGroupMacrosSave,
+	_settingsActionGroupLowerName[198:209]: settingsGroupMacrosSave,
+	_settingsActionGroupName[209:216]:      settingsGroupJiggler,
+	_settingsActionGroupLowerName[209:216]: settingsGroupJiggler,
+	_settingsActionGroupName[216:226]:      settingsGroupLocalAuth,
+	_settingsActionGroupLowerName[216:226]: settingsGroupLocalAuth,
+	_settingsActionGroupName[226:235]:      settingsGroupMQTTSave,
+	_settingsActionGroupLowerName[226:235]: settingsGroupMQTTSave,
+	_settingsActionGroupName[235:244]:      settingsGroupMQTTTest,
+	_settingsActionGroupLowerName[235:244]: settingsGroupMQTTTest,
 }
 
 var _settingsActionGroupNames = []string{
@@ -208,10 +214,12 @@ var _settingsActionGroupNames = []string{
 	_settingsActionGroupName[155:166],
 	_settingsActionGroupName[166:179],
 	_settingsActionGroupName[179:186],
-	_settingsActionGroupName[186:193],
-	_settingsActionGroupName[193:203],
-	_settingsActionGroupName[203:212],
-	_settingsActionGroupName[212:221],
+	_settingsActionGroupName[186:198],
+	_settingsActionGroupName[198:209],
+	_settingsActionGroupName[209:216],
+	_settingsActionGroupName[216:226],
+	_settingsActionGroupName[226:235],
+	_settingsActionGroupName[235:244],
 }
 
 // settingsActionGroupString retrieves an enum value from the enum constants string name.

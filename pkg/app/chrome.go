@@ -73,6 +73,7 @@ type sectionData struct {
 	Access   accessState
 	Hardware hardwareState
 	Network  networkState
+	Macros   macrosState
 	MQTT     mqttState
 	Advanced advancedState
 }
@@ -113,6 +114,12 @@ type networkState struct {
 	Loading bool
 	Error   string
 	State   session.NetworkState
+}
+
+type macrosState struct {
+	Loading bool
+	Error   string
+	Macros  []session.KeyboardMacro
 }
 
 type mqttState struct {
@@ -242,7 +249,7 @@ func settingsSections(snap session.Snapshot) []settingsSectionDef {
 			id:          sectionMacros,
 			label:       "Macros",
 			description: "Keyboard macro library and reordering",
-			available:   false,
+			available:   true,
 			items: []string{
 				"Create, edit, duplicate, and reorder macros",
 				"Layout-aware key display",
@@ -881,6 +888,9 @@ func (a *App) markSettingsSectionLoading(section settingsSection) uint64 {
 	case sectionNetwork:
 		a.sectionData.Network.Loading = true
 		a.sectionData.Network.Error = ""
+	case sectionMacros:
+		a.sectionData.Macros.Loading = true
+		a.sectionData.Macros.Error = ""
 	case sectionMQTT:
 		a.sectionData.MQTT.Loading = true
 		a.sectionData.MQTT.Error = ""
@@ -1006,6 +1016,11 @@ func (a *App) loadSettingsSection(section settingsSection, seq uint64) error {
 	case sectionNetwork:
 		state := networkState{Loading: false}
 		if settings, callErr := a.ctrl.GetNetworkSettings(ctx); callErr == nil {
+			a.mu.Lock()
+			if a.sectionLoadSeq[section] == seq {
+				a.syncNetworkEditorLocked(settings)
+			}
+			a.mu.Unlock()
 			state.State.Hostname = settings.Hostname
 			state.State.IP = settings.IP
 		}
@@ -1025,6 +1040,19 @@ func (a *App) loadSettingsSection(section settingsSection, seq uint64) error {
 		a.mu.Lock()
 		if a.sectionLoadSeq[section] == seq {
 			a.sectionData.Network = state
+		}
+		a.mu.Unlock()
+	case sectionMacros:
+		state := macrosState{Loading: false}
+		if macros, callErr := a.ctrl.GetKeyboardMacros(ctx); callErr == nil {
+			state.Macros = macros
+		}
+		if state.Macros == nil {
+			state.Macros = []session.KeyboardMacro{}
+		}
+		a.mu.Lock()
+		if a.sectionLoadSeq[section] == seq {
+			a.sectionData.Macros = state
 		}
 		a.mu.Unlock()
 	case sectionMQTT:
@@ -1351,6 +1379,8 @@ func (a *App) settingsSectionBody(section settingsSection, snap session.Snapshot
 		return a.settingsAccessBody()
 	case sectionAppearance:
 		return a.settingsAppearanceBody()
+	case sectionMacros:
+		return a.settingsMacrosBody()
 	case sectionNetwork:
 		return a.settingsNetworkBody()
 	case sectionMQTT:
@@ -1891,22 +1921,175 @@ func (a *App) settingsNetworkBody() ui.Element {
 	a.mu.RLock()
 	state := a.sectionData.Network
 	a.mu.RUnlock()
-	children := []ui.Child{}
-	if state.Loading {
-		children = append(children, ui.Fixed(ui.Label{Text: "Loading network state…", Size: 13, Color: color.RGBA{R: 236, G: 241, B: 245, A: 255}}))
+	saveState := a.settingsAction(settingsGroupNetworkSave)
+	editorChildren := []ui.Child{}
+	if state.Loading && !a.networkEditorLoaded {
+		editorChildren = append(editorChildren, ui.Fixed(ui.Label{Text: "Loading network settings…", Size: 13, Color: color.RGBA{R: 236, G: 241, B: 245, A: 255}}))
 	} else {
-		children = append(children,
-			ui.Fixed(settingsKeyValueElement("Hostname", state.State.Hostname, 96)),
-			ui.Fixed(ui.Spacer{H: 10}),
-			ui.Fixed(settingsKeyValueElement("IP", state.State.IP, 96)),
-			ui.Fixed(ui.Spacer{H: 10}),
-			ui.Fixed(settingsKeyValueElement("DHCP", boolPtrWord(state.State.DHCP), 96)),
+		editorChildren = append(editorChildren,
+			ui.Fixed(settingsSectionLabelElement("Hostname")),
+			ui.Fixed(ui.Spacer{H: 8}),
+			ui.Fixed(ui.TextField{ID: "network_focus_hostname", Value: a.networkEditor.Hostname, Placeholder: state.State.Hostname, Focused: a.settingsInputFocus == settingsInputNetworkHostname, Enabled: !saveState.Pending}),
+			ui.Fixed(ui.Spacer{H: 14}),
+			ui.Fixed(settingsSectionLabelElement("Static IP")),
+			ui.Fixed(ui.Spacer{H: 8}),
+			ui.Fixed(ui.TextField{ID: "network_focus_ip", Value: a.networkEditor.IP, Placeholder: state.State.IP, Focused: a.settingsInputFocus == settingsInputNetworkIP, Enabled: !saveState.Pending}),
+			ui.Fixed(ui.Spacer{H: 14}),
+			ui.Fixed(ui.Paragraph{Text: "The desktop client currently exposes hostname and static IP editing directly. Leave a field blank to follow the device default.", Size: 12, Color: color.RGBA{R: 166, G: 178, B: 190, A: 255}}),
+			ui.Fixed(ui.Spacer{H: 16}),
+			ui.Fixed(settingsActionElement("network_save", "Save Settings", settingsActionVisual{Enabled: !saveState.Pending}, 0)),
 		)
 	}
-	if state.Error != "" {
-		children = append(children, ui.Fixed(ui.Spacer{H: 12}), ui.Fixed(settingsStatusElement(state.Error, color.RGBA{R: 220, G: 132, B: 132, A: 255})))
+	switch {
+	case saveState.Pending:
+		editorChildren = append(editorChildren, ui.Fixed(ui.Spacer{H: 12}), ui.Fixed(settingsStatusElement("Saving…", color.RGBA{R: 245, G: 200, B: 96, A: 255})))
+	case saveState.Error != "":
+		editorChildren = append(editorChildren, ui.Fixed(ui.Spacer{H: 12}), ui.Fixed(settingsStatusElement(saveState.Error, color.RGBA{R: 220, G: 132, B: 132, A: 255})))
 	}
-	return settingsCardElement("Current state", ui.Column{Children: children})
+	if state.Error != "" {
+		editorChildren = append(editorChildren, ui.Fixed(ui.Spacer{H: 12}), ui.Fixed(settingsStatusElement(state.Error, color.RGBA{R: 220, G: 132, B: 132, A: 255})))
+	}
+
+	stateChildren := []ui.Child{
+		ui.Fixed(settingsKeyValueElement("Hostname", state.State.Hostname, 96)),
+		ui.Fixed(ui.Spacer{H: 10}),
+		ui.Fixed(settingsKeyValueElement("IP", state.State.IP, 96)),
+		ui.Fixed(ui.Spacer{H: 10}),
+		ui.Fixed(settingsKeyValueElement("DHCP", boolPtrWord(state.State.DHCP), 96)),
+	}
+	return settingsTwoPane(
+		settingsCardElement("Editable Settings", ui.Column{Children: editorChildren}),
+		54,
+		settingsCardElement("Current State", ui.Column{Children: stateChildren}),
+		46,
+	)
+}
+
+func macroStepSummary(step session.KeyboardMacroStep) string {
+	parts := make([]string, 0, len(step.Modifiers)+len(step.Keys))
+	parts = append(parts, step.Modifiers...)
+	parts = append(parts, step.Keys...)
+	label := strings.Join(parts, " + ")
+	if label == "" {
+		label = "Delay only"
+	}
+	if step.Delay > 0 {
+		label = fmt.Sprintf("%s (%dms)", label, step.Delay)
+	}
+	return label
+}
+
+func (a *App) settingsMacrosBody() ui.Element {
+	a.mu.RLock()
+	state := a.sectionData.Macros
+	a.mu.RUnlock()
+	macroState := a.settingsAction(settingsGroupMacrosSave)
+
+	listChildren := []ui.Child{
+		ui.Fixed(settingsActionElement("macro_create", "Add Macro", settingsActionVisual{Enabled: !macroState.Pending}, 0)),
+	}
+	if state.Loading {
+		listChildren = append(listChildren, ui.Fixed(ui.Spacer{H: 12}), ui.Fixed(ui.Label{Text: "Loading macros…", Size: 13, Color: color.RGBA{R: 236, G: 241, B: 245, A: 255}}))
+	} else if len(state.Macros) == 0 {
+		listChildren = append(listChildren, ui.Fixed(ui.Spacer{H: 12}), ui.Fixed(ui.Paragraph{Text: "No keyboard macros are saved on this device yet.", Size: 12, Color: color.RGBA{R: 166, G: 178, B: 190, A: 255}}))
+	} else {
+		for index, macro := range state.Macros {
+			if index > 0 {
+				listChildren = append(listChildren, ui.Fixed(ui.Spacer{H: 12}))
+			}
+			summary := "No steps"
+			if len(macro.Steps) > 0 {
+				summary = macroStepSummary(macro.Steps[0])
+				if len(macro.Steps) > 1 {
+					summary = fmt.Sprintf("%s + %d more", summary, len(macro.Steps)-1)
+				}
+			}
+			listChildren = append(listChildren, ui.Fixed(settingsCardElement(macro.Name, ui.Column{Children: []ui.Child{
+				ui.Fixed(settingsKeyValueElement("Summary", summary, 76)),
+				ui.Fixed(ui.Spacer{H: 12}),
+				ui.Fixed(ui.Wrap{Children: []ui.Element{
+					settingsActionElement("macro_move_up:"+macro.ID, "Up", settingsActionVisual{Enabled: !macroState.Pending && index > 0}, 54),
+					settingsActionElement("macro_move_down:"+macro.ID, "Down", settingsActionVisual{Enabled: !macroState.Pending && index+1 < len(state.Macros)}, 64),
+					settingsActionElement("macro_edit:"+macro.ID, "Edit", settingsActionVisual{Enabled: !macroState.Pending}, 60),
+					settingsActionElement("macro_duplicate:"+macro.ID, "Duplicate", settingsActionVisual{Enabled: !macroState.Pending}, 92),
+					settingsActionElement("macro_delete:"+macro.ID, "Delete", settingsActionVisual{Enabled: !macroState.Pending}, 72),
+				}, Spacing: 10, LineSpacing: 8}),
+			}})))
+		}
+	}
+	switch {
+	case macroState.Pending:
+		listChildren = append(listChildren, ui.Fixed(ui.Spacer{H: 12}), ui.Fixed(settingsStatusElement("Saving macros…", color.RGBA{R: 245, G: 200, B: 96, A: 255})))
+	case macroState.Error != "":
+		listChildren = append(listChildren, ui.Fixed(ui.Spacer{H: 12}), ui.Fixed(settingsStatusElement(macroState.Error, color.RGBA{R: 220, G: 132, B: 132, A: 255})))
+	}
+	if state.Error != "" {
+		listChildren = append(listChildren, ui.Fixed(ui.Spacer{H: 12}), ui.Fixed(settingsStatusElement(state.Error, color.RGBA{R: 220, G: 132, B: 132, A: 255})))
+	}
+
+	editorChildren := []ui.Child{}
+	if a.macroEditor.Mode == macroEditorModeNone {
+		editorChildren = append(editorChildren, ui.Fixed(ui.Paragraph{Text: "Select Edit on an existing macro or Add Macro to create a new one. Modifiers and keys use comma-separated HID token names.", Size: 12, Color: color.RGBA{R: 166, G: 178, B: 190, A: 255}}))
+	} else {
+		selected := a.macroEditor.Selected + 1
+		total := len(a.macroEditor.Steps)
+		step := a.selectedMacroEditorStep()
+		editorChildren = append(editorChildren,
+			ui.Fixed(settingsSectionLabelElement("Macro Name")),
+			ui.Fixed(ui.Spacer{H: 8}),
+			ui.Fixed(ui.TextField{ID: "macro_focus_name", Value: a.macroEditor.Name, Placeholder: "Wake Sequence", Focused: a.settingsInputFocus == settingsInputMacroName, Enabled: !macroState.Pending}),
+			ui.Fixed(ui.Spacer{H: 14}),
+			ui.Fixed(settingsKeyValueElement("Editing Step", fmt.Sprintf("%d of %d", selected, total), 96)),
+			ui.Fixed(ui.Spacer{H: 10}),
+			ui.Fixed(ui.Wrap{Children: []ui.Element{
+				settingsActionElement("macro_step_prev", "Previous", settingsActionVisual{Enabled: !macroState.Pending && a.macroEditor.Selected > 0}, 84),
+				settingsActionElement("macro_step_next", "Next", settingsActionVisual{Enabled: !macroState.Pending && a.macroEditor.Selected+1 < len(a.macroEditor.Steps)}, 64),
+				settingsActionElement("macro_step_add", "Add Step", settingsActionVisual{Enabled: !macroState.Pending && len(a.macroEditor.Steps) < 10}, 84),
+				settingsActionElement("macro_step_remove", "Remove Step", settingsActionVisual{Enabled: !macroState.Pending && len(a.macroEditor.Steps) > 1}, 102),
+				settingsActionElement("macro_step_up", "Move Up", settingsActionVisual{Enabled: !macroState.Pending && a.macroEditor.Selected > 0}, 84),
+				settingsActionElement("macro_step_down", "Move Down", settingsActionVisual{Enabled: !macroState.Pending && a.macroEditor.Selected+1 < len(a.macroEditor.Steps)}, 96),
+			}, Spacing: 10, LineSpacing: 8}),
+		)
+		if step != nil {
+			editorChildren = append(editorChildren,
+				ui.Fixed(ui.Spacer{H: 14}),
+				ui.Fixed(settingsSectionLabelElement("Modifiers")),
+				ui.Fixed(ui.Spacer{H: 8}),
+				ui.Fixed(ui.TextField{ID: "macro_focus_modifiers", Value: step.Modifiers, Placeholder: "ControlLeft,ShiftLeft", Focused: a.settingsInputFocus == settingsInputMacroModifiers, Enabled: !macroState.Pending}),
+				ui.Fixed(ui.Spacer{H: 14}),
+				ui.Fixed(settingsSectionLabelElement("Keys")),
+				ui.Fixed(ui.Spacer{H: 8}),
+				ui.Fixed(ui.TextField{ID: "macro_focus_keys", Value: step.Keys, Placeholder: "KeyR", Focused: a.settingsInputFocus == settingsInputMacroKeys, Enabled: !macroState.Pending}),
+				ui.Fixed(ui.Spacer{H: 14}),
+				ui.Fixed(settingsSectionLabelElement("Delay (ms)")),
+				ui.Fixed(ui.Spacer{H: 8}),
+				ui.Fixed(ui.TextField{ID: "macro_focus_delay", Value: step.Delay, Placeholder: "50", Focused: a.settingsInputFocus == settingsInputMacroDelay, Enabled: !macroState.Pending}),
+			)
+		}
+		editorChildren = append(editorChildren,
+			ui.Fixed(ui.Spacer{H: 14}),
+			ui.Fixed(ui.Paragraph{Text: "Use comma-separated HID names for modifiers and keys. Example: modifiers `ControlLeft` and keys `KeyR`.", Size: 12, Color: color.RGBA{R: 166, G: 178, B: 190, A: 255}}),
+			ui.Fixed(ui.Spacer{H: 16}),
+			ui.Fixed(ui.Wrap{Children: []ui.Element{
+				settingsActionElement("macro_save", "Save Macro", settingsActionVisual{Enabled: !macroState.Pending}, 96),
+				settingsActionElement("macro_editor_cancel", "Cancel", settingsActionVisual{Enabled: !macroState.Pending}, 72),
+			}, Spacing: 10, LineSpacing: 8}),
+		)
+	}
+	if a.macroEditor.Message != "" {
+		msgColor := color.RGBA{R: 245, G: 200, B: 96, A: 255}
+		if a.macroEditor.Success {
+			msgColor = color.RGBA{R: 134, G: 239, B: 172, A: 255}
+		}
+		editorChildren = append(editorChildren, ui.Fixed(ui.Spacer{H: 12}), ui.Fixed(settingsStatusElement(a.macroEditor.Message, msgColor)))
+	}
+
+	return settingsTwoPane(
+		settingsCardElement("Library", ui.Column{Children: listChildren}),
+		52,
+		settingsCardElement("Editor", ui.Column{Children: editorChildren}),
+		48,
+	)
 }
 
 func (a *App) settingsMQTTBody() ui.Element {
