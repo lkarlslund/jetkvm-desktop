@@ -3,13 +3,11 @@ package app
 import (
 	"fmt"
 	"image/color"
-	"math"
 	"strings"
 	"time"
 
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/inpututil"
-	"github.com/hajimehoshi/ebiten/v2/vector"
 	"golang.design/x/clipboard"
 
 	"github.com/lkarlslund/jetkvm-desktop/pkg/client"
@@ -177,7 +175,7 @@ func (a *App) drawStatsOverlay(screen *ebiten.Image) {
 	}
 	w := 0.0
 	for _, line := range lines {
-		lineW, _ := measureText(line, 12)
+		lineW, _ := ui.MeasureText(line, 12)
 		if lineW > w {
 			w = lineW
 		}
@@ -219,87 +217,12 @@ func statsSeries(history []statsPoint, pick func(statsPoint) float64) []float64 
 	return values
 }
 
-func graphDomain(values []float64) (float64, float64) {
-	maxValue := 0.0
-	for _, value := range values {
-		if value > maxValue {
-			maxValue = value
-		}
-	}
-	if maxValue <= 0 {
-		return 0, 1
-	}
-	return 0, niceCeil(maxValue * 1.1)
-}
-
-func niceCeil(value float64) float64 {
-	if value <= 0 {
-		return 1
-	}
-	magnitude := math.Pow(10, math.Floor(math.Log10(value)))
-	normalized := value / magnitude
-	switch {
-	case normalized <= 1:
-		return 1 * magnitude
-	case normalized <= 2:
-		return 2 * magnitude
-	case normalized <= 5:
-		return 5 * magnitude
-	default:
-		return 10 * magnitude
-	}
-}
-
 func formatGraphValue(value float64, unit string) string {
 	switch unit {
 	case "fps":
 		return fmt.Sprintf("%.1f %s", value, unit)
 	default:
 		return fmt.Sprintf("%.0f %s", value, unit)
-	}
-}
-
-func (a *App) drawStatsGraph(screen *ebiten.Image, x, y, w, h float64, metric graphMetric) {
-	vector.FillRect(screen, float32(x), float32(y), float32(w), float32(h), color.RGBA{R: 15, G: 23, B: 34, A: 220}, false)
-	vector.StrokeRect(screen, float32(x), float32(y), float32(w), float32(h), 1, color.RGBA{R: 62, G: 80, B: 96, A: 180}, false)
-
-	drawText(screen, metric.Title, x+10, y+10, 12, color.RGBA{R: 240, G: 244, B: 248, A: 255})
-	drawText(screen, formatGraphValue(metric.Value, metric.Unit), x+w-88, y+10, 12, color.RGBA{R: 166, G: 200, B: 255, A: 255})
-
-	chartX := x + 10
-	chartY := y + 24
-	chartW := w - 20
-	chartH := h - 32
-	vector.StrokeRect(screen, float32(chartX), float32(chartY), float32(chartW), float32(chartH), 1, color.RGBA{R: 46, G: 60, B: 75, A: 120}, false)
-
-	minY, maxY := graphDomain(metric.Series)
-	for i := 1; i < 4; i++ {
-		yy := chartY + chartH*(float64(i)/4)
-		vector.StrokeLine(screen, float32(chartX), float32(yy), float32(chartX+chartW), float32(yy), 1, color.RGBA{R: 34, G: 46, B: 58, A: 120}, false)
-	}
-	if len(metric.Series) < 2 {
-		return
-	}
-	prevX := chartX
-	prevY := chartY + chartH
-	for i, value := range metric.Series {
-		norm := 0.0
-		if maxY > minY {
-			norm = (value - minY) / (maxY - minY)
-		}
-		if norm < 0 {
-			norm = 0
-		}
-		if norm > 1 {
-			norm = 1
-		}
-		px := chartX + (float64(i)/float64(len(metric.Series)-1))*chartW
-		py := chartY + chartH - norm*chartH
-		if i > 0 {
-			vector.StrokeLine(screen, float32(prevX), float32(prevY), float32(px), float32(py), 2, color.RGBA{R: 108, G: 184, B: 255, A: 255}, false)
-		}
-		prevX = px
-		prevY = py
 	}
 }
 
@@ -388,7 +311,11 @@ func (statsGraphElement) Measure(_ *ui.Context, constraints ui.Constraints) ui.S
 }
 
 func (e statsGraphElement) Draw(ctx *ui.Context, bounds ui.Rect) {
-	e.app.drawStatsGraph(ctx.Screen, bounds.X, bounds.Y, bounds.W, bounds.H, e.metric)
+	ui.MetricGraph{
+		Title:  e.metric.Title,
+		Value:  formatGraphValue(e.metric.Value, e.metric.Unit),
+		Series: e.metric.Series,
+	}.Draw(ctx, bounds)
 }
 
 type pasteOverlayElement struct {

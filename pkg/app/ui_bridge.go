@@ -10,10 +10,10 @@ func (a *App) newUIContext(screen *ebiten.Image, register func(chromeButton)) *u
 	return &ui.Context{
 		Screen:          screen,
 		Theme:           ui.DefaultTheme(),
-		MeasureText:     measureText,
-		MeasureWrapped:  wrappedTextHeight,
-		DrawText:        drawText,
-		DrawWrappedText: drawWrappedText,
+		MeasureText:     ui.MeasureText,
+		MeasureWrapped:  ui.WrappedTextHeight,
+		DrawText:        ui.DrawText,
+		DrawWrappedText: ui.DrawWrappedText,
 		RegisterHitTarget: func(hit ui.HitTarget) {
 			register(chromeButton{
 				id:      hit.ID,

@@ -149,7 +149,7 @@ func (a *App) drawPasswordPrompt(screen *ebiten.Image) {
 	panelW := min(float64(bounds.Dx())-96, 620)
 	errorHeight := 0.0
 	if a.launcherError != "" {
-		errorHeight = wrappedTextHeight(a.launcherError, panelW-48, 12) + 18
+		errorHeight = ui.WrappedTextHeight(a.launcherError, panelW-48, 12) + 18
 	}
 	panelH := 230.0 + errorHeight
 	panelX := (float64(bounds.Dx()) - panelW) / 2

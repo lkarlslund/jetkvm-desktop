@@ -1,4 +1,4 @@
-package app
+package ui
 
 import (
 	"bytes"
@@ -15,68 +15,68 @@ import (
 var ibmPlexSansTTF []byte
 
 var (
-	uiFontOnce   sync.Once
-	uiFontSource *ebitentext.GoTextFaceSource
-	uiFontErr    error
+	fontOnce   sync.Once
+	fontSource *ebitentext.GoTextFaceSource
+	fontErr    error
 )
 
-func uiFace(size float64) *ebitentext.GoTextFace {
-	uiFontOnce.Do(func() {
-		uiFontSource, uiFontErr = ebitentext.NewGoTextFaceSource(bytes.NewReader(ibmPlexSansTTF))
+func face(size float64) *ebitentext.GoTextFace {
+	fontOnce.Do(func() {
+		fontSource, fontErr = ebitentext.NewGoTextFaceSource(bytes.NewReader(ibmPlexSansTTF))
 	})
-	if uiFontErr != nil || uiFontSource == nil {
+	if fontErr != nil || fontSource == nil {
 		return nil
 	}
 	return &ebitentext.GoTextFace{
-		Source: uiFontSource,
+		Source: fontSource,
 		Size:   size,
 	}
 }
 
-func drawText(dst *ebiten.Image, value string, x, y, size float64, clr color.Color) {
-	face := uiFace(size)
-	if face == nil || value == "" {
+func DrawText(dst *ebiten.Image, value string, x, y, size float64, clr color.Color) {
+	fontFace := face(size)
+	if fontFace == nil || value == "" {
 		return
 	}
 	op := &ebitentext.DrawOptions{}
 	op.GeoM.Translate(x, y)
 	op.ColorScale.ScaleWithColor(clr)
-	ebitentext.Draw(dst, value, face, op)
+	ebitentext.Draw(dst, value, fontFace, op)
 }
 
-func measureText(value string, size float64) (float64, float64) {
-	face := uiFace(size)
-	if face == nil || value == "" {
+func MeasureText(value string, size float64) (float64, float64) {
+	fontFace := face(size)
+	if fontFace == nil || value == "" {
 		return 0, 0
 	}
-	return ebitentext.Measure(value, face, 0)
+	return ebitentext.Measure(value, fontFace, 0)
 }
 
-func drawWrappedText(dst *ebiten.Image, value string, x, y, width, size float64, clr color.Color) float64 {
-	lines := wrapText(value, width, size)
+func DrawWrappedText(dst *ebiten.Image, value string, x, y, width, size float64, clr color.Color) float64 {
+	lines := WrapText(value, width, size)
 	if len(lines) == 0 {
 		return 0
 	}
-	lineHeight := wrappedLineHeight(size)
+	lineHeight := WrappedLineHeight(size)
 	for i, line := range lines {
-		drawText(dst, line, x, y+(float64(i)*lineHeight), size, clr)
+		DrawText(dst, line, x, y+(float64(i)*lineHeight), size, clr)
 	}
 	return float64(len(lines)) * lineHeight
 }
 
-func wrappedTextHeight(value string, width, size float64) float64 {
-	lines := wrapText(value, width, size)
+func WrappedTextHeight(value string, width, size float64) float64 {
+	lines := WrapText(value, width, size)
 	if len(lines) == 0 {
 		return 0
 	}
-	return float64(len(lines)) * wrappedLineHeight(size)
+	return float64(len(lines)) * WrappedLineHeight(size)
 }
 
-func wrappedLineHeight(size float64) float64 {
+func WrappedLineHeight(size float64) float64 {
 	return size + 5
 }
 
-func wrapText(value string, width, size float64) []string {
+func WrapText(value string, width, size float64) []string {
 	if value == "" {
 		return nil
 	}
@@ -98,7 +98,7 @@ func wrapText(value string, width, size float64) []string {
 		current := ""
 		for _, word := range words {
 			if current == "" {
-				if textFits(word, width, size) {
+				if TextFits(word, width, size) {
 					current = word
 					continue
 				}
@@ -108,12 +108,12 @@ func wrapText(value string, width, size float64) []string {
 				continue
 			}
 			candidate := current + " " + word
-			if textFits(candidate, width, size) {
+			if TextFits(candidate, width, size) {
 				current = candidate
 				continue
 			}
 			lines = append(lines, current)
-			if textFits(word, width, size) {
+			if TextFits(word, width, size) {
 				current = word
 				continue
 			}
@@ -128,8 +128,8 @@ func wrapText(value string, width, size float64) []string {
 	return lines
 }
 
-func textFits(value string, width, size float64) bool {
-	w, _ := measureText(value, size)
+func TextFits(value string, width, size float64) bool {
+	w, _ := MeasureText(value, size)
 	return w <= width
 }
 
@@ -142,7 +142,7 @@ func breakWord(word string, width, size float64) []string {
 	current := ""
 	for _, r := range runes {
 		candidate := current + string(r)
-		if current == "" || textFits(candidate, width, size) {
+		if current == "" || TextFits(candidate, width, size) {
 			current = candidate
 			continue
 		}

@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/hajimehoshi/ebiten/v2"
-	"github.com/hajimehoshi/ebiten/v2/vector"
 
 	"github.com/lkarlslund/jetkvm-desktop/pkg/input"
 	"github.com/lkarlslund/jetkvm-desktop/pkg/session"
@@ -116,6 +115,33 @@ type settingsActionVisual struct {
 	Enabled bool
 	Active  bool
 	Pending bool
+}
+
+func uiIcon(kind iconKind) ui.IconKind {
+	switch kind {
+	case iconReconnect:
+		return ui.IconReconnect
+	case iconMouse:
+		return ui.IconMouse
+	case iconPaste:
+		return ui.IconPaste
+	case iconMedia:
+		return ui.IconMedia
+	case iconStats:
+		return ui.IconStats
+	case iconMinus:
+		return ui.IconMinus
+	case iconPlus:
+		return ui.IconPlus
+	case iconPower:
+		return ui.IconPower
+	case iconSettings:
+		return ui.IconSettings
+	case iconFullscreen:
+		return ui.IconFullscreen
+	default:
+		return ui.IconClose
+	}
 }
 
 func settingsSections(snap session.Snapshot) []settingsSectionDef {
@@ -369,100 +395,6 @@ func chromeAnchorOrigin(anchor ChromeAnchor, width, height, clusterW, clusterH f
 	}
 }
 
-func drawChromeButton(screen *ebiten.Image, btn chromeButton, alpha float64) {
-	fill := rgba(20, 30, 42, 220, alpha)
-	stroke := rgba(130, 146, 162, 160, alpha)
-	icon := rgba(236, 241, 245, 255, alpha)
-	if btn.active {
-		fill = rgba(28, 66, 116, 232, alpha)
-		stroke = rgba(148, 198, 255, 210, alpha)
-	}
-	if !btn.enabled {
-		fill = rgba(20, 24, 32, 160, alpha)
-		stroke = rgba(86, 96, 108, 100, alpha)
-		icon = rgba(126, 136, 146, 180, alpha)
-	}
-	vector.FillRect(screen, float32(btn.rect.x), float32(btn.rect.y), float32(btn.rect.w), float32(btn.rect.h), fill, false)
-	vector.StrokeRect(screen, float32(btn.rect.x), float32(btn.rect.y), float32(btn.rect.w), float32(btn.rect.h), 1, stroke, false)
-	drawIcon(screen, btn.icon, btn.rect, icon, alpha, btn.active)
-}
-
-func drawIcon(screen *ebiten.Image, kind iconKind, r rect, clr color.Color, alpha float64, active bool) {
-	cx := float32(r.x + r.w/2)
-	cy := float32(r.y + r.h/2)
-	left := float32(r.x + 9)
-	right := float32(r.x + r.w - 9)
-	top := float32(r.y + 9)
-	bottom := float32(r.y + r.h - 9)
-	mid := float32(r.y + r.h/2)
-	switch kind {
-	case iconReconnect:
-		vector.StrokeLine(screen, left+3, top+1, right-2, top+1, 1.5, clr, true)
-		vector.StrokeLine(screen, right-2, top+1, right-2, bottom-4, 1.5, clr, true)
-		vector.StrokeLine(screen, right-2, bottom-4, left+5, bottom-4, 1.5, clr, true)
-		vector.StrokeLine(screen, left+5, bottom-4, left+5, mid+1, 1.5, clr, true)
-		vector.StrokeLine(screen, left+5, mid+1, left+1, mid-3, 1.5, clr, true)
-		vector.StrokeLine(screen, left+5, mid+1, left+9, mid-3, 1.5, clr, true)
-	case iconMouse:
-		if active {
-			vector.StrokeLine(screen, cx, top, cx, bottom, 1.5, clr, true)
-			vector.StrokeLine(screen, left, cy, right, cy, 1.5, clr, true)
-			vector.StrokeLine(screen, cx, top, cx-3, top+3, 1.5, clr, true)
-			vector.StrokeLine(screen, cx, top, cx+3, top+3, 1.5, clr, true)
-			vector.StrokeLine(screen, cx, bottom, cx-3, bottom-3, 1.5, clr, true)
-			vector.StrokeLine(screen, cx, bottom, cx+3, bottom-3, 1.5, clr, true)
-		} else {
-			vector.StrokeLine(screen, left+2, top, left+2, bottom-1, 1.5, clr, true)
-			vector.StrokeLine(screen, left+2, top, right-1, cy, 1.5, clr, true)
-			vector.StrokeLine(screen, left+2, top, cx+1, bottom-2, 1.5, clr, true)
-		}
-	case iconPaste:
-		vector.StrokeRect(screen, left, top+2, right-left, bottom-top-2, 1.4, clr, false)
-		vector.StrokeLine(screen, left+3, top+6, right-3, top+6, 1.4, clr, true)
-		vector.StrokeLine(screen, cx, top+6, cx, top+1, 1.4, clr, true)
-	case iconMedia:
-		vector.StrokeRect(screen, left+1, top+2, right-left-2, bottom-top-5, 1.4, clr, false)
-		vector.StrokeLine(screen, left+5, top+2, left+8, top-1, 1.4, clr, true)
-		vector.StrokeLine(screen, right-5, top+2, right-8, top-1, 1.4, clr, true)
-		vector.StrokeLine(screen, left+4, cy, right-4, cy, 1.4, clr, true)
-	case iconStats:
-		vector.StrokeLine(screen, left+2, bottom, left+2, mid+4, 2, clr, true)
-		vector.StrokeLine(screen, cx, bottom, cx, top+5, 2, clr, true)
-		vector.StrokeLine(screen, right-2, bottom, right-2, mid-1, 2, clr, true)
-	case iconMinus:
-		vector.StrokeLine(screen, left, cy, right, cy, 2, clr, true)
-	case iconPlus:
-		vector.StrokeLine(screen, left, cy, right, cy, 2, clr, true)
-		vector.StrokeLine(screen, cx, top, cx, bottom, 2, clr, true)
-	case iconPower:
-		vector.StrokeLine(screen, cx, top-1, cx, cy-2, 2, clr, true)
-		vector.StrokeLine(screen, left+3, top+4, left, mid, 1.5, clr, true)
-		vector.StrokeLine(screen, left, mid, left+4, bottom-1, 1.5, clr, true)
-		vector.StrokeLine(screen, left+4, bottom-1, right-4, bottom-1, 1.5, clr, true)
-		vector.StrokeLine(screen, right-4, bottom-1, right, mid, 1.5, clr, true)
-		vector.StrokeLine(screen, right, mid, right-3, top+4, 1.5, clr, true)
-	case iconSettings:
-		vector.StrokeLine(screen, left, top+2, right, top+2, 1.5, clr, true)
-		vector.StrokeLine(screen, left, cy, right, cy, 1.5, clr, true)
-		vector.StrokeLine(screen, left, bottom-2, right, bottom-2, 1.5, clr, true)
-		vector.FillCircle(screen, cx-4, top+2, 2.5, clr, true)
-		vector.FillCircle(screen, cx+5, cy, 2.5, clr, true)
-		vector.FillCircle(screen, cx-1, bottom-2, 2.5, clr, true)
-	case iconFullscreen:
-		vector.StrokeLine(screen, left, top+4, left, top, 1.6, clr, true)
-		vector.StrokeLine(screen, left, top, left+4, top, 1.6, clr, true)
-		vector.StrokeLine(screen, right, top+4, right, top, 1.6, clr, true)
-		vector.StrokeLine(screen, right-4, top, right, top, 1.6, clr, true)
-		vector.StrokeLine(screen, left, bottom-4, left, bottom, 1.6, clr, true)
-		vector.StrokeLine(screen, left, bottom, left+4, bottom, 1.6, clr, true)
-		vector.StrokeLine(screen, right, bottom-4, right, bottom, 1.6, clr, true)
-		vector.StrokeLine(screen, right-4, bottom, right, bottom, 1.6, clr, true)
-	case iconClose:
-		vector.StrokeLine(screen, left, top, right, bottom, 1.8, clr, true)
-		vector.StrokeLine(screen, right, top, left, bottom, 1.8, clr, true)
-	}
-}
-
 func (a *App) drawTopBar(screen *ebiten.Image, snap session.Snapshot) {
 	alpha := a.uiAlpha()
 	if alpha <= 0 {
@@ -470,8 +402,10 @@ func (a *App) drawTopBar(screen *ebiten.Image, snap session.Snapshot) {
 	}
 	buttons := a.layoutChromeButtons(screen.Bounds().Dx(), screen.Bounds().Dy(), snap)
 	a.chromeButtons = buttons
+	ctx := a.newUIContext(screen, func(chromeButton) {})
 	for _, btn := range buttons {
-		drawChromeButton(screen, btn, alpha)
+		ui.IconButton{Kind: uiIcon(btn.icon), Active: btn.active, Enabled: btn.enabled, Alpha: alpha}.
+			Draw(ctx, ui.Rect{X: btn.rect.x, Y: btn.rect.y, W: btn.rect.w, H: btn.rect.h})
 	}
 }
 
@@ -483,16 +417,15 @@ func (a *App) drawHint(screen *ebiten.Image) {
 	x, y := ebiten.CursorPosition()
 	for _, btn := range a.chromeButtons {
 		if btn.rect.contains(x, y) {
-			w, _ := measureText(btn.hint, 13)
+			w, _ := ui.MeasureText(btn.hint, 13)
 			bx := btn.rect.x + (btn.rect.w-w)/2 - 10
 			if bx < 12 {
 				bx = 12
 			}
 			bw := w + 20
 			by := btn.rect.y + btn.rect.h + 8
-			vector.FillRect(screen, float32(bx), float32(by), float32(bw), 28, rgba(8, 12, 18, 220, alpha), false)
-			vector.StrokeRect(screen, float32(bx), float32(by), float32(bw), 28, 1, rgba(112, 128, 148, 120, alpha), false)
-			drawText(screen, btn.hint, bx+10, by+8, 13, rgba(236, 241, 245, 255, alpha))
+			ctx := a.newUIContext(screen, func(chromeButton) {})
+			ui.Tooltip{Text: btn.hint, Alpha: alpha}.Draw(ctx, ui.Rect{X: bx, Y: by, W: bw, H: 28})
 			return
 		}
 	}
@@ -506,11 +439,11 @@ func (a *App) drawStatusFooter(screen *ebiten.Image, snap session.Snapshot) {
 	left := fmt.Sprintf("RTC %s  HID %s  Video %s", rtcLabel(snap.RTCState), readyWord(snap.HIDReady), readyWord(snap.VideoReady))
 	clr := rgba(164, 176, 188, 255, max(alpha, 0.75))
 	y := float64(screen.Bounds().Dy() - 24)
-	drawText(screen, left, 14, y, 12, clr)
+	ui.DrawText(screen, left, 14, y, 12, clr)
 	if snap.LastError != "" && snap.Phase != session.PhaseConnected {
 		msg := trimForFooter(snap.LastError)
-		w, _ := measureText(msg, 12)
-		drawText(screen, msg, float64(screen.Bounds().Dx())-w-14, y, 12, rgba(228, 142, 142, 255, max(alpha, 0.75)))
+		w, _ := ui.MeasureText(msg, 12)
+		ui.DrawText(screen, msg, float64(screen.Bounds().Dx())-w-14, y, 12, rgba(228, 142, 142, 255, max(alpha, 0.75)))
 	}
 }
 
@@ -575,7 +508,7 @@ func (a *App) drawSettingsOverlay(screen *ebiten.Image, snap session.Snapshot) {
 	contentX := panelX + sidebarW + 18
 	contentY := panelY + 18
 	contentW = panelW - sidebarW - 32
-	contentDescH := wrappedTextHeight(section.description, contentW-48, 12)
+	contentDescH := ui.WrappedTextHeight(section.description, contentW-48, 12)
 	contentHeaderH := 28 + contentDescH + 18
 	settingsHeaderElement{
 		title:       section.label,
@@ -683,7 +616,7 @@ func (e settingsHeaderElement) Draw(ctx *ui.Context, bounds ui.Rect) {
 }
 
 func (a *App) settingsPanelHeight(section settingsSectionDef, contentW float64) float64 {
-	headerH := 18 + 28 + wrappedTextHeight(section.description, contentW-48, 12) + 18 + 18
+	headerH := 18 + 28 + ui.WrappedTextHeight(section.description, contentW-48, 12) + 18 + 18
 	bodyH := a.settingsSectionBodyHeight(section.id, contentW)
 	return headerH + bodyH + 18
 }
@@ -708,13 +641,13 @@ func (a *App) settingsWideBodyHeight(section settingsSection, w float64) float64
 	case sectionGeneral:
 		leftW := (w - 14) * 0.58
 		rightW := w - leftW - 14
-		descH := wrappedTextHeight("Reconnect the native session, manage auto-updates, or force a device reboot.", rightW-32, 12)
+		descH := ui.WrappedTextHeight("Reconnect the native session, manage auto-updates, or force a device reboot.", rightW-32, 12)
 		rightH := 48 + descH + 20 + 30 + 8 + 30 + 8 + 30 + 18
 		return max(214, rightH)
 	case sectionMouse:
 		leftW := (w - 14) * 0.54
 		rightW := w - leftW - 14
-		descH := wrappedTextHeight("Throttle local wheel bursts before sending them to the device.", leftW-32, 12)
+		descH := ui.WrappedTextHeight("Throttle local wheel bursts before sending them to the device.", leftW-32, 12)
 		leftH := 48 + descH + 20 + 30 + 8 + 30 + 18 + 68
 		rightH := 244.0
 		if a.jigglerEditorOpen {
@@ -728,7 +661,7 @@ func (a *App) settingsWideBodyHeight(section settingsSection, w float64) float64
 			if a.jigglerEditorOpen {
 				base = 520
 			}
-			rightH = max(rightH, base+wrappedTextHeight(state.Error, rightW-32, 12)+24)
+			rightH = max(rightH, base+ui.WrappedTextHeight(state.Error, rightW-32, 12)+24)
 		}
 		return max(leftH, rightH)
 	case sectionVideo:
@@ -737,7 +670,7 @@ func (a *App) settingsWideBodyHeight(section settingsSection, w float64) float64
 		qualityState := a.settingsAction(settingsGroupVideoQuality)
 		leftH := 174.0
 		if qualityState.Pending || qualityState.Error != "" {
-			leftH += wrappedTextHeight(fallbackLabel(qualityState.Error, "Applying…"), leftW-32, 12)
+			leftH += ui.WrappedTextHeight(fallbackLabel(qualityState.Error, "Applying…"), leftW-32, 12)
 		}
 		a.mu.RLock()
 		edid := a.ctrl.Snapshot().EDID
@@ -745,7 +678,7 @@ func (a *App) settingsWideBodyHeight(section settingsSection, w float64) float64
 		if edid == "" {
 			edid = "Unavailable on current target"
 		}
-		rightH := 48 + wrappedTextHeight(edid, rightW-32, 12) + 24
+		rightH := 48 + ui.WrappedTextHeight(edid, rightW-32, 12) + 24
 		return max(leftH, max(174, rightH))
 	case sectionHardware:
 		a.mu.RLock()
@@ -753,10 +686,10 @@ func (a *App) settingsWideBodyHeight(section settingsSection, w float64) float64
 		a.mu.RUnlock()
 		leftW := (w - 14) * 0.48
 		rightW := w - leftW - 14
-		leftH := max(220, 82+wrappedTextHeight("Rotate the displayed feed to match the connected panel orientation.", leftW-32, 12)+68)
-		rightH := max(336, 126+wrappedTextHeight(usbDevicesSummary(state.State.USBDevices), rightW-32, 12)+184)
+		leftH := max(220, 82+ui.WrappedTextHeight("Rotate the displayed feed to match the connected panel orientation.", leftW-32, 12)+68)
+		rightH := max(336, 126+ui.WrappedTextHeight(usbDevicesSummary(state.State.USBDevices), rightW-32, 12)+184)
 		if state.Error != "" {
-			errH := wrappedTextHeight(state.Error, w-32, 12) + 24
+			errH := ui.WrappedTextHeight(state.Error, w-32, 12) + 24
 			return max(leftH, max(rightH, 312+errH))
 		}
 		return max(leftH, rightH)
@@ -766,10 +699,10 @@ func (a *App) settingsWideBodyHeight(section settingsSection, w float64) float64
 		a.mu.RUnlock()
 		leftW := (w - 14) * 0.5
 		rightW := w - leftW - 14
-		leftH := max(220, 156+wrappedTextHeight(fallbackLabel(state.State.Cloud.AppURL, "Unavailable"), leftW-32, 12)+24)
-		rightH := max(220, 84+wrappedTextHeight("Use the target's currently exposed TLS mode. Native client transport follows whatever the device publishes.", rightW-32, 12)+66)
+		leftH := max(220, 156+ui.WrappedTextHeight(fallbackLabel(state.State.Cloud.AppURL, "Unavailable"), leftW-32, 12)+24)
+		rightH := max(220, 84+ui.WrappedTextHeight("Use the target's currently exposed TLS mode. Native client transport follows whatever the device publishes.", rightW-32, 12)+66)
 		if state.Error != "" {
-			errH := wrappedTextHeight(state.Error, w-32, 12) + 24
+			errH := ui.WrappedTextHeight(state.Error, w-32, 12) + 24
 			return max(leftH, max(rightH, 192+errH))
 		}
 		return max(leftH, rightH)
@@ -780,7 +713,7 @@ func (a *App) settingsWideBodyHeight(section settingsSection, w float64) float64
 		if state.Error == "" {
 			return 152
 		}
-		return max(152, 124+wrappedTextHeight(state.Error, w-32, 12)+24)
+		return max(152, 124+ui.WrappedTextHeight(state.Error, w-32, 12)+24)
 	case sectionAdvanced:
 		a.mu.RLock()
 		state := a.sectionData.Advanced
@@ -788,9 +721,9 @@ func (a *App) settingsWideBodyHeight(section settingsSection, w float64) float64
 		if state.Error == "" {
 			return 220
 		}
-		return max(220, 194+wrappedTextHeight(state.Error, w-32, 12)+24)
+		return max(220, 194+ui.WrappedTextHeight(state.Error, w-32, 12)+24)
 	case sectionAppearance:
-		return max(330, 280+wrappedTextHeight("Position chooses where the chrome sits on screen. Layout changes whether the control buttons run across or down.", w-32, 12)+24)
+		return max(330, 280+ui.WrappedTextHeight("Position chooses where the chrome sits on screen. Layout changes whether the control buttons run across or down.", w-32, 12)+24)
 	default:
 		return 220
 	}
@@ -805,11 +738,11 @@ func (a *App) settingsPlannedBodyHeight(section settingsSection, w float64) floa
 			break
 		}
 	}
-	bodyH := 46 + wrappedTextHeight(current.description, w-32, 12) + 24 + 24
+	bodyH := 46 + ui.WrappedTextHeight(current.description, w-32, 12) + 24 + 24
 	for _, item := range current.items {
-		bodyH += wrappedTextHeight("• "+item, w-40, 12) + 10
+		bodyH += ui.WrappedTextHeight("• "+item, w-40, 12) + 10
 	}
-	bodyH += wrappedTextHeight("This section exists in the upstream product structure but is not currently exposed by this target or the desktop client.", w-32, 12) + 32
+	bodyH += ui.WrappedTextHeight("This section exists in the upstream product structure but is not currently exposed by this target or the desktop client.", w-32, 12) + 32
 	return max(220, bodyH)
 }
 
@@ -1089,9 +1022,9 @@ func (a *App) drawSettingsActionStatus(screen *ebiten.Image, group settingsActio
 	state := a.settingsAction(group)
 	switch {
 	case state.Pending:
-		drawWrappedText(screen, "Applying…", x, y, w, 12, color.RGBA{R: 245, G: 200, B: 96, A: 255})
+		ui.DrawWrappedText(screen, "Applying…", x, y, w, 12, color.RGBA{R: 245, G: 200, B: 96, A: 255})
 	case state.Error != "":
-		drawWrappedText(screen, state.Error, x, y, w, 12, color.RGBA{R: 220, G: 132, B: 132, A: 255})
+		ui.DrawWrappedText(screen, state.Error, x, y, w, 12, color.RGBA{R: 220, G: 132, B: 132, A: 255})
 	}
 }
 
@@ -1128,13 +1061,13 @@ func (a *App) drawSettingsGeneral(screen *ebiten.Image, snap session.Snapshot, x
 	}
 	drawSettingsKeyValue(screen, "Updates", updateLabel, x+16, y+184, 116)
 	a.drawSettingsCard(screen, rightX, y, rightW, cardH, "Actions", "")
-	drawWrappedText(screen, "Reconnect the native session, manage auto-updates, or force a device reboot.", rightX+16, y+48, rightW-32, 12, color.RGBA{R: 166, G: 178, B: 190, A: 255})
+	ui.DrawWrappedText(screen, "Reconnect the native session, manage auto-updates, or force a device reboot.", rightX+16, y+48, rightW-32, 12, color.RGBA{R: 166, G: 178, B: 190, A: 255})
 	a.drawSettingsAction(screen, "reconnect", reconnectLabel(snap.Phase), rightX+16, y+98, rightW-32, settingsActionVisual{Enabled: true})
 	a.drawSettingsAction(screen, "reboot", "Reboot device", rightX+16, y+136, rightW-32, settingsActionVisual{Enabled: snap.Phase != session.PhaseConnecting})
 	autoUpdate := a.settingsAction(settingsGroupAutoUpdate)
 	drawSettingsSectionLabel(screen, "Auto updates", rightX+16, y+184)
 	if state.Loading {
-		drawText(screen, "Loading…", rightX+120, y+184, 12, color.RGBA{R: 166, G: 178, B: 190, A: 255})
+		ui.DrawText(screen, "Loading…", rightX+120, y+184, 12, color.RGBA{R: 166, G: 178, B: 190, A: 255})
 	} else {
 		drawSettingsKeyValue(screen, "State", boolPtrWord(state.AutoUpdate), rightX+16, y+206, 56)
 		a.drawSettingsAction(screen, "auto_update_on", "Enabled", rightX+16, y+228, 92, settingsActionVisual{Enabled: state.AutoUpdate != nil && (!autoUpdate.Pending || autoUpdate.PendingChoice == "on"), Active: state.AutoUpdate != nil && *state.AutoUpdate, Pending: autoUpdate.Pending && autoUpdate.PendingChoice == "on"})
@@ -1142,7 +1075,7 @@ func (a *App) drawSettingsGeneral(screen *ebiten.Image, snap session.Snapshot, x
 		a.drawSettingsActionStatus(screen, settingsGroupAutoUpdate, rightX+16, y+266, rightW-32)
 	}
 	if state.Error != "" {
-		drawWrappedText(screen, state.Error, rightX+16, y+266, rightW-32, 12, color.RGBA{R: 220, G: 132, B: 132, A: 255})
+		ui.DrawWrappedText(screen, state.Error, rightX+16, y+266, rightW-32, 12, color.RGBA{R: 220, G: 132, B: 132, A: 255})
 	}
 }
 
@@ -1161,7 +1094,7 @@ func (a *App) drawSettingsMouse(screen *ebiten.Image, snap session.Snapshot, x, 
 	drawSettingsSectionLabel(screen, "Local cursor", x+16, y+114)
 	a.drawSettingsAction(screen, "mouse_hide_cursor", "Hide Host Cursor", x+16, y+132, 154, settingsActionVisual{Enabled: true, Active: a.hideCursor})
 	drawSettingsSectionLabel(screen, "Wheel", x+16, y+180)
-	drawWrappedText(screen, "Throttle local wheel bursts before sending them to the device.", x+16, y+198, leftW-32, 12, color.RGBA{R: 166, G: 178, B: 190, A: 255})
+	ui.DrawWrappedText(screen, "Throttle local wheel bursts before sending them to the device.", x+16, y+198, leftW-32, 12, color.RGBA{R: 166, G: 178, B: 190, A: 255})
 	a.drawSettingsAction(screen, "scroll_0", "Off", x+16, y+248, 64, settingsActionVisual{Enabled: true, Active: a.scrollThrottle == 0})
 	a.drawSettingsAction(screen, "scroll_10", "Low", x+92, y+248, 64, settingsActionVisual{Enabled: true, Active: a.scrollThrottle == 10*time.Millisecond})
 	a.drawSettingsAction(screen, "scroll_25", "Medium", x+168, y+248, 84, settingsActionVisual{Enabled: true, Active: a.scrollThrottle == 25*time.Millisecond})
@@ -1170,11 +1103,11 @@ func (a *App) drawSettingsMouse(screen *ebiten.Image, snap session.Snapshot, x, 
 	a.drawSettingsAction(screen, "scroll_invert", "Invert Scroll", x+16, y+286, 128, settingsActionVisual{Enabled: true, Active: a.invertScroll})
 	a.drawSettingsCard(screen, rightX, y, rightW, cardH, "Jiggler", "")
 	if state.Loading {
-		drawText(screen, "Loading jiggler state…", rightX+16, y+48, 13, color.RGBA{R: 236, G: 241, B: 245, A: 255})
+		ui.DrawText(screen, "Loading jiggler state…", rightX+16, y+48, 13, color.RGBA{R: 236, G: 241, B: 245, A: 255})
 	} else {
 		drawSettingsKeyValue(screen, "State", boolPtrWord(state.JigglerEnabled), rightX+16, y+48, 70)
 		drawSettingsKeyValue(screen, "Preset", jigglerPresetLabel(state.JigglerEnabled, state.JigglerConfig), rightX+16, y+74, 70)
-		drawWrappedText(screen, "Use native presets or open a compact custom editor for the device jiggler schedule.", rightX+16, y+106, rightW-32, 12, color.RGBA{R: 166, G: 178, B: 190, A: 255})
+		ui.DrawWrappedText(screen, "Use native presets or open a compact custom editor for the device jiggler schedule.", rightX+16, y+106, rightW-32, 12, color.RGBA{R: 166, G: 178, B: 190, A: 255})
 		jiggler := a.settingsAction(settingsGroupJiggler)
 		a.drawSettingsAction(screen, "jiggler_disabled", "Disabled", rightX+16, y+156, 88, settingsActionVisual{Enabled: state.JigglerEnabled != nil && (!jiggler.Pending || jiggler.PendingChoice == "disabled"), Active: state.JigglerEnabled != nil && !*state.JigglerEnabled, Pending: jiggler.Pending && jiggler.PendingChoice == "disabled"})
 		a.drawSettingsAction(screen, "jiggler_frequent", "Frequent", rightX+116, y+156, 88, settingsActionVisual{Enabled: !jiggler.Pending || jiggler.PendingChoice == "frequent", Active: jigglerPresetLabel(state.JigglerEnabled, state.JigglerConfig) == "Frequent", Pending: jiggler.Pending && jiggler.PendingChoice == "frequent"})
@@ -1197,7 +1130,7 @@ func (a *App) drawSettingsMouse(screen *ebiten.Image, snap session.Snapshot, x, 
 			a.drawSettingsAction(screen, "jiggler_custom_cancel", "Cancel", rightX+144, y+434, 86, settingsActionVisual{Enabled: !jiggler.Pending})
 			a.drawSettingsActionStatus(screen, settingsGroupJiggler, rightX+16, y+474, rightW-32)
 			if a.jigglerEditorError != "" {
-				drawWrappedText(screen, a.jigglerEditorError, rightX+16, y+496, rightW-32, 12, color.RGBA{R: 220, G: 132, B: 132, A: 255})
+				ui.DrawWrappedText(screen, a.jigglerEditorError, rightX+16, y+496, rightW-32, 12, color.RGBA{R: 220, G: 132, B: 132, A: 255})
 			}
 		} else {
 			a.drawSettingsActionStatus(screen, settingsGroupJiggler, rightX+16, y+232, rightW-32)
@@ -1208,7 +1141,7 @@ func (a *App) drawSettingsMouse(screen *ebiten.Image, snap session.Snapshot, x, 
 		if a.jigglerEditorOpen {
 			errY = y + 520
 		}
-		drawWrappedText(screen, state.Error, rightX+16, errY, rightW-32, 12, color.RGBA{R: 220, G: 132, B: 132, A: 255})
+		ui.DrawWrappedText(screen, state.Error, rightX+16, errY, rightW-32, 12, color.RGBA{R: 220, G: 132, B: 132, A: 255})
 	}
 }
 
@@ -1216,17 +1149,17 @@ func (a *App) drawSettingsKeyboard(screen *ebiten.Image, snap session.Snapshot, 
 	cardDesc := "This layout affects paste and keyboard macros. Live typing is sent as physical HID keys."
 	cardH := a.settingsKeyboardBodyHeight(w)
 	a.drawSettingsCard(screen, x, y, w, cardH, "", cardDesc)
-	descH := wrappedTextHeight(cardDesc, w-32, 12)
+	descH := ui.WrappedTextHeight(cardDesc, w-32, 12)
 	bodyY := y + 18 + descH + 22
-	drawText(screen, "Active layout", x+16, bodyY, 13, color.RGBA{R: 166, G: 178, B: 190, A: 255})
+	ui.DrawText(screen, "Active layout", x+16, bodyY, 13, color.RGBA{R: 166, G: 178, B: 190, A: 255})
 	layout := snap.KeyboardLayout
 	if layout == "" {
 		layout = "en-US"
 	}
 	layoutState := a.settingsAction(settingsGroupKeyboardLayout)
-	drawText(screen, keyboardLayoutLabel(layout), x+118, bodyY, 13, color.RGBA{R: 236, G: 241, B: 245, A: 255})
+	ui.DrawText(screen, keyboardLayoutLabel(layout), x+118, bodyY, 13, color.RGBA{R: 236, G: 241, B: 245, A: 255})
 	a.drawSettingsAction(screen, "toggle_pressed_keys", "Show Pressed Keys", x+w-174, bodyY-14, 158, settingsActionVisual{Enabled: true, Active: a.showPressedKeys})
-	drawText(screen, "Layout presets", x+16, bodyY+40, 13, color.RGBA{R: 166, G: 178, B: 190, A: 255})
+	ui.DrawText(screen, "Layout presets", x+16, bodyY+40, 13, color.RGBA{R: 166, G: 178, B: 190, A: 255})
 	options := input.SupportedKeyboardLayouts()
 	rowX := x + 16
 	rowY := bodyY + 64
@@ -1250,15 +1183,15 @@ func (a *App) drawSettingsKeyboard(screen *ebiten.Image, snap session.Snapshot, 
 	a.drawSettingsActionStatus(screen, settingsGroupKeyboardLayout, x+16, statusY, w-32)
 	noteY := statusY
 	if layoutState.Pending || layoutState.Error != "" {
-		noteY += wrappedTextHeight(fallbackLabel(layoutState.Error, "Applying…"), w-32, 12) + 8
+		noteY += ui.WrappedTextHeight(fallbackLabel(layoutState.Error, "Applying…"), w-32, 12) + 8
 	}
-	drawWrappedText(screen, "Make this match the remote OS only for pasted text and macros.", x+16, noteY, w-32, 13, color.RGBA{R: 166, G: 178, B: 190, A: 255})
+	ui.DrawWrappedText(screen, "Make this match the remote OS only for pasted text and macros.", x+16, noteY, w-32, 13, color.RGBA{R: 166, G: 178, B: 190, A: 255})
 }
 
 func (a *App) settingsKeyboardBodyHeight(w float64) float64 {
 	cardDesc := "This layout affects paste and keyboard macros. Live typing is sent as physical HID keys."
-	descH := wrappedTextHeight(cardDesc, w-32, 12)
-	noteH := wrappedTextHeight("Make this match the remote OS only for pasted text and macros.", w-32, 13)
+	descH := ui.WrappedTextHeight(cardDesc, w-32, 12)
+	noteH := ui.WrappedTextHeight("Make this match the remote OS only for pasted text and macros.", w-32, 13)
 	rows := (len(input.SupportedKeyboardLayouts()) + 3) / 4
 	return 18 + descH + 22 + 18 + 40 + float64(rows)*38 + 18 + 16 + noteH + 16
 }
@@ -1274,14 +1207,14 @@ func (a *App) drawSettingsVideo(screen *ebiten.Image, snap session.Snapshot, x, 
 	a.drawSettingsAction(screen, "quality_preset_high", "High", x+16, y+68, 96, settingsActionVisual{Enabled: snap.Phase == session.PhaseConnected && (!qualityState.Pending || qualityState.PendingChoice == "high"), Active: snap.Quality >= 0.95, Pending: qualityState.Pending && qualityState.PendingChoice == "high"})
 	a.drawSettingsAction(screen, "quality_preset_medium", "Medium", x+124, y+68, 96, settingsActionVisual{Enabled: snap.Phase == session.PhaseConnected && (!qualityState.Pending || qualityState.PendingChoice == "medium"), Active: snap.Quality >= 0.45 && snap.Quality < 0.95, Pending: qualityState.Pending && qualityState.PendingChoice == "medium"})
 	a.drawSettingsAction(screen, "quality_preset_low", "Low", x+232, y+68, 96, settingsActionVisual{Enabled: snap.Phase == session.PhaseConnected && (!qualityState.Pending || qualityState.PendingChoice == "low"), Active: snap.Quality < 0.45, Pending: qualityState.Pending && qualityState.PendingChoice == "low"})
-	drawText(screen, fmt.Sprintf("Current factor %.2f", snap.Quality), x+16, y+120, 13, color.RGBA{R: 236, G: 241, B: 245, A: 255})
+	ui.DrawText(screen, fmt.Sprintf("Current factor %.2f", snap.Quality), x+16, y+120, 13, color.RGBA{R: 236, G: 241, B: 245, A: 255})
 	a.drawSettingsActionStatus(screen, settingsGroupVideoQuality, x+16, y+144, leftW-32)
 	a.drawSettingsCard(screen, rightX, y, rightW, cardH, "EDID", "")
 	edid := snap.EDID
 	if edid == "" {
 		edid = "Unavailable on current target"
 	}
-	drawWrappedText(screen, edid, rightX+16, y+48, rightW-32, 12, color.RGBA{R: 236, G: 241, B: 245, A: 255})
+	ui.DrawWrappedText(screen, edid, rightX+16, y+48, rightW-32, 12, color.RGBA{R: 236, G: 241, B: 245, A: 255})
 }
 
 func (a *App) drawSettingsHardware(screen *ebiten.Image, x, y, w float64) {
@@ -1295,11 +1228,11 @@ func (a *App) drawSettingsHardware(screen *ebiten.Image, x, y, w float64) {
 	a.drawSettingsCard(screen, x, y, leftW, cardH, "Display", "")
 	a.drawSettingsCard(screen, rightX, y, rightW, cardH, "USB", "")
 	if state.Loading {
-		drawText(screen, "Loading hardware state…", x+16, y+48, 13, color.RGBA{R: 236, G: 241, B: 245, A: 255})
+		ui.DrawText(screen, "Loading hardware state…", x+16, y+48, 13, color.RGBA{R: 236, G: 241, B: 245, A: 255})
 		return
 	}
 	drawSettingsKeyValue(screen, "Rotation", string(state.State.DisplayRotation), x+16, y+50, 86)
-	drawWrappedText(screen, "Rotate the JetKVM device display. This does not rotate the remote host video feed.", x+16, y+82, leftW-32, 12, color.RGBA{R: 166, G: 178, B: 190, A: 255})
+	ui.DrawWrappedText(screen, "Rotate the JetKVM device display. This does not rotate the remote host video feed.", x+16, y+82, leftW-32, 12, color.RGBA{R: 166, G: 178, B: 190, A: 255})
 	rotateState := a.settingsAction(settingsGroupDisplayRotate)
 	a.drawSettingsAction(screen, "rotate_normal", "Normal", x+16, y+150, 88, settingsActionVisual{Enabled: state.State.DisplayRotation != session.DisplayRotationUnknown && (!rotateState.Pending || rotateState.PendingChoice == "270"), Active: state.State.DisplayRotation == session.DisplayRotationNormal, Pending: rotateState.Pending && rotateState.PendingChoice == "270"})
 	a.drawSettingsAction(screen, "rotate_inverted", "Inverted", x+116, y+150, 98, settingsActionVisual{Enabled: state.State.DisplayRotation != session.DisplayRotationUnknown && (!rotateState.Pending || rotateState.PendingChoice == "90"), Active: state.State.DisplayRotation == session.DisplayRotationInverted, Pending: rotateState.Pending && rotateState.PendingChoice == "90"})
@@ -1307,7 +1240,7 @@ func (a *App) drawSettingsHardware(screen *ebiten.Image, x, y, w float64) {
 	drawSettingsKeyValue(screen, "USB Emulation", boolPtrWord(state.State.USBEmulation), rightX+16, y+50, 112)
 	drawSettingsKeyValue(screen, "USB Config", usbConfigLabel(state.State.USBConfig), rightX+16, y+76, 112)
 	drawSettingsSectionLabel(screen, "Configured devices", rightX+16, y+108)
-	drawWrappedText(screen, usbDevicesSummary(state.State.USBDevices), rightX+16, y+126, rightW-32, 12, color.RGBA{R: 236, G: 241, B: 245, A: 255})
+	ui.DrawWrappedText(screen, usbDevicesSummary(state.State.USBDevices), rightX+16, y+126, rightW-32, 12, color.RGBA{R: 236, G: 241, B: 245, A: 255})
 	if state.State.USBEmulation != nil {
 		usbState := a.settingsAction(settingsGroupUSBEmulation)
 		a.drawSettingsAction(screen, "usb_emulation_on", "USB On", rightX+16, y+150, 86, settingsActionVisual{Enabled: !usbState.Pending || usbState.PendingChoice == "on", Active: *state.State.USBEmulation, Pending: usbState.Pending && usbState.PendingChoice == "on"})
@@ -1319,7 +1252,7 @@ func (a *App) drawSettingsHardware(screen *ebiten.Image, x, y, w float64) {
 	preset := usbDevicePresetLabel(state.State.USBDevices)
 	a.drawSettingsAction(screen, "usb_devices_default", "Default", rightX+16, y+244, 86, settingsActionVisual{Enabled: !usbDevicesState.Pending || usbDevicesState.PendingChoice == "default", Active: preset == "Default", Pending: usbDevicesState.Pending && usbDevicesState.PendingChoice == "default"})
 	a.drawSettingsAction(screen, "usb_devices_keyboard_only", "Keyboard Only", rightX+114, y+244, 122, settingsActionVisual{Enabled: !usbDevicesState.Pending || usbDevicesState.PendingChoice == "keyboard_only", Active: preset == "Keyboard Only", Pending: usbDevicesState.Pending && usbDevicesState.PendingChoice == "keyboard_only"})
-	drawText(screen, "Custom", rightX+248, y+254, 12, color.RGBA{R: 166, G: 178, B: 190, A: 255})
+	ui.DrawText(screen, "Custom", rightX+248, y+254, 12, color.RGBA{R: 166, G: 178, B: 190, A: 255})
 	deviceToggles := []struct {
 		id, label string
 		active    bool
@@ -1341,7 +1274,7 @@ func (a *App) drawSettingsHardware(screen *ebiten.Image, x, y, w float64) {
 	}
 	a.drawSettingsActionStatus(screen, settingsGroupUSBDevices, rightX+16, y+366, rightW-32)
 	if state.Error != "" {
-		drawWrappedText(screen, state.Error, x+16, y+392, w-32, 12, color.RGBA{R: 220, G: 132, B: 132, A: 255})
+		ui.DrawWrappedText(screen, state.Error, x+16, y+392, w-32, 12, color.RGBA{R: 220, G: 132, B: 132, A: 255})
 	}
 }
 
@@ -1356,22 +1289,22 @@ func (a *App) drawSettingsAccess(screen *ebiten.Image, x, y, w float64) {
 	a.drawSettingsCard(screen, x, y, leftW, cardH, "Cloud", "")
 	a.drawSettingsCard(screen, rightX, y, rightW, cardH, "TLS", "")
 	if state.Loading {
-		drawText(screen, "Loading access state…", x+16, y+48, 13, color.RGBA{R: 236, G: 241, B: 245, A: 255})
+		ui.DrawText(screen, "Loading access state…", x+16, y+48, 13, color.RGBA{R: 236, G: 241, B: 245, A: 255})
 		return
 	}
 	drawSettingsKeyValue(screen, "Connected", boolWord(state.State.Cloud.Connected), x+16, y+50, 96)
 	drawSettingsSectionLabel(screen, "Cloud API", x+16, y+84)
-	drawWrappedText(screen, fallbackLabel(state.State.Cloud.URL, "Unavailable"), x+16, y+102, leftW-32, 12, color.RGBA{R: 236, G: 241, B: 245, A: 255})
+	ui.DrawWrappedText(screen, fallbackLabel(state.State.Cloud.URL, "Unavailable"), x+16, y+102, leftW-32, 12, color.RGBA{R: 236, G: 241, B: 245, A: 255})
 	drawSettingsSectionLabel(screen, "Cloud App", x+16, y+138)
-	drawWrappedText(screen, fallbackLabel(state.State.Cloud.AppURL, "Unavailable"), x+16, y+156, leftW-32, 12, color.RGBA{R: 236, G: 241, B: 245, A: 255})
+	ui.DrawWrappedText(screen, fallbackLabel(state.State.Cloud.AppURL, "Unavailable"), x+16, y+156, leftW-32, 12, color.RGBA{R: 236, G: 241, B: 245, A: 255})
 	drawSettingsKeyValue(screen, "Mode", string(state.State.TLS), rightX+16, y+50, 70)
-	drawWrappedText(screen, "Use the target's currently exposed TLS mode. Native client transport follows whatever the device publishes.", rightX+16, y+84, rightW-32, 12, color.RGBA{R: 166, G: 178, B: 190, A: 255})
+	ui.DrawWrappedText(screen, "Use the target's currently exposed TLS mode. Native client transport follows whatever the device publishes.", rightX+16, y+84, rightW-32, 12, color.RGBA{R: 166, G: 178, B: 190, A: 255})
 	tlsState := a.settingsAction(settingsGroupTLSMode)
 	a.drawSettingsAction(screen, "tls_disabled", "Disabled", rightX+16, y+150, 92, settingsActionVisual{Enabled: state.State.TLS != session.TLSModeUnknown && (!tlsState.Pending || tlsState.PendingChoice == "disabled"), Active: state.State.TLS == session.TLSModeDisabled, Pending: tlsState.Pending && tlsState.PendingChoice == "disabled"})
 	a.drawSettingsAction(screen, "tls_self_signed", "Self-Signed", rightX+120, y+150, 114, settingsActionVisual{Enabled: state.State.TLS != session.TLSModeUnknown && (!tlsState.Pending || tlsState.PendingChoice == "self-signed"), Active: state.State.TLS == session.TLSModeSelfSigned, Pending: tlsState.Pending && tlsState.PendingChoice == "self-signed"})
 	a.drawSettingsActionStatus(screen, settingsGroupTLSMode, rightX+16, y+188, rightW-32)
 	if state.Error != "" {
-		drawWrappedText(screen, state.Error, x+16, y+192, w-32, 12, color.RGBA{R: 220, G: 132, B: 132, A: 255})
+		ui.DrawWrappedText(screen, state.Error, x+16, y+192, w-32, 12, color.RGBA{R: 220, G: 132, B: 132, A: 255})
 	}
 }
 
@@ -1382,14 +1315,14 @@ func (a *App) drawSettingsNetwork(screen *ebiten.Image, x, y, w float64) {
 	cardH := a.settingsWideBodyHeight(sectionNetwork, w)
 	a.drawSettingsCard(screen, x, y, w, cardH, "Current state", "")
 	if state.Loading {
-		drawText(screen, "Loading network state…", x+16, y+48, 13, color.RGBA{R: 236, G: 241, B: 245, A: 255})
+		ui.DrawText(screen, "Loading network state…", x+16, y+48, 13, color.RGBA{R: 236, G: 241, B: 245, A: 255})
 		return
 	}
 	drawSettingsKeyValue(screen, "Hostname", state.State.Hostname, x+16, y+48, 96)
 	drawSettingsKeyValue(screen, "IP", state.State.IP, x+16, y+74, 96)
 	drawSettingsKeyValue(screen, "DHCP", boolPtrWord(state.State.DHCP), x+16, y+100, 96)
 	if state.Error != "" {
-		drawWrappedText(screen, state.Error, x+16, y+124, w-32, 12, color.RGBA{R: 220, G: 132, B: 132, A: 255})
+		ui.DrawWrappedText(screen, state.Error, x+16, y+124, w-32, 12, color.RGBA{R: 220, G: 132, B: 132, A: 255})
 	}
 }
 
@@ -1400,7 +1333,7 @@ func (a *App) drawSettingsAdvanced(screen *ebiten.Image, x, y, w float64) {
 	cardH := a.settingsWideBodyHeight(sectionAdvanced, w)
 	a.drawSettingsCard(screen, x, y, w, cardH, "Current state", "")
 	if state.Loading {
-		drawText(screen, "Loading advanced state…", x+16, y+48, 13, color.RGBA{R: 236, G: 241, B: 245, A: 255})
+		ui.DrawText(screen, "Loading advanced state…", x+16, y+48, 13, color.RGBA{R: 236, G: 241, B: 245, A: 255})
 		return
 	}
 	drawSettingsKeyValue(screen, "Developer Mode", boolPtrWord(state.State.DevMode), x+16, y+48, 128)
@@ -1414,7 +1347,7 @@ func (a *App) drawSettingsAdvanced(screen *ebiten.Image, x, y, w float64) {
 		a.drawSettingsActionStatus(screen, settingsGroupDeveloperMode, x+16, y+204, w-32)
 	}
 	if state.Error != "" {
-		drawWrappedText(screen, state.Error, x+16, y+204, w-32, 12, color.RGBA{R: 220, G: 132, B: 132, A: 255})
+		ui.DrawWrappedText(screen, state.Error, x+16, y+204, w-32, 12, color.RGBA{R: 220, G: 132, B: 132, A: 255})
 	}
 }
 
@@ -1446,7 +1379,7 @@ func (a *App) drawSettingsAppearance(screen *ebiten.Image, x, y, w float64) {
 	a.drawSettingsAction(screen, "chrome_layout:vertical", "Vertical", x+260, y+194, 96, settingsActionVisual{Enabled: true, Active: a.prefs.ChromeLayout == chromeLayoutVertical})
 	drawSettingsSectionLabel(screen, "Window", x+16, y+248)
 	a.drawSettingsAction(screen, "fullscreen", "Toggle Fullscreen", x+136, y+236, 160, settingsActionVisual{Enabled: true, Active: ebiten.IsFullscreen()})
-	drawWrappedText(screen, "Position chooses where the chrome sits on screen. Layout changes whether the control buttons run across or down.", x+16, y+280, w-32, 12, color.RGBA{R: 166, G: 178, B: 190, A: 255})
+	ui.DrawWrappedText(screen, "Position chooses where the chrome sits on screen. Layout changes whether the control buttons run across or down.", x+16, y+280, w-32, 12, color.RGBA{R: 166, G: 178, B: 190, A: 255})
 }
 
 func boolWord(v bool) string {
@@ -1541,12 +1474,12 @@ func keyboardLayoutLabel(code string) string {
 func (a *App) drawSettingsPlanned(screen *ebiten.Image, section settingsSectionDef, x, y, w float64) {
 	cardH := a.settingsPlannedBodyHeight(section.id, w)
 	a.drawSettingsCard(screen, x, y, w, cardH, "Not exposed here", "")
-	drawWrappedText(screen, section.description, x+16, y+46, w-32, 12, color.RGBA{R: 166, G: 178, B: 190, A: 255})
-	drawText(screen, "Current upstream surface", x+16, y+86, 12, color.RGBA{R: 166, G: 178, B: 190, A: 255})
+	ui.DrawWrappedText(screen, section.description, x+16, y+46, w-32, 12, color.RGBA{R: 166, G: 178, B: 190, A: 255})
+	ui.DrawText(screen, "Current upstream surface", x+16, y+86, 12, color.RGBA{R: 166, G: 178, B: 190, A: 255})
 	lineY := y + 110
 	for _, item := range section.items {
-		drawWrappedText(screen, "• "+item, x+24, lineY, w-40, 12, color.RGBA{R: 236, G: 241, B: 245, A: 255})
+		ui.DrawWrappedText(screen, "• "+item, x+24, lineY, w-40, 12, color.RGBA{R: 236, G: 241, B: 245, A: 255})
 		lineY += 22
 	}
-	drawWrappedText(screen, "This section exists in the upstream product structure but is not currently exposed by this target or the desktop client.", x+16, y+176, w-32, 12, color.RGBA{R: 166, G: 178, B: 190, A: 255})
+	ui.DrawWrappedText(screen, "This section exists in the upstream product structure but is not currently exposed by this target or the desktop client.", x+16, y+176, w-32, 12, color.RGBA{R: 166, G: 178, B: 190, A: 255})
 }

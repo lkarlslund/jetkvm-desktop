@@ -1648,7 +1648,7 @@ func (a *App) drawPressedKeysOverlay(screen *ebiten.Image) {
 		}
 		line += key.String()
 	}
-	w, _ := measureText(line, 12)
+	w, _ := ui.MeasureText(line, 12)
 	x := 14.0
 	y := float64(screen.Bounds().Dy()) - 58
 	ctx := a.newUIContext(screen, func(chromeButton) {})

@@ -866,7 +866,7 @@ func humanBytes(value int64) string {
 }
 
 func trimTextToWidth(value string, width, size float64) string {
-	if value == "" || textFits(value, width, size) {
+	if value == "" || ui.TextFits(value, width, size) {
 		return value
 	}
 	runes := []rune(value)
@@ -878,7 +878,7 @@ func trimTextToWidth(value string, width, size float64) string {
 	best := "..."
 	for left > 0 && right < len(runes) {
 		candidate := string(runes[:left]) + "..." + string(runes[right:])
-		if textFits(candidate, width, size) {
+		if ui.TextFits(candidate, width, size) {
 			best = candidate
 			left--
 			right++
