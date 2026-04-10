@@ -28,3 +28,12 @@ func (a *App) newUIContext(screen *ebiten.Image, register func(chromeButton)) *u
 		},
 	}
 }
+
+func (a *App) drawUIRoot(screen *ebiten.Image, register func(chromeButton), root ui.Element) {
+	if root == nil {
+		return
+	}
+	ctx := a.newUIContext(screen, register)
+	bounds := screen.Bounds()
+	root.Draw(ctx, ui.Rect{W: float64(bounds.Dx()), H: float64(bounds.Dy())})
+}

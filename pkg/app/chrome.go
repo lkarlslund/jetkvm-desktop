@@ -402,11 +402,10 @@ func (a *App) drawTopBar(screen *ebiten.Image, snap session.Snapshot) {
 	}
 	buttons := a.layoutChromeButtons(screen.Bounds().Dx(), screen.Bounds().Dy(), snap)
 	a.chromeButtons = buttons
-	ctx := a.newUIContext(screen, func(chromeButton) {})
-	for _, btn := range buttons {
-		ui.IconButton{Kind: uiIcon(btn.icon), Active: btn.active, Enabled: btn.enabled, Alpha: alpha}.
-			Draw(ctx, ui.Rect{X: btn.rect.x, Y: btn.rect.y, W: btn.rect.w, H: btn.rect.h})
-	}
+	a.drawUIRoot(screen, func(chromeButton) {}, chromeButtonsElement{
+		buttons: buttons,
+		alpha:   alpha,
+	})
 }
 
 func (a *App) drawHint(screen *ebiten.Image) {
@@ -424,8 +423,13 @@ func (a *App) drawHint(screen *ebiten.Image) {
 			}
 			bw := w + 20
 			by := btn.rect.y + btn.rect.h + 8
-			ctx := a.newUIContext(screen, func(chromeButton) {})
-			ui.Tooltip{Text: btn.hint, Alpha: alpha}.Draw(ctx, ui.Rect{X: bx, Y: by, W: bw, H: 28})
+			a.drawUIRoot(screen, func(chromeButton) {}, chromeTooltipElement{
+				text:  btn.hint,
+				alpha: alpha,
+				x:     bx,
+				y:     by,
+				w:     bw,
+			})
 			return
 		}
 	}
@@ -439,12 +443,19 @@ func (a *App) drawStatusFooter(screen *ebiten.Image, snap session.Snapshot) {
 	left := fmt.Sprintf("RTC %s  HID %s  Video %s", rtcLabel(snap.RTCState), readyWord(snap.HIDReady), readyWord(snap.VideoReady))
 	clr := rgba(164, 176, 188, 255, max(alpha, 0.75))
 	y := float64(screen.Bounds().Dy() - 24)
-	ui.DrawText(screen, left, 14, y, 12, clr)
+	right := ""
+	rightColor := color.Color(nil)
 	if snap.LastError != "" && snap.Phase != session.PhaseConnected {
-		msg := trimForFooter(snap.LastError)
-		w, _ := ui.MeasureText(msg, 12)
-		ui.DrawText(screen, msg, float64(screen.Bounds().Dx())-w-14, y, 12, rgba(228, 142, 142, 255, max(alpha, 0.75)))
+		right = trimForFooter(snap.LastError)
+		rightColor = rgba(228, 142, 142, 255, max(alpha, 0.75))
 	}
+	a.drawUIRoot(screen, func(chromeButton) {}, footerStatusElement{
+		left:       left,
+		right:      right,
+		leftColor:  clr,
+		rightColor: rightColor,
+		y:          y,
+	})
 }
 
 func readyWord(value bool) string {
@@ -482,62 +493,24 @@ func (a *App) drawSettingsOverlay(screen *ebiten.Image, snap session.Snapshot) {
 
 	panelX := (float64(bounds.Dx()) - panelW) / 2
 	panelY := (float64(bounds.Dy()) - panelH) / 2
+	outerRect := ui.Rect{X: panelX, Y: panelY, W: panelW, H: panelH}
+	innerRect := outerRect.Inset(ui.UniformInsets(1))
 
 	a.settingsPanel = rect{x: panelX, y: panelY, w: panelW, h: panelH}
 	a.settingsButtons = a.settingsButtons[:0]
-	ctx := a.newUIContext(screen, func(btn chromeButton) {
+	a.drawUIRoot(screen, func(btn chromeButton) {
 		a.settingsButtons = append(a.settingsButtons, btn)
-	})
-	ctx.FillRect(ui.Rect{W: float64(bounds.Dx()), H: float64(bounds.Dy())}, color.RGBA{A: 170})
-	ui.Panel{
-		Fill:   color.RGBA{R: 13, G: 20, B: 30, A: 246},
-		Stroke: color.RGBA{R: 88, G: 102, B: 118, A: 180},
-	}.Draw(ctx, ui.Rect{X: panelX, Y: panelY, W: panelW, H: panelH})
-	ui.Panel{
-		Fill:   color.RGBA{R: 18, G: 28, B: 40, A: 255},
-		Insets: ui.Insets{Top: 16, Right: 10, Bottom: 18, Left: 10},
-		Child: settingsSidebarElement{
+	}, settingsOverlayRootElement{
+		outerRect: outerRect,
+		child: settingsOverlayElement{
 			app:      a,
 			snap:     snap,
 			sections: sections,
-			panelH:   panelH,
+			section:  section,
+			sidebarW: sidebarW,
+			panelH:   innerRect.H,
 		},
-	}.Draw(ctx, ui.Rect{X: panelX, Y: panelY, W: sidebarW, H: panelH})
-	ui.Button{ID: "settings_close", Label: "X", Enabled: true}.Draw(ctx, ui.Rect{X: panelX + panelW - 40, Y: panelY + 12, W: 26, H: 26})
-
-	contentX := panelX + sidebarW + 18
-	contentY := panelY + 18
-	contentW = panelW - sidebarW - 32
-	contentDescH := ui.WrappedTextHeight(section.description, contentW-48, 12)
-	contentHeaderH := 28 + contentDescH + 18
-	settingsHeaderElement{
-		title:       section.label,
-		description: section.description,
-	}.Draw(ctx, ui.Rect{X: contentX, Y: contentY, W: contentW, H: contentHeaderH})
-	ctx.StrokeLine(ui.Point{X: contentX, Y: contentY + contentHeaderH}, ui.Point{X: contentX + contentW, Y: contentY + contentHeaderH}, 1, color.RGBA{R: 42, G: 54, B: 68, A: 180})
-
-	switch section.id {
-	case sectionGeneral:
-		a.drawSettingsGeneral(screen, snap, contentX, contentY+contentHeaderH+18, contentW)
-	case sectionMouse:
-		a.drawSettingsMouse(screen, snap, contentX, contentY+contentHeaderH+18, contentW)
-	case sectionKeyboard:
-		a.drawSettingsKeyboard(screen, snap, contentX, contentY+contentHeaderH+18, contentW)
-	case sectionVideo:
-		a.drawSettingsVideo(screen, snap, contentX, contentY+contentHeaderH+18, contentW)
-	case sectionHardware:
-		a.drawSettingsHardware(screen, contentX, contentY+contentHeaderH+18, contentW)
-	case sectionAccess:
-		a.drawSettingsAccess(screen, contentX, contentY+contentHeaderH+18, contentW)
-	case sectionAppearance:
-		a.drawSettingsAppearance(screen, contentX, contentY+contentHeaderH+18, contentW)
-	case sectionNetwork:
-		a.drawSettingsNetwork(screen, contentX, contentY+contentHeaderH+18, contentW)
-	case sectionAdvanced:
-		a.drawSettingsAdvanced(screen, contentX, contentY+contentHeaderH+18, contentW)
-	default:
-		a.drawSettingsPlanned(screen, section, contentX, contentY+contentHeaderH+18, contentW)
-	}
+	})
 }
 
 type settingsSidebarElement struct {
@@ -545,6 +518,194 @@ type settingsSidebarElement struct {
 	snap     session.Snapshot
 	sections []settingsSectionDef
 	panelH   float64
+}
+
+type settingsOverlayElement struct {
+	app      *App
+	snap     session.Snapshot
+	sections []settingsSectionDef
+	section  settingsSectionDef
+	sidebarW float64
+	panelH   float64
+}
+
+type settingsOverlayRootElement struct {
+	outerRect ui.Rect
+	child     ui.Element
+}
+
+func (settingsOverlayRootElement) Measure(_ *ui.Context, constraints ui.Constraints) ui.Size {
+	return constraints.Clamp(ui.Size{W: constraints.MaxW, H: constraints.MaxH})
+}
+
+func (e settingsOverlayRootElement) Draw(ctx *ui.Context, bounds ui.Rect) {
+	ui.Stack{Children: []ui.Element{
+		ui.Backdrop{Color: color.RGBA{A: 170}},
+		ui.Positioned{
+			X: e.outerRect.X,
+			Y: e.outerRect.Y,
+			W: e.outerRect.W,
+			H: e.outerRect.H,
+			Child: ui.Panel{
+				Fill:   color.RGBA{R: 13, G: 20, B: 30, A: 246},
+				Stroke: color.RGBA{R: 88, G: 102, B: 118, A: 180},
+				Child:  e.child,
+			},
+		},
+	}}.Draw(ctx, bounds)
+}
+
+type chromeButtonsElement struct {
+	buttons []chromeButton
+	alpha   float64
+}
+
+func (chromeButtonsElement) Measure(_ *ui.Context, constraints ui.Constraints) ui.Size {
+	return constraints.Clamp(ui.Size{W: constraints.MaxW, H: constraints.MaxH})
+}
+
+func (e chromeButtonsElement) Draw(ctx *ui.Context, bounds ui.Rect) {
+	children := make([]ui.Element, 0, len(e.buttons))
+	for _, btn := range e.buttons {
+		btn := btn
+		children = append(children, ui.Positioned{
+			X: btn.rect.x,
+			Y: btn.rect.y,
+			W: btn.rect.w,
+			H: btn.rect.h,
+			Child: ui.IconButton{
+				Kind:    uiIcon(btn.icon),
+				Active:  btn.active,
+				Enabled: btn.enabled,
+				Alpha:   e.alpha,
+			},
+		})
+	}
+	ui.Stack{Children: children}.Draw(ctx, bounds)
+}
+
+type chromeTooltipElement struct {
+	text  string
+	alpha float64
+	x     float64
+	y     float64
+	w     float64
+}
+
+func (chromeTooltipElement) Measure(_ *ui.Context, constraints ui.Constraints) ui.Size {
+	return constraints.Clamp(ui.Size{W: constraints.MaxW, H: constraints.MaxH})
+}
+
+func (e chromeTooltipElement) Draw(ctx *ui.Context, bounds ui.Rect) {
+	ui.Positioned{
+		X:     e.x,
+		Y:     e.y,
+		W:     e.w,
+		H:     28,
+		Child: ui.Tooltip{Text: e.text, Alpha: e.alpha},
+	}.Draw(ctx, bounds)
+}
+
+type footerStatusElement struct {
+	left       string
+	right      string
+	leftColor  color.Color
+	rightColor color.Color
+	y          float64
+}
+
+func (footerStatusElement) Measure(_ *ui.Context, constraints ui.Constraints) ui.Size {
+	return constraints.Clamp(ui.Size{W: constraints.MaxW, H: constraints.MaxH})
+}
+
+func (e footerStatusElement) Draw(ctx *ui.Context, bounds ui.Rect) {
+	ui.Positioned{
+		X: 0,
+		Y: e.y,
+		W: bounds.W,
+		H: 18,
+		Child: ui.FooterStatus{
+			Left:       e.left,
+			Right:      e.right,
+			Size:       12,
+			LeftColor:  e.leftColor,
+			RightColor: e.rightColor,
+			Insets:     ui.Insets{Right: 14, Left: 14},
+		},
+	}.Draw(ctx, bounds)
+}
+
+func (e settingsOverlayElement) Measure(_ *ui.Context, constraints ui.Constraints) ui.Size {
+	return constraints.Clamp(ui.Size{W: constraints.MaxW, H: constraints.MaxH})
+}
+
+func (e settingsOverlayElement) Draw(ctx *ui.Context, bounds ui.Rect) {
+	ui.Stack{Children: []ui.Element{
+		ui.Row{
+			Children: []ui.Child{
+				ui.Fixed(ui.Constrained{
+					MinW: e.sidebarW,
+					MaxW: e.sidebarW,
+					Child: ui.Panel{
+						Fill:   color.RGBA{R: 18, G: 28, B: 40, A: 255},
+						Insets: ui.Insets{Top: 16, Right: 10, Bottom: 18, Left: 10},
+						Child: settingsSidebarElement{
+							app:      e.app,
+							snap:     e.snap,
+							sections: e.sections,
+							panelH:   bounds.H,
+						},
+					},
+				}),
+				ui.Fixed(ui.Spacer{W: 18}),
+				ui.Flex(ui.Inset{
+					Insets: ui.Insets{Top: 18, Right: 14, Bottom: 18},
+					Child: ui.Column{
+						Children: []ui.Child{
+							ui.Fixed(settingsHeaderElement(e.section.label, e.section.description)),
+							ui.Fixed(ui.Spacer{H: 18}),
+							ui.Fixed(settingsSectionBodyHost{
+								app:     e.app,
+								section: e.section.id,
+								snap:    e.snap,
+							}),
+						},
+					},
+				}, 1),
+			},
+			Spacing: 0,
+		},
+		ui.Inset{
+			Insets: ui.Insets{Top: 11, Right: 13},
+			Child: ui.Align{
+				Horizontal: ui.AlignEnd,
+				Vertical:   ui.AlignStart,
+				Child:      ui.Button{ID: "settings_close", Label: "X", Enabled: true},
+			},
+		},
+	}}.Draw(ctx, bounds)
+}
+
+type settingsSectionBodyHost struct {
+	app     *App
+	section settingsSection
+	snap    session.Snapshot
+}
+
+func (e settingsSectionBodyHost) Measure(ctx *ui.Context, constraints ui.Constraints) ui.Size {
+	body := e.app.settingsSectionBody(e.section, e.snap)
+	if body == nil {
+		return constraints.Clamp(ui.Size{})
+	}
+	return body.Measure(ctx, constraints)
+}
+
+func (e settingsSectionBodyHost) Draw(ctx *ui.Context, bounds ui.Rect) {
+	body := e.app.settingsSectionBody(e.section, e.snap)
+	if body == nil {
+		return
+	}
+	body.Draw(ctx, bounds)
 }
 
 func (e settingsSidebarElement) Measure(_ *ui.Context, constraints ui.Constraints) ui.Size {
@@ -595,24 +756,17 @@ func (e settingsSidebarButtonElement) Draw(ctx *ui.Context, bounds ui.Rect) {
 	}.Draw(ctx, bounds)
 }
 
-type settingsHeaderElement struct {
-	title       string
-	description string
-}
-
-func (e settingsHeaderElement) Measure(ctx *ui.Context, constraints ui.Constraints) ui.Size {
-	descH := ctx.MeasureWrapped(e.description, constraints.MaxW-48, 12)
-	return constraints.Clamp(ui.Size{W: constraints.MaxW, H: 28 + descH + 18})
-}
-
-func (e settingsHeaderElement) Draw(ctx *ui.Context, bounds ui.Rect) {
-	ui.Label{Text: e.title, Size: 22, Color: color.RGBA{R: 240, G: 244, B: 248, A: 255}}.
-		Draw(ctx, ui.Rect{X: bounds.X, Y: bounds.Y, W: bounds.W, H: 22})
-	ui.Paragraph{
-		Text:  e.description,
-		Size:  12,
-		Color: color.RGBA{R: 166, G: 178, B: 190, A: 255},
-	}.Draw(ctx, ui.Rect{X: bounds.X, Y: bounds.Y + 28, W: bounds.W - 48, H: bounds.H - 28})
+func settingsHeaderElement(title, description string) ui.Element {
+	return ui.Column{
+		Children: []ui.Child{
+			ui.Fixed(ui.Label{Text: title, Size: 22, Color: color.RGBA{R: 240, G: 244, B: 248, A: 255}}),
+			ui.Fixed(ui.Spacer{H: 6}),
+			ui.Fixed(ui.Constrained{
+				MaxW:  640,
+				Child: ui.Paragraph{Text: description, Size: 12, Color: color.RGBA{R: 166, G: 178, B: 190, A: 255}},
+			}),
+		},
+	}
 }
 
 func (a *App) settingsPanelHeight(section settingsSectionDef, contentW float64) float64 {
@@ -1493,54 +1647,6 @@ func (a *App) settingsPlannedBody(section settingsSection) ui.Element {
 		ui.Fixed(ui.Paragraph{Text: "This section exists in the upstream product structure but is not currently exposed by this target or the desktop client.", Size: 12, Color: color.RGBA{R: 166, G: 178, B: 190, A: 255}}),
 	)
 	return settingsCardElement("Not exposed here", ui.Column{Children: children})
-}
-
-func (a *App) drawSettingsGeneral(screen *ebiten.Image, snap session.Snapshot, x, y, w float64) {
-	a.drawSettingsBody(screen, a.settingsGeneralBody(snap), x, y, w)
-}
-
-func (a *App) drawSettingsMouse(screen *ebiten.Image, snap session.Snapshot, x, y, w float64) {
-	a.drawSettingsBody(screen, a.settingsMouseBody(snap), x, y, w)
-}
-
-func (a *App) drawSettingsKeyboard(screen *ebiten.Image, snap session.Snapshot, x, y, w float64) {
-	a.drawSettingsBody(screen, a.settingsKeyboardBody(snap), x, y, w)
-}
-
-func (a *App) drawSettingsVideo(screen *ebiten.Image, snap session.Snapshot, x, y, w float64) {
-	a.drawSettingsBody(screen, a.settingsVideoBody(snap), x, y, w)
-}
-
-func (a *App) drawSettingsHardware(screen *ebiten.Image, x, y, w float64) {
-	a.drawSettingsBody(screen, a.settingsHardwareBody(), x, y, w)
-}
-
-func (a *App) drawSettingsAccess(screen *ebiten.Image, x, y, w float64) {
-	a.drawSettingsBody(screen, a.settingsAccessBody(), x, y, w)
-}
-
-func (a *App) drawSettingsNetwork(screen *ebiten.Image, x, y, w float64) {
-	a.drawSettingsBody(screen, a.settingsNetworkBody(), x, y, w)
-}
-
-func (a *App) drawSettingsAdvanced(screen *ebiten.Image, x, y, w float64) {
-	a.drawSettingsBody(screen, a.settingsAdvancedBody(), x, y, w)
-}
-
-func (a *App) drawSettingsAppearance(screen *ebiten.Image, x, y, w float64) {
-	a.drawSettingsBody(screen, a.settingsAppearanceBody(), x, y, w)
-}
-
-func (a *App) drawSettingsPlanned(screen *ebiten.Image, section settingsSectionDef, x, y, w float64) {
-	a.drawSettingsBody(screen, a.settingsPlannedBody(section.id), x, y, w)
-}
-
-func (a *App) drawSettingsBody(screen *ebiten.Image, body ui.Element, x, y, w float64) {
-	ctx := a.newUIContext(screen, func(btn chromeButton) {
-		a.settingsButtons = append(a.settingsButtons, btn)
-	})
-	height := a.measureSettingsBody(body, w)
-	body.Draw(ctx, ui.Rect{X: x, Y: y, W: w, H: height})
 }
 
 func boolWord(v bool) string {

@@ -381,10 +381,10 @@ func (a *App) drawMediaOverlay(screen *ebiten.Image, snap session.Snapshot) {
 	bounds := screen.Bounds()
 	a.mediaPanel = rect{}
 	a.mediaButtons = a.mediaButtons[:0]
-	ctx := a.newUIContext(screen, func(btn chromeButton) {
+	_ = bounds
+	a.drawUIRoot(screen, func(btn chromeButton) {
 		a.mediaButtons = append(a.mediaButtons, btn)
-	})
-	ui.Inset{
+	}, ui.Inset{
 		Insets: ui.UniformInsets(28),
 		Child: ui.Align{
 			Horizontal: ui.AlignCenter,
@@ -398,7 +398,7 @@ func (a *App) drawMediaOverlay(screen *ebiten.Image, snap session.Snapshot) {
 				},
 			},
 		},
-	}.Draw(ctx, ui.Rect{W: float64(bounds.Dx()), H: float64(bounds.Dy())})
+	})
 }
 
 type mediaOverlayElement struct {
@@ -412,33 +412,35 @@ func (mediaOverlayElement) Measure(_ *ui.Context, constraints ui.Constraints) ui
 
 func (e mediaOverlayElement) Draw(ctx *ui.Context, bounds ui.Rect) {
 	e.app.mediaPanel = rect{x: bounds.X, y: bounds.Y, w: bounds.W, h: bounds.H}
-	ctx.FillRect(ui.Rect{W: float64(ctx.Screen.Bounds().Dx()), H: float64(ctx.Screen.Bounds().Dy())}, ctx.Theme.Backdrop)
-	ui.Panel{
-		Fill:   ctx.Theme.ModalFill,
-		Stroke: ctx.Theme.ModalStroke,
-		Insets: ui.UniformInsets(18),
-		Child: ui.Column{
-			Children: []ui.Child{
-				ui.Fixed(mediaHeaderElement{app: e.app}),
-				ui.Fixed(ui.Spacer{H: 18}),
-				ui.Fixed(ui.Panel{
-					Fill:   ctx.Theme.SectionFill,
-					Stroke: ctx.Theme.SectionStroke,
-					Insets: ui.UniformInsets(16),
-					Child:  mediaStateElement{app: e.app},
-				}),
-				ui.Fixed(ui.Spacer{H: 18}),
-				ui.Fixed(mediaTabsElement{app: e.app}),
-				ui.Fixed(ui.Spacer{H: 14}),
-				ui.Flex(ui.Panel{
-					Fill:   ctx.Theme.PanelFill,
-					Stroke: ctx.Theme.PanelStroke,
-					Insets: ui.UniformInsets(18),
-					Child:  e.app.mediaBodyElement(e.snap),
-				}, 1),
+	ui.Stack{Children: []ui.Element{
+		ui.Backdrop{Color: ctx.Theme.Backdrop},
+		ui.Panel{
+			Fill:   ctx.Theme.ModalFill,
+			Stroke: ctx.Theme.ModalStroke,
+			Insets: ui.UniformInsets(18),
+			Child: ui.Column{
+				Children: []ui.Child{
+					ui.Fixed(mediaHeaderElement{app: e.app}),
+					ui.Fixed(ui.Spacer{H: 18}),
+					ui.Fixed(ui.Panel{
+						Fill:   ctx.Theme.SectionFill,
+						Stroke: ctx.Theme.SectionStroke,
+						Insets: ui.UniformInsets(16),
+						Child:  mediaStateElement{app: e.app},
+					}),
+					ui.Fixed(ui.Spacer{H: 18}),
+					ui.Fixed(mediaTabsElement{app: e.app}),
+					ui.Fixed(ui.Spacer{H: 14}),
+					ui.Flex(ui.Panel{
+						Fill:   ctx.Theme.PanelFill,
+						Stroke: ctx.Theme.PanelStroke,
+						Insets: ui.UniformInsets(18),
+						Child:  e.app.mediaBodyElement(e.snap),
+					}, 1),
+				},
 			},
 		},
-	}.Draw(ctx, bounds)
+	}}.Draw(ctx, bounds)
 }
 
 func (a *App) mediaBodyElement(snap session.Snapshot) ui.Element {

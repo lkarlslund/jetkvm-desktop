@@ -173,15 +173,14 @@ func (a *App) drawStatsOverlay(screen *ebiten.Image) {
 			Series: statsSeries(a.statsHistory, func(p statsPoint) float64 { return p.FramesPerSecond }),
 		},
 	}
-	ctx := a.newUIContext(screen, func(chromeButton) {})
-	statsOverlayRootElement{
+	a.drawUIRoot(screen, func(chromeButton) {}, statsOverlayRootElement{
 		app: a,
 		child: statsOverlayElement{
 			app:    a,
 			lines:  lines,
 			graphs: graphs,
 		},
-	}.Draw(ctx, ui.Rect{W: float64(screen.Bounds().Dx()), H: float64(screen.Bounds().Dy())})
+	})
 }
 
 type graphMetric struct {
@@ -233,16 +232,16 @@ func (a *App) drawPasteOverlay(screen *ebiten.Image, snap session.Snapshot) {
 	bounds := screen.Bounds()
 	a.pastePanel = rect{}
 	a.pasteButtons = a.pasteButtons[:0]
-	ctx := a.newUIContext(screen, func(btn chromeButton) {
+	_ = bounds
+	a.drawUIRoot(screen, func(btn chromeButton) {
 		a.pasteButtons = append(a.pasteButtons, btn)
-	})
-	pasteOverlayRootElement{
+	}, pasteOverlayRootElement{
 		app: a,
 		child: pasteOverlayElement{
 			app:  a,
 			snap: snap,
 		},
-	}.Draw(ctx, ui.Rect{W: float64(bounds.Dx()), H: float64(bounds.Dy())})
+	})
 }
 
 type statsOverlayElement struct {
@@ -404,19 +403,21 @@ func (pasteOverlayRootElement) Measure(_ *ui.Context, constraints ui.Constraints
 }
 
 func (e pasteOverlayRootElement) Draw(ctx *ui.Context, bounds ui.Rect) {
-	ctx.FillRect(ui.Rect{W: bounds.W, H: bounds.H}, color.RGBA{A: 168})
-	ui.Inset{
-		Insets: ui.Insets{Top: 48, Right: 36, Bottom: 48, Left: 36},
-		Child: ui.Align{
-			Horizontal: ui.AlignCenter,
-			Vertical:   ui.AlignCenter,
-			Child: ui.Constrained{
-				MaxW:  760,
-				MaxH:  420,
-				Child: pastePanelElement(e),
+	ui.Stack{Children: []ui.Element{
+		ui.Backdrop{Color: color.RGBA{A: 168}},
+		ui.Inset{
+			Insets: ui.Insets{Top: 48, Right: 36, Bottom: 48, Left: 36},
+			Child: ui.Align{
+				Horizontal: ui.AlignCenter,
+				Vertical:   ui.AlignCenter,
+				Child: ui.Constrained{
+					MaxW:  760,
+					MaxH:  420,
+					Child: pastePanelElement(e),
+				},
 			},
 		},
-	}.Draw(ctx, bounds)
+	}}.Draw(ctx, bounds)
 }
 
 type pastePanelElement struct {

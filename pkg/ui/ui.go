@@ -226,6 +226,38 @@ func (c *Context) FillCircle(center Point, radius float64, clr color.Color) {
 	vector.FillCircle(c.Screen, float32(center.X), float32(center.Y), float32(radius), clr, false)
 }
 
+func (c *Context) FillRoundedRect(r Rect, radius float64, clr color.Color) {
+	if r.W <= 0 || r.H <= 0 {
+		return
+	}
+	radius = clamp(radius, 0, min(r.W/2, r.H/2))
+	if radius <= 0 {
+		c.FillRect(r, clr)
+		return
+	}
+	c.FillRect(Rect{X: r.X + radius, Y: r.Y, W: r.W - radius*2, H: r.H}, clr)
+	c.FillRect(Rect{X: r.X, Y: r.Y + radius, W: radius, H: r.H - radius*2}, clr)
+	c.FillRect(Rect{X: r.Right() - radius, Y: r.Y + radius, W: radius, H: r.H - radius*2}, clr)
+	c.FillCircle(Point{X: r.X + radius, Y: r.Y + radius}, radius, clr)
+	c.FillCircle(Point{X: r.Right() - radius, Y: r.Y + radius}, radius, clr)
+	c.FillCircle(Point{X: r.X + radius, Y: r.Bottom() - radius}, radius, clr)
+	c.FillCircle(Point{X: r.Right() - radius, Y: r.Bottom() - radius}, radius, clr)
+}
+
+func (c *Context) FillStrokedRoundedRect(r Rect, width, radius float64, stroke, fill color.Color) {
+	if width <= 0 || r.W <= 0 || r.H <= 0 {
+		c.FillRoundedRect(r, radius, fill)
+		return
+	}
+	width = min(width, min(r.W/2, r.H/2))
+	c.FillRoundedRect(r, radius, stroke)
+	inner := r.Inset(Insets{Top: width, Right: width, Bottom: width, Left: width})
+	if inner.W <= 0 || inner.H <= 0 {
+		return
+	}
+	c.FillRoundedRect(inner, max(0, radius-width), fill)
+}
+
 func (c *Context) AddHit(id string, r Rect, enabled bool) {
 	if c.RegisterHitTarget == nil || id == "" {
 		return

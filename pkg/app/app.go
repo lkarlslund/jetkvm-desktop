@@ -1643,19 +1643,15 @@ func (a *App) drawOverlay(screen *ebiten.Image, snap session.Snapshot, hasVideo 
 	if detail == "" && snap.LastError != "" && snap.Phase != session.PhaseConnected {
 		detail = snap.LastError
 	}
-	ctx := a.newUIContext(screen, func(btn chromeButton) {
+	a.drawUIRoot(screen, func(btn chromeButton) {
 		a.overlayButtons = append(a.overlayButtons, btn)
+	}, overlayBannerRootElement{
+		title:      title,
+		detail:     detail,
+		takeover:   snap.Phase == session.PhaseOtherSession,
+		withButton: snap.Phase == session.PhaseOtherSession,
+		width:      float64(screen.Bounds().Dx() - 52),
 	})
-	ui.Panel{
-		Fill:   color.RGBA{R: 8, G: 12, B: 18, A: 228},
-		Insets: ui.Insets{Top: 20, Right: 16, Bottom: 12, Left: 16},
-		Child: overlayBannerElement{
-			title:      title,
-			detail:     detail,
-			takeover:   snap.Phase == session.PhaseOtherSession,
-			withButton: snap.Phase == session.PhaseOtherSession,
-		},
-	}.Draw(ctx, ui.Rect{X: 26, Y: 84, W: float64(screen.Bounds().Dx() - 52), H: 96})
 }
 
 func (a *App) drawPressedKeysOverlay(screen *ebiten.Image) {
@@ -1676,13 +1672,12 @@ func (a *App) drawPressedKeysOverlay(screen *ebiten.Image) {
 	w, _ := ui.MeasureText(line, 12)
 	x := 14.0
 	y := float64(screen.Bounds().Dy()) - 58
-	ctx := a.newUIContext(screen, func(chromeButton) {})
-	ui.Panel{
-		Fill:   color.RGBA{R: 8, G: 12, B: 18, A: 212},
-		Stroke: color.RGBA{R: 112, G: 128, B: 148, A: 120},
-		Insets: ui.SymmetricInsets(10, 8),
-		Child:  ui.Label{Text: line, Size: 12, Color: color.RGBA{R: 236, G: 241, B: 245, A: 255}},
-	}.Draw(ctx, ui.Rect{X: x, Y: y, W: w + 20, H: 28})
+	a.drawUIRoot(screen, func(chromeButton) {}, pressedKeysOverlayElement{
+		text: line,
+		x:    x,
+		y:    y,
+		w:    w + 20,
+	})
 }
 
 type overlayBannerElement struct {
@@ -1713,6 +1708,63 @@ func (e overlayBannerElement) Draw(ctx *ui.Context, bounds ui.Rect) {
 		)
 	}
 	ui.Column{Children: children}.Draw(ctx, bounds)
+}
+
+type overlayBannerRootElement struct {
+	title      string
+	detail     string
+	takeover   bool
+	withButton bool
+	width      float64
+}
+
+func (overlayBannerRootElement) Measure(_ *ui.Context, constraints ui.Constraints) ui.Size {
+	return constraints.Clamp(ui.Size{W: constraints.MaxW, H: constraints.MaxH})
+}
+
+func (e overlayBannerRootElement) Draw(ctx *ui.Context, bounds ui.Rect) {
+	ui.Positioned{
+		X: 26,
+		Y: 84,
+		W: e.width,
+		H: 96,
+		Child: ui.Panel{
+			Fill:   color.RGBA{R: 8, G: 12, B: 18, A: 228},
+			Insets: ui.Insets{Top: 20, Right: 16, Bottom: 12, Left: 16},
+			Child: overlayBannerElement{
+				title:      e.title,
+				detail:     e.detail,
+				takeover:   e.takeover,
+				withButton: e.withButton,
+			},
+		},
+	}.Draw(ctx, bounds)
+}
+
+type pressedKeysOverlayElement struct {
+	text string
+	x    float64
+	y    float64
+	w    float64
+}
+
+func (pressedKeysOverlayElement) Measure(_ *ui.Context, constraints ui.Constraints) ui.Size {
+	return constraints.Clamp(ui.Size{W: constraints.MaxW, H: constraints.MaxH})
+}
+
+func (e pressedKeysOverlayElement) Draw(ctx *ui.Context, bounds ui.Rect) {
+	ui.Positioned{
+		X: e.x,
+		Y: e.y,
+		W: e.w,
+		H: 28,
+		Child: ui.Panel{
+			Fill:   color.RGBA{R: 8, G: 12, B: 18, A: 212},
+			Stroke: color.RGBA{R: 112, G: 128, B: 148, A: 120},
+			Insets: ui.SymmetricInsets(10, 8),
+			Child:  ui.Label{Text: e.text, Size: 12, Color: color.RGBA{R: 236, G: 241, B: 245, A: 255}},
+		},
+	}.Draw(ctx, bounds)
 }
 
 func rtcLabel(state webrtc.PeerConnectionState) string {

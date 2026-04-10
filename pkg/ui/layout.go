@@ -26,6 +26,56 @@ func (s Spacer) Measure(_ *Context, constraints Constraints) Size {
 
 func (Spacer) Draw(_ *Context, _ Rect) {}
 
+type Stack struct {
+	Children []Element
+}
+
+func (s Stack) Measure(ctx *Context, constraints Constraints) Size {
+	size := Size{}
+	for _, child := range s.Children {
+		if child == nil {
+			continue
+		}
+		childSize := child.Measure(ctx, constraints)
+		size.W = max(size.W, childSize.W)
+		size.H = max(size.H, childSize.H)
+	}
+	return constraints.Clamp(size)
+}
+
+func (s Stack) Draw(ctx *Context, bounds Rect) {
+	for _, child := range s.Children {
+		if child == nil {
+			continue
+		}
+		child.Draw(ctx, bounds)
+	}
+}
+
+type Positioned struct {
+	X     float64
+	Y     float64
+	W     float64
+	H     float64
+	Child Element
+}
+
+func (p Positioned) Measure(_ *Context, constraints Constraints) Size {
+	return constraints.Clamp(Size{W: constraints.MaxW, H: constraints.MaxH})
+}
+
+func (p Positioned) Draw(ctx *Context, bounds Rect) {
+	if p.Child == nil {
+		return
+	}
+	p.Child.Draw(ctx, Rect{
+		X: bounds.X + p.X,
+		Y: bounds.Y + p.Y,
+		W: p.W,
+		H: p.H,
+	})
+}
+
 type Column struct {
 	Children []Child
 	Spacing  float64

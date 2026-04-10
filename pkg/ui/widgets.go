@@ -12,6 +12,18 @@ type Label struct {
 	Color color.Color
 }
 
+type Backdrop struct {
+	Color color.Color
+}
+
+func (Backdrop) Measure(_ *Context, constraints Constraints) Size {
+	return constraints.Clamp(Size{W: constraints.MaxW, H: constraints.MaxH})
+}
+
+func (b Backdrop) Draw(ctx *Context, bounds Rect) {
+	ctx.FillRect(bounds, b.Color)
+}
+
 func (l Label) Measure(ctx *Context, constraints Constraints) Size {
 	if ctx.MeasureText == nil || l.Text == "" {
 		return constraints.Clamp(Size{})
@@ -75,35 +87,34 @@ func (t Toggle) Measure(_ *Context, constraints Constraints) Size {
 }
 
 func (t Toggle) Draw(ctx *Context, bounds Rect) {
-	var trackFill color.Color = color.RGBA{R: 34, G: 45, B: 60, A: 255}
+	trackFill := ctx.Theme.ButtonFill
 	trackStroke := ctx.Theme.ButtonStroke
-	var knobFill color.Color = color.RGBA{R: 214, G: 222, B: 230, A: 255}
+	knobFill := ctx.Theme.ButtonText
+	knobStroke := ctx.Theme.ButtonStroke
 	if t.Active {
-		trackFill = color.RGBA{R: 34, G: 78, B: 130, A: 255}
+		trackFill = ctx.Theme.ActiveFill
 		trackStroke = ctx.Theme.ActiveStroke
 	}
 	if t.Pending {
 		trackFill = color.RGBA{R: 88, G: 70, B: 24, A: 255}
 		trackStroke = color.RGBA{R: 234, G: 179, B: 8, A: 180}
+		knobStroke = trackStroke
 	}
 	if !t.Enabled {
 		trackFill = ctx.Theme.DisabledFill
-		knobFill = color.RGBA{R: 140, G: 148, B: 160, A: 255}
+		trackStroke = ctx.Theme.ButtonStroke
+		knobFill = ctx.Theme.DisabledText
+		knobStroke = ctx.Theme.ButtonStroke
 	}
 	cy := bounds.Y + bounds.H/2
-	radius := bounds.H / 2
-	leftCx := bounds.X + radius
-	rightCx := bounds.Right() - radius
-	ctx.StrokeLine(Point{X: leftCx, Y: cy}, Point{X: rightCx, Y: cy}, bounds.H, trackFill)
-	ctx.StrokeLine(Point{X: leftCx, Y: cy}, Point{X: rightCx, Y: cy}, bounds.H-2, trackStroke)
+	ctx.FillStrokedRoundedRect(bounds, 1, bounds.H/2, trackStroke, trackFill)
 	knobRadius := (bounds.H - 6) / 2
 	knobCx := bounds.X + 3 + knobRadius
 	if t.Active {
 		knobCx = bounds.Right() - 3 - knobRadius
 	}
 	ctx.FillCircle(Point{X: knobCx, Y: cy}, knobRadius, knobFill)
-	ctx.FillCircle(Point{X: knobCx, Y: cy}, knobRadius-1, color.RGBA{R: 90, G: 102, B: 118, A: 32})
-	ctx.StrokeLine(Point{X: knobCx, Y: cy}, Point{X: knobCx, Y: cy}, knobRadius*2, color.RGBA{R: 90, G: 102, B: 118, A: 180})
+	ctx.StrokeLine(Point{X: knobCx, Y: cy}, Point{X: knobCx, Y: cy}, knobRadius*2, knobStroke)
 	ctx.AddHit(t.ID, bounds, t.Enabled)
 }
 
@@ -284,6 +295,43 @@ type ModalFrame struct {
 	MaxWidth    float64
 	Height      float64
 	MaxHeight   float64
+}
+
+type FooterStatus struct {
+	Left       string
+	Right      string
+	Size       float64
+	LeftColor  color.Color
+	RightColor color.Color
+	Insets     Insets
+}
+
+func (f FooterStatus) Measure(_ *Context, constraints Constraints) Size {
+	height := LineHeight(max(f.Size, 12)) + f.Insets.Top + f.Insets.Bottom
+	return constraints.Clamp(Size{W: constraints.MaxW, H: height})
+}
+
+func (f FooterStatus) Draw(ctx *Context, bounds Rect) {
+	size := f.Size
+	if size <= 0 {
+		size = 12
+	}
+	leftColor := f.LeftColor
+	if leftColor == nil {
+		leftColor = ctx.Theme.Muted
+	}
+	rightColor := f.RightColor
+	if rightColor == nil {
+		rightColor = ctx.Theme.Error
+	}
+	textY := bounds.Y + f.Insets.Top
+	if f.Left != "" {
+		ctx.DrawText(ctx.Screen, f.Left, bounds.X+f.Insets.Left, textY, size, leftColor)
+	}
+	if f.Right != "" {
+		w, _ := ctx.MeasureText(f.Right, size)
+		ctx.DrawText(ctx.Screen, f.Right, bounds.Right()-f.Insets.Right-w, textY, size, rightColor)
+	}
 }
 
 func (m ModalFrame) Measure(_ *Context, constraints Constraints) Size {

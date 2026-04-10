@@ -85,7 +85,6 @@ func (a *App) syncLauncherInput() {
 }
 
 func (a *App) drawLauncher(screen *ebiten.Image) {
-	bounds := screen.Bounds()
 	screen.Fill(color.RGBA{R: 11, G: 16, B: 24, A: 255})
 
 	if a.launcherMode == launcherModePassword {
@@ -94,19 +93,16 @@ func (a *App) drawLauncher(screen *ebiten.Image) {
 	}
 
 	a.launcherButtons = a.launcherButtons[:0]
-	ctx := a.newUIContext(screen, func(btn chromeButton) {
+	a.drawUIRoot(screen, func(btn chromeButton) {
 		a.launcherButtons = append(a.launcherButtons, btn)
-	})
-	launcherScreenElement{app: a}.Draw(ctx, ui.Rect{W: float64(bounds.Dx()), H: float64(bounds.Dy())})
+	}, launcherScreenElement{app: a})
 }
 
 func (a *App) drawPasswordPrompt(screen *ebiten.Image) {
-	bounds := screen.Bounds()
 	a.launcherButtons = a.launcherButtons[:0]
-	ctx := a.newUIContext(screen, func(btn chromeButton) {
+	a.drawUIRoot(screen, func(btn chromeButton) {
 		a.launcherButtons = append(a.launcherButtons, btn)
-	})
-	launcherPasswordScreenElement{app: a}.Draw(ctx, ui.Rect{W: float64(bounds.Dx()), H: float64(bounds.Dy())})
+	}, launcherPasswordScreenElement{app: a})
 }
 
 type launcherScreenElement struct {
