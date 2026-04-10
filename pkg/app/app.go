@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"image"
 	"image/color"
 	"math"
 	"net"
@@ -298,7 +297,7 @@ func (a *App) Draw(screen *ebiten.Image) {
 	}
 	snap := a.ctrl.Snapshot()
 	screen.Fill(color.RGBA{R: 9, G: 14, B: 22, A: 255})
-	videoArea := image.Rect(8, 8, screen.Bounds().Dx()-8, screen.Bounds().Dy()-8)
+	videoArea := screen.Bounds()
 	a.mu.RLock()
 	img := a.lastImg
 	a.mu.RUnlock()

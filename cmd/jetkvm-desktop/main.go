@@ -3,12 +3,21 @@ package main
 import (
 	"context"
 	"log"
+	"math"
 	"time"
 
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/spf13/cobra"
 
 	"github.com/lkarlslund/jetkvm-desktop/pkg/app"
+)
+
+const (
+	defaultWindowWidth  = 1280
+	defaultWindowHeight = 720
+	targetWindowWidth   = 1920
+	targetWindowHeight  = 1080
+	usableMonitorFactor = 0.9
 )
 
 func main() {
@@ -32,7 +41,8 @@ func main() {
 			defer cancel()
 			clientApp.Start(ctx)
 
-			ebiten.SetWindowSize(1280, 720)
+			windowWidth, windowHeight := initialWindowSize()
+			ebiten.SetWindowSize(windowWidth, windowHeight)
 			ebiten.SetWindowResizingMode(ebiten.WindowResizingModeEnabled)
 			ebiten.SetTPS(ebiten.SyncWithFPS)
 			ebiten.SetWindowTitle("jetkvm-desktop")
@@ -45,4 +55,52 @@ func main() {
 	if err := rootCmd.Execute(); err != nil {
 		log.Fatal(err)
 	}
+}
+
+func initialWindowSize() (int, int) {
+	monitor := ebiten.Monitor()
+	if monitor == nil {
+		return defaultWindowWidth, defaultWindowHeight
+	}
+	return initialWindowSizeForMonitor(monitor.Size())
+}
+
+func initialWindowSizeForMonitor(monitorWidth, monitorHeight int) (int, int) {
+	if monitorWidth <= 0 || monitorHeight <= 0 {
+		return defaultWindowWidth, defaultWindowHeight
+	}
+
+	usableWidth := int(math.Floor(float64(monitorWidth) * usableMonitorFactor))
+	usableHeight := int(math.Floor(float64(monitorHeight) * usableMonitorFactor))
+	if usableWidth <= 0 || usableHeight <= 0 {
+		return defaultWindowWidth, defaultWindowHeight
+	}
+	if usableWidth >= targetWindowWidth && usableHeight >= targetWindowHeight {
+		return targetWindowWidth, targetWindowHeight
+	}
+
+	defaultScale := float64(defaultWindowWidth) / float64(targetWindowWidth)
+	scale := min(
+		float64(usableWidth)/float64(targetWindowWidth),
+		float64(usableHeight)/float64(targetWindowHeight),
+	)
+	if usableWidth >= defaultWindowWidth && usableHeight >= defaultWindowHeight && scale < defaultScale {
+		scale = defaultScale
+	}
+	if scale <= 0 {
+		return defaultWindowWidth, defaultWindowHeight
+	}
+	return scaleWindow(targetWindowWidth, targetWindowHeight, scale)
+}
+
+func scaleWindow(baseWidth, baseHeight int, scale float64) (int, int) {
+	width := int(math.Floor(float64(baseWidth) * scale))
+	if width < 1 {
+		width = 1
+	}
+	height := width * baseHeight / baseWidth
+	if height < 1 {
+		height = 1
+	}
+	return width, height
 }
