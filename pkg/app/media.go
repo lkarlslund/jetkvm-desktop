@@ -11,10 +11,10 @@ import (
 
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/inpututil"
-	"github.com/hajimehoshi/ebiten/v2/vector"
 	"github.com/sqweek/dialog"
 
 	"github.com/lkarlslund/jetkvm-desktop/pkg/session"
+	"github.com/lkarlslund/jetkvm-desktop/pkg/ui"
 	"github.com/lkarlslund/jetkvm-desktop/pkg/virtualmedia"
 )
 
@@ -385,227 +385,489 @@ func (a *App) drawMediaOverlay(screen *ebiten.Image, snap session.Snapshot) {
 	panelY := float64(bounds.Dy())/2 - panelH/2
 	a.mediaPanel = rect{x: panelX, y: panelY, w: panelW, h: panelH}
 	a.mediaButtons = a.mediaButtons[:0]
+	ctx := a.newUIContext(screen)
+	panelRect := ui.Rect{X: panelX, Y: panelY, W: panelW, H: panelH}
+	ctx.FillRect(ui.Rect{W: float64(bounds.Dx()), H: float64(bounds.Dy())}, ctx.Theme.Backdrop)
+	ui.Panel{
+		Fill:   ctx.Theme.ModalFill,
+		Stroke: ctx.Theme.ModalStroke,
+		Insets: ui.UniformInsets(18),
+		Child: ui.Column{
+			Children: []ui.Child{
+				ui.Fixed(mediaHeaderElement{app: a}),
+				ui.Fixed(ui.Spacer{H: 18}),
+				ui.Fixed(ui.Panel{
+					Fill:   ctx.Theme.SectionFill,
+					Stroke: ctx.Theme.SectionStroke,
+					Insets: ui.UniformInsets(16),
+					Child:  mediaStateElement{app: a},
+				}),
+				ui.Fixed(ui.Spacer{H: 18}),
+				ui.Fixed(mediaTabsElement{app: a}),
+				ui.Fixed(ui.Spacer{H: 14}),
+				ui.Flex(ui.Panel{
+					Fill:   ctx.Theme.PanelFill,
+					Stroke: ctx.Theme.PanelStroke,
+					Insets: ui.UniformInsets(18),
+					Child:  a.mediaBodyElement(snap),
+				}, 1),
+			},
+			Spacing: 0,
+		},
+	}.Draw(ctx, panelRect)
+}
 
-	vector.FillRect(screen, 0, 0, float32(bounds.Dx()), float32(bounds.Dy()), color.RGBA{A: 160}, false)
-	vector.FillRect(screen, float32(panelX), float32(panelY), float32(panelW), float32(panelH), color.RGBA{R: 10, G: 16, B: 24, A: 244}, false)
-	vector.StrokeRect(screen, float32(panelX), float32(panelY), float32(panelW), float32(panelH), 1, color.RGBA{R: 110, G: 130, B: 152, A: 110}, false)
-
-	drawText(screen, "Virtual Media", panelX+18, panelY+18, 26, color.RGBA{R: 236, G: 241, B: 245, A: 255})
-	drawWrappedText(screen, "Mount an image by URL, use JetKVM storage, or upload an ISO/IMG from this computer.", panelX+18, panelY+52, panelW-72, 12, color.RGBA{R: 166, G: 178, B: 190, A: 255})
-	a.drawMediaButton(screen, chromeButton{
-		id:      "media_close",
-		label:   "X",
-		enabled: !a.mediaUploading,
-		rect:    rect{x: panelX + panelW - 38, y: panelY + 12, w: 24, h: 24},
-	}, false)
-
-	stateY := panelY + 88
-	stateH := 112.0
-	vector.FillRect(screen, float32(panelX+18), float32(stateY), float32(panelW-36), float32(stateH), color.RGBA{R: 18, G: 26, B: 38, A: 236}, false)
-	vector.StrokeRect(screen, float32(panelX+18), float32(stateY), float32(panelW-36), float32(stateH), 1, color.RGBA{R: 94, G: 115, B: 136, A: 110}, false)
-	drawText(screen, "Current mount", panelX+34, stateY+16, 15, color.RGBA{R: 236, G: 241, B: 245, A: 255})
-	if a.mediaState == nil {
-		drawText(screen, "Nothing mounted", panelX+34, stateY+48, 18, color.RGBA{R: 236, G: 241, B: 245, A: 255})
-		drawWrappedText(screen, "Choose a source below to expose media to the remote host.", panelX+34, stateY+76, panelW-220, 12, color.RGBA{R: 166, G: 178, B: 190, A: 255})
-	} else {
-		source := a.mediaState.Source
-		label := a.mediaState.Filename
-		if label == "" {
-			label = a.mediaState.URL
-		}
-		drawSettingsKeyValue(screen, "Source", string(source), panelX+34, stateY+44, 74)
-		drawSettingsKeyValue(screen, "Mode", string(a.mediaState.Mode), panelX+34, stateY+70, 74)
-		drawWrappedText(screen, fallbackLabel(label, "Mounted media"), panelX+200, stateY+44, panelW-330, 12, color.RGBA{R: 236, G: 241, B: 245, A: 255})
-		drawText(screen, humanBytes(a.mediaState.Size), panelX+200, stateY+78, 12, color.RGBA{R: 166, G: 178, B: 190, A: 255})
-		a.drawMediaButton(screen, chromeButton{
-			id:      "media_unmount",
-			label:   "Unmount",
-			enabled: !a.mediaLoading && !a.mediaUploading,
-			rect:    rect{x: panelX + panelW - 132, y: stateY + 38, w: 92, h: 34},
-		}, false)
+func (a *App) newUIContext(screen *ebiten.Image) *ui.Context {
+	return &ui.Context{
+		Screen:         screen,
+		Theme:          ui.DefaultTheme(),
+		MeasureText:    measureText,
+		MeasureWrapped: wrappedTextHeight,
+		DrawText:       drawText,
+		DrawWrappedText: func(dst *ebiten.Image, value string, x, y, width, size float64, clr color.Color) float64 {
+			return drawWrappedText(dst, value, x, y, width, size, clr)
+		},
+		RegisterHitTarget: func(hit ui.HitTarget) {
+			a.mediaButtons = append(a.mediaButtons, chromeButton{
+				id:      hit.ID,
+				enabled: hit.Enabled,
+				rect: rect{
+					x: hit.Rect.X,
+					y: hit.Rect.Y,
+					w: hit.Rect.W,
+					h: hit.Rect.H,
+				},
+			})
+		},
 	}
+}
 
-	tabY := stateY + stateH + 18
-	tabX := panelX + 18
-	tabDefs := []struct {
-		id, label string
-		active    bool
-		w         float64
-	}{
-		{id: "media_view_home", label: "Overview", active: a.mediaView == mediaViewHome, w: 96},
-		{id: "media_view_url", label: "URL", active: a.mediaView == mediaViewURL, w: 76},
-		{id: "media_view_storage", label: "Storage", active: a.mediaView == mediaViewStorage, w: 92},
-		{id: "media_view_upload", label: "Upload", active: a.mediaView == mediaViewUpload, w: 92},
-	}
-	for _, tab := range tabDefs {
-		a.drawMediaButton(screen, chromeButton{
-			id:      tab.id,
-			label:   tab.label,
-			enabled: !a.mediaUploading,
-			active:  tab.active,
-			rect:    rect{x: tabX, y: tabY, w: tab.w, h: 30},
-		}, tab.active)
-		tabX += tab.w + 10
-	}
-
-	bodyX := panelX + 18
-	bodyY := tabY + 44
-	bodyW := panelW - 36
-	bodyH := panelH - (bodyY - panelY) - 18
-	vector.FillRect(screen, float32(bodyX), float32(bodyY), float32(bodyW), float32(bodyH), color.RGBA{R: 14, G: 22, B: 32, A: 234}, false)
-	vector.StrokeRect(screen, float32(bodyX), float32(bodyY), float32(bodyW), float32(bodyH), 1, color.RGBA{R: 84, G: 104, B: 122, A: 110}, false)
-
+func (a *App) mediaBodyElement(snap session.Snapshot) ui.Element {
 	switch a.mediaView {
 	case mediaViewURL:
-		a.drawMediaURLView(screen, bodyX, bodyY, bodyW)
+		return mediaURLBodyElement{app: a}
 	case mediaViewStorage:
-		a.drawMediaStorageView(screen, bodyX, bodyY, bodyW, bodyH)
+		return mediaStorageBodyElement{app: a}
 	case mediaViewUpload:
-		a.drawMediaUploadView(screen, bodyX, bodyY, bodyW, bodyH)
+		return mediaUploadBodyElement{app: a}
 	default:
-		a.drawMediaHomeView(screen, bodyX, bodyY, bodyW, snap)
-	}
-
-	if a.mediaLoading {
-		drawText(screen, "Working…", panelX+panelW-106, panelY+56, 12, color.RGBA{R: 147, G: 197, B: 253, A: 255})
-	}
-	if a.mediaError != "" {
-		drawWrappedText(screen, a.mediaError, bodyX+18, bodyY+bodyH-40, bodyW-36, 12, color.RGBA{R: 252, G: 165, B: 165, A: 255})
+		return mediaHomeBodyElement{app: a, snap: snap}
 	}
 }
 
-func (a *App) drawMediaHomeView(screen *ebiten.Image, x, y, w float64, snap session.Snapshot) {
-	drawText(screen, "Choose a source", x+18, y+18, 18, color.RGBA{R: 236, G: 241, B: 245, A: 255})
-	drawWrappedText(screen, "Use URL mounting for public ISOs, JetKVM storage for already-uploaded images, or Upload to send a local file to the device.", x+18, y+46, w-36, 12, color.RGBA{R: 166, G: 178, B: 190, A: 255})
-	drawSettingsKeyValue(screen, "Device", fallbackLabel(snap.Hostname, snap.DeviceID, "Unknown"), x+18, y+96, 72)
-	drawSettingsKeyValue(screen, "Storage Used", humanBytes(a.mediaSpace.BytesUsed), x+18, y+122, 96)
-	drawSettingsKeyValue(screen, "Storage Free", humanBytes(a.mediaSpace.BytesFree), x+18, y+148, 96)
-	drawText(screen, "Tips", x+18, y+196, 16, color.RGBA{R: 236, G: 241, B: 245, A: 255})
-	drawWrappedText(screen, "ISO files normally want CDROM mode. IMG files usually want Disk mode. Only one piece of virtual media can be mounted at a time.", x+18, y+222, w-36, 12, color.RGBA{R: 166, G: 178, B: 190, A: 255})
+type mediaHeaderElement struct {
+	app *App
 }
 
-func (a *App) drawMediaURLView(screen *ebiten.Image, x, y, w float64) {
-	drawText(screen, "Mount from URL", x+18, y+18, 18, color.RGBA{R: 236, G: 241, B: 245, A: 255})
-	drawWrappedText(screen, "Paste a direct ISO or IMG URL. The file stays remote; JetKVM streams it on demand.", x+18, y+46, w-36, 12, color.RGBA{R: 166, G: 178, B: 190, A: 255})
-	a.drawMediaInput(screen, "media_focus_url", x+18, y+92, w-36, 38, a.mediaURL, "https://example.com/image.iso", a.mediaURLFocused)
-	drawSettingsSectionLabel(screen, "USB Mode", x+18, y+152)
-	a.drawMediaButton(screen, chromeButton{id: "media_mode_cdrom", label: "CD/DVD", enabled: true, active: a.mediaMode == virtualmedia.ModeCDROM, rect: rect{x: x + 108, y: y + 140, w: 90, h: 30}}, a.mediaMode == virtualmedia.ModeCDROM)
-	a.drawMediaButton(screen, chromeButton{id: "media_mode_disk", label: "Disk", enabled: true, active: a.mediaMode == virtualmedia.ModeDisk, rect: rect{x: x + 210, y: y + 140, w: 72, h: 30}}, a.mediaMode == virtualmedia.ModeDisk)
-	a.drawMediaButton(screen, chromeButton{id: "media_mount_url", label: "Mount URL", enabled: a.canMountMediaURL(), rect: rect{x: x + 18, y: y + 192, w: 114, h: 34}}, false)
-	if strings.TrimSpace(a.mediaURL) != "" && !isValidMediaURL(a.mediaURL) {
-		drawText(screen, "Enter a valid absolute URL.", x+18, y+240, 12, color.RGBA{R: 252, G: 165, B: 165, A: 255})
+func (mediaHeaderElement) Measure(_ *ui.Context, constraints ui.Constraints) ui.Size {
+	return constraints.Clamp(ui.Size{W: constraints.MaxW, H: 52})
+}
+
+func (h mediaHeaderElement) Draw(ctx *ui.Context, bounds ui.Rect) {
+	title := ui.Column{
+		Children: []ui.Child{
+			ui.Fixed(ui.Label{Text: "Virtual Media", Size: 26, Color: ctx.Theme.Title}),
+			ui.Fixed(ui.Spacer{H: 8}),
+			ui.Fixed(ui.Paragraph{
+				Text:  "Mount an image by URL, use JetKVM storage, or upload an ISO/IMG from this computer.",
+				Size:  12,
+				Color: ctx.Theme.Muted,
+			}),
+		},
+	}
+	ui.Row{
+		Children: []ui.Child{
+			ui.Flex(title, 1),
+			ui.Fixed(ui.Button{ID: "media_close", Label: "X", Enabled: !h.app.mediaUploading}),
+		},
+		Spacing: 12,
+	}.Draw(ctx, bounds)
+	if h.app.mediaLoading {
+		labelW, _ := ctx.MeasureText("Working…", 12)
+		ui.Label{Text: "Working…", Size: 12, Color: color.RGBA{R: 147, G: 197, B: 253, A: 255}}.
+			Draw(ctx, ui.Rect{X: bounds.Right() - labelW - 116, Y: bounds.Y + 34, W: labelW, H: 16})
 	}
 }
 
-func (a *App) drawMediaStorageView(screen *ebiten.Image, x, y, w, h float64) {
-	drawText(screen, "JetKVM Storage", x+18, y+18, 18, color.RGBA{R: 236, G: 241, B: 245, A: 255})
-	drawWrappedText(screen, "Select an image already stored on the device. Incomplete uploads are shown but cannot be mounted.", x+18, y+46, w-36, 12, color.RGBA{R: 166, G: 178, B: 190, A: 255})
-	listY := y + 88
-	rowY := listY
-	maxRows := 7
-	for i, file := range a.mediaFiles {
-		if i >= maxRows {
-			break
-		}
-		active := a.mediaSelectedFile == file.Filename
-		rowRect := rect{x: x + 18, y: rowY, w: w - 36, h: 38}
-		fill := color.RGBA{R: 18, G: 26, B: 38, A: 255}
-		if active {
-			fill = color.RGBA{R: 32, G: 74, B: 122, A: 255}
-		}
-		vector.FillRect(screen, float32(rowRect.x), float32(rowRect.y), float32(rowRect.w), float32(rowRect.h), fill, false)
-		vector.StrokeRect(screen, float32(rowRect.x), float32(rowRect.y), float32(rowRect.w), float32(rowRect.h), 1, color.RGBA{R: 84, G: 104, B: 122, A: 110}, false)
-		a.mediaButtons = append(a.mediaButtons, chromeButton{id: "media_select:" + file.Filename, enabled: true, rect: rect{x: rowRect.x, y: rowRect.y, w: rowRect.w - 92, h: rowRect.h}})
-		drawText(screen, file.Filename, rowRect.x+12, rowRect.y+10, 13, color.RGBA{R: 236, G: 241, B: 245, A: 255})
-		drawText(screen, humanBytes(file.Size), rowRect.x+rowRect.w-200, rowRect.y+10, 12, color.RGBA{R: 166, G: 178, B: 190, A: 255})
-		a.drawMediaButton(screen, chromeButton{
-			id:      "media_delete:" + file.Filename,
-			label:   "Delete",
-			enabled: !a.mediaUploading && !a.mediaLoading,
-			rect:    rect{x: rowRect.x + rowRect.w - 80, y: rowRect.y + 4, w: 64, h: 28},
-		}, false)
-		rowY += 46
-	}
-	if len(a.mediaFiles) == 0 {
-		drawText(screen, "No stored images yet.", x+18, listY+12, 14, color.RGBA{R: 166, G: 178, B: 190, A: 255})
-	}
-	drawSettingsSectionLabel(screen, "USB Mode", x+18, y+h-106)
-	a.drawMediaButton(screen, chromeButton{id: "media_mode_cdrom", label: "CD/DVD", enabled: true, active: a.mediaMode == virtualmedia.ModeCDROM, rect: rect{x: x + 108, y: y + h - 118, w: 90, h: 30}}, a.mediaMode == virtualmedia.ModeCDROM)
-	a.drawMediaButton(screen, chromeButton{id: "media_mode_disk", label: "Disk", enabled: true, active: a.mediaMode == virtualmedia.ModeDisk, rect: rect{x: x + 210, y: y + h - 118, w: 72, h: 30}}, a.mediaMode == virtualmedia.ModeDisk)
-	a.drawMediaButton(screen, chromeButton{id: "media_mount_storage", label: "Mount Selected", enabled: a.canMountSelectedStorageFile(), rect: rect{x: x + w - 162, y: y + h - 122, w: 128, h: 34}}, false)
-	drawText(screen, fmt.Sprintf("Used %s  Free %s", humanBytes(a.mediaSpace.BytesUsed), humanBytes(a.mediaSpace.BytesFree)), x+18, y+h-62, 12, color.RGBA{R: 166, G: 178, B: 190, A: 255})
+type mediaStateElement struct {
+	app *App
 }
 
-func (a *App) drawMediaUploadView(screen *ebiten.Image, x, y, w, h float64) {
-	drawText(screen, "Upload Image", x+18, y+18, 18, color.RGBA{R: 236, G: 241, B: 245, A: 255})
-	drawWrappedText(screen, "Pick a local ISO or IMG file and upload it into JetKVM storage. The same device storage browser can mount it afterward.", x+18, y+46, w-36, 12, color.RGBA{R: 166, G: 178, B: 190, A: 255})
-	a.drawMediaInput(screen, "media_focus_upload", x+18, y+96, w-156, 38, a.mediaUploadPath, "/path/to/image.iso", a.mediaUploadFocused)
-	a.drawMediaButton(screen, chromeButton{id: "media_browse_upload", label: "Browse", enabled: !a.mediaUploading, rect: rect{x: x + w - 126, y: y + 96, w: 108, h: 38}}, false)
-	drawSettingsSectionLabel(screen, "Mount Mode", x+18, y+162)
-	a.drawMediaButton(screen, chromeButton{id: "media_mode_cdrom", label: "CD/DVD", enabled: !a.mediaUploading, active: a.mediaMode == virtualmedia.ModeCDROM, rect: rect{x: x + 108, y: y + 150, w: 90, h: 30}}, a.mediaMode == virtualmedia.ModeCDROM)
-	a.drawMediaButton(screen, chromeButton{id: "media_mode_disk", label: "Disk", enabled: !a.mediaUploading, active: a.mediaMode == virtualmedia.ModeDisk, rect: rect{x: x + 210, y: y + 150, w: 72, h: 30}}, a.mediaMode == virtualmedia.ModeDisk)
-	a.drawMediaButton(screen, chromeButton{id: "media_start_upload", label: "Start Upload", enabled: !a.mediaUploading && strings.TrimSpace(a.mediaUploadPath) != "", rect: rect{x: x + 18, y: y + 206, w: 118, h: 34}}, false)
+func (mediaStateElement) Measure(_ *ui.Context, constraints ui.Constraints) ui.Size {
+	return constraints.Clamp(ui.Size{W: constraints.MaxW, H: 80})
+}
 
-	selectedY := y + h - 30
-	if a.mediaUploadTotal > 0 {
-		barY := y + h - 82
-		vector.FillRect(screen, float32(x+18), float32(barY), float32(w-36), 18, color.RGBA{R: 22, G: 30, B: 44, A: 255}, false)
-		vector.FillRect(screen, float32(x+18), float32(barY), float32((w-36)*a.mediaUploadProgress), 18, color.RGBA{R: 48, G: 123, B: 206, A: 255}, false)
-		vector.StrokeRect(screen, float32(x+18), float32(barY), float32(w-36), 18, 1, color.RGBA{R: 84, G: 104, B: 122, A: 110}, false)
-		metaY := barY + 28
-		drawText(screen, fmt.Sprintf("%s / %s", humanBytes(a.mediaUploadSent), humanBytes(a.mediaUploadTotal)), x+18, metaY, 12, color.RGBA{R: 236, G: 241, B: 245, A: 255})
-		if a.mediaUploadSpeed > 0 {
-			speedLabel := fmt.Sprintf("%s/s", humanBytes(int64(a.mediaUploadSpeed)))
-			etaLabel := mediaUploadETA(a.mediaUploadSent, a.mediaUploadTotal, a.mediaUploadSpeed)
-			if etaLabel != "" {
-				speedLabel += "  ETA " + etaLabel
+func (e mediaStateElement) Draw(ctx *ui.Context, bounds ui.Rect) {
+	if e.app.mediaState == nil {
+		ui.Column{
+			Children: []ui.Child{
+				ui.Fixed(ui.Label{Text: "Current mount", Size: 15, Color: ctx.Theme.Title}),
+				ui.Fixed(ui.Spacer{H: 16}),
+				ui.Fixed(ui.Label{Text: "Nothing mounted", Size: 18, Color: ctx.Theme.Title}),
+				ui.Fixed(ui.Spacer{H: 12}),
+				ui.Fixed(ui.Paragraph{
+					Text:  "Choose a source below to expose media to the remote host.",
+					Size:  12,
+					Color: ctx.Theme.Muted,
+				}),
+			},
+		}.Draw(ctx, bounds)
+		return
+	}
+	label := e.app.mediaState.Filename
+	if label == "" {
+		label = e.app.mediaState.URL
+	}
+	ui.Column{
+		Children: []ui.Child{
+			ui.Fixed(ui.Label{Text: "Current mount", Size: 15, Color: ctx.Theme.Title}),
+			ui.Fixed(ui.Spacer{H: 16}),
+			ui.Fixed(ui.Row{
+				Children: []ui.Child{
+					ui.Fixed(ui.Column{
+						Children: []ui.Child{
+							ui.Fixed(ui.KeyValue{Label: "Source", Value: string(e.app.mediaState.Source), LabelWidth: 74}),
+							ui.Fixed(ui.Spacer{H: 10}),
+							ui.Fixed(ui.KeyValue{Label: "Mode", Value: string(e.app.mediaState.Mode), LabelWidth: 74}),
+						},
+					}),
+					ui.Fixed(ui.Spacer{W: 24}),
+					ui.Flex(ui.Column{
+						Children: []ui.Child{
+							ui.Fixed(ui.Paragraph{Text: fallbackLabel(label, "Mounted media"), Size: 12, Color: ctx.Theme.Body}),
+							ui.Fixed(ui.Spacer{H: 10}),
+							ui.Fixed(ui.Label{Text: humanBytes(e.app.mediaState.Size), Size: 12, Color: ctx.Theme.Muted}),
+						},
+					}, 1),
+					ui.Fixed(ui.Button{
+						ID:      "media_unmount",
+						Label:   "Unmount",
+						Enabled: !e.app.mediaLoading && !e.app.mediaUploading,
+					}),
+				},
+				Spacing: 0,
+			}),
+		},
+	}.Draw(ctx, bounds)
+}
+
+type mediaTabsElement struct {
+	app *App
+}
+
+func (mediaTabsElement) Measure(_ *ui.Context, constraints ui.Constraints) ui.Size {
+	return constraints.Clamp(ui.Size{W: constraints.MaxW, H: 30})
+}
+
+func (e mediaTabsElement) Draw(ctx *ui.Context, bounds ui.Rect) {
+	ui.Row{
+		Children: []ui.Child{
+			ui.Fixed(ui.Button{ID: "media_view_home", Label: "Overview", Enabled: !e.app.mediaUploading, Active: e.app.mediaView == mediaViewHome}),
+			ui.Fixed(ui.Button{ID: "media_view_url", Label: "URL", Enabled: !e.app.mediaUploading, Active: e.app.mediaView == mediaViewURL}),
+			ui.Fixed(ui.Button{ID: "media_view_storage", Label: "Storage", Enabled: !e.app.mediaUploading, Active: e.app.mediaView == mediaViewStorage}),
+			ui.Fixed(ui.Button{ID: "media_view_upload", Label: "Upload", Enabled: !e.app.mediaUploading, Active: e.app.mediaView == mediaViewUpload}),
+		},
+		Spacing: 10,
+	}.Draw(ctx, bounds)
+}
+
+type mediaHomeBodyElement struct {
+	app  *App
+	snap session.Snapshot
+}
+
+func (e mediaHomeBodyElement) Measure(ctx *ui.Context, constraints ui.Constraints) ui.Size {
+	return mediaBodyColumn(e.content()).Measure(ctx, constraints)
+}
+
+func (e mediaHomeBodyElement) Draw(ctx *ui.Context, bounds ui.Rect) {
+	mediaBodyColumn(e.content()).Draw(ctx, bounds)
+}
+
+func (e mediaHomeBodyElement) content() []ui.Child {
+	return []ui.Child{
+		ui.Fixed(ui.Label{Text: "Choose a source", Size: 18, Color: ui.DefaultTheme().Title}),
+		ui.Fixed(ui.Spacer{H: 12}),
+		ui.Fixed(ui.Paragraph{
+			Text:  "Use URL mounting for public ISOs, JetKVM storage for already-uploaded images, or Upload to send a local file to the device.",
+			Size:  12,
+			Color: ui.DefaultTheme().Muted,
+		}),
+		ui.Fixed(ui.Spacer{H: 16}),
+		ui.Fixed(ui.KeyValue{Label: "Device", Value: fallbackLabel(e.snap.Hostname, e.snap.DeviceID, "Unknown"), LabelWidth: 72}),
+		ui.Fixed(ui.Spacer{H: 8}),
+		ui.Fixed(ui.KeyValue{Label: "Storage Used", Value: humanBytes(e.app.mediaSpace.BytesUsed), LabelWidth: 96}),
+		ui.Fixed(ui.Spacer{H: 8}),
+		ui.Fixed(ui.KeyValue{Label: "Storage Free", Value: humanBytes(e.app.mediaSpace.BytesFree), LabelWidth: 96}),
+		ui.Flex(ui.Spacer{}, 1),
+		ui.Fixed(ui.Label{Text: "Tips", Size: 16, Color: ui.DefaultTheme().Title}),
+		ui.Fixed(ui.Spacer{H: 10}),
+		ui.Fixed(ui.Paragraph{
+			Text:  "ISO files normally want CDROM mode. IMG files usually want Disk mode. Only one piece of virtual media can be mounted at a time.",
+			Size:  12,
+			Color: ui.DefaultTheme().Muted,
+		}),
+	}
+}
+
+type mediaURLBodyElement struct {
+	app *App
+}
+
+func (e mediaURLBodyElement) Measure(ctx *ui.Context, constraints ui.Constraints) ui.Size {
+	return mediaBodyColumn(e.content()).Measure(ctx, constraints)
+}
+
+func (e mediaURLBodyElement) Draw(ctx *ui.Context, bounds ui.Rect) {
+	mediaBodyColumn(e.content()).Draw(ctx, bounds)
+}
+
+func (e mediaURLBodyElement) content() []ui.Child {
+	children := []ui.Child{
+		ui.Fixed(ui.Label{Text: "Mount from URL", Size: 18, Color: ui.DefaultTheme().Title}),
+		ui.Fixed(ui.Spacer{H: 12}),
+		ui.Fixed(ui.Paragraph{
+			Text:  "Paste a direct ISO or IMG URL. The file stays remote; JetKVM streams it on demand.",
+			Size:  12,
+			Color: ui.DefaultTheme().Muted,
+		}),
+		ui.Fixed(ui.Spacer{H: 18}),
+		ui.Fixed(ui.TextField{
+			ID:          "media_focus_url",
+			Value:       e.app.mediaURL,
+			Placeholder: "https://example.com/image.iso",
+			Focused:     e.app.mediaURLFocused,
+			Enabled:     true,
+		}),
+		ui.Fixed(ui.Spacer{H: 18}),
+		ui.Fixed(ui.Label{Text: "USB Mode", Size: 13, Color: ui.DefaultTheme().Muted}),
+		ui.Fixed(ui.Spacer{H: 10}),
+		ui.Fixed(mediaModeButtons{app: e.app, disabled: false}),
+		ui.Fixed(ui.Spacer{H: 18}),
+		ui.Fixed(ui.Button{ID: "media_mount_url", Label: "Mount URL", Enabled: e.app.canMountMediaURL()}),
+	}
+	if strings.TrimSpace(e.app.mediaURL) != "" && !isValidMediaURL(e.app.mediaURL) {
+		children = append(children,
+			ui.Fixed(ui.Spacer{H: 12}),
+			ui.Fixed(ui.Label{Text: "Enter a valid absolute URL.", Size: 12, Color: ui.DefaultTheme().Error}),
+		)
+	}
+	children = append(children, ui.Flex(ui.Spacer{}, 1))
+	if e.app.mediaError != "" {
+		children = append(children, ui.Fixed(ui.Paragraph{Text: e.app.mediaError, Size: 12, Color: ui.DefaultTheme().Error}))
+	}
+	return children
+}
+
+type mediaStorageBodyElement struct {
+	app *App
+}
+
+func (e mediaStorageBodyElement) Measure(ctx *ui.Context, constraints ui.Constraints) ui.Size {
+	return mediaBodyColumn(e.content()).Measure(ctx, constraints)
+}
+
+func (e mediaStorageBodyElement) Draw(ctx *ui.Context, bounds ui.Rect) {
+	mediaBodyColumn(e.content()).Draw(ctx, bounds)
+}
+
+func (e mediaStorageBodyElement) content() []ui.Child {
+	children := []ui.Child{
+		ui.Fixed(ui.Label{Text: "JetKVM Storage", Size: 18, Color: ui.DefaultTheme().Title}),
+		ui.Fixed(ui.Spacer{H: 12}),
+		ui.Fixed(ui.Paragraph{
+			Text:  "Select an image already stored on the device. Incomplete uploads are shown but cannot be mounted.",
+			Size:  12,
+			Color: ui.DefaultTheme().Muted,
+		}),
+		ui.Fixed(ui.Spacer{H: 16}),
+	}
+	if len(e.app.mediaFiles) == 0 {
+		children = append(children, ui.Fixed(ui.Label{Text: "No stored images yet.", Size: 14, Color: ui.DefaultTheme().Muted}))
+	} else {
+		for i, file := range e.app.mediaFiles {
+			if i >= 7 {
+				break
 			}
-			drawText(screen, speedLabel, x+200, metaY, 12, color.RGBA{R: 166, G: 178, B: 190, A: 255})
+			if i > 0 {
+				children = append(children, ui.Fixed(ui.Spacer{H: 8}))
+			}
+			children = append(children, ui.Fixed(mediaFileRowElement{
+				app:  e.app,
+				file: file,
+			}))
 		}
 	}
-	if strings.TrimSpace(a.mediaUploadPath) != "" {
-		selected := "Selected: " + filepath.Base(a.mediaUploadPath)
-		drawText(screen, trimTextToWidth(selected, w-36, 12), x+18, selectedY, 12, color.RGBA{R: 166, G: 178, B: 190, A: 255})
+	children = append(children,
+		ui.Flex(ui.Spacer{}, 1),
+		ui.Fixed(ui.Label{Text: "USB Mode", Size: 13, Color: ui.DefaultTheme().Muted}),
+		ui.Fixed(ui.Spacer{H: 10}),
+		ui.Fixed(ui.Row{
+			Children: []ui.Child{
+				ui.Fixed(mediaModeButtons{app: e.app, disabled: false}),
+				ui.Flex(ui.Spacer{}, 1),
+				ui.Fixed(ui.Button{ID: "media_mount_storage", Label: "Mount Selected", Enabled: e.app.canMountSelectedStorageFile()}),
+			},
+			Spacing: 10,
+		}),
+		ui.Fixed(ui.Spacer{H: 14}),
+		ui.Fixed(ui.Label{
+			Text:  fmt.Sprintf("Used %s  Free %s", humanBytes(e.app.mediaSpace.BytesUsed), humanBytes(e.app.mediaSpace.BytesFree)),
+			Size:  12,
+			Color: ui.DefaultTheme().Muted,
+		}),
+	)
+	if e.app.mediaError != "" {
+		children = append(children, ui.Fixed(ui.Spacer{H: 12}), ui.Fixed(ui.Paragraph{Text: e.app.mediaError, Size: 12, Color: ui.DefaultTheme().Error}))
 	}
+	return children
 }
 
-func (a *App) drawMediaInput(screen *ebiten.Image, id string, x, y, w, h float64, value, placeholder string, focused bool) {
-	border := color.RGBA{R: 84, G: 104, B: 122, A: 120}
-	if focused {
-		border = color.RGBA{R: 96, G: 165, B: 250, A: 180}
-	}
-	vector.FillRect(screen, float32(x), float32(y), float32(w), float32(h), color.RGBA{R: 8, G: 12, B: 18, A: 255}, false)
-	vector.StrokeRect(screen, float32(x), float32(y), float32(w), float32(h), 1, border, false)
-	a.mediaButtons = append(a.mediaButtons, chromeButton{id: id, enabled: true, rect: rect{x: x, y: y, w: w, h: h}})
-	text := value
-	textColor := color.RGBA{R: 236, G: 241, B: 245, A: 255}
-	if strings.TrimSpace(text) == "" {
-		text = placeholder
-		textColor = color.RGBA{R: 106, G: 120, B: 138, A: 255}
-	}
-	if focused && strings.TrimSpace(value) != "" && time.Now().UnixNano()/500_000_000%2 == 0 {
-		text += "|"
-	}
-	drawText(screen, text, x+12, y+12, 13, textColor)
+type mediaUploadBodyElement struct {
+	app *App
 }
 
-func (a *App) drawMediaButton(screen *ebiten.Image, btn chromeButton, active bool) {
+func (e mediaUploadBodyElement) Measure(ctx *ui.Context, constraints ui.Constraints) ui.Size {
+	return mediaBodyColumn(e.content()).Measure(ctx, constraints)
+}
+
+func (e mediaUploadBodyElement) Draw(ctx *ui.Context, bounds ui.Rect) {
+	mediaBodyColumn(e.content()).Draw(ctx, bounds)
+}
+
+func (e mediaUploadBodyElement) content() []ui.Child {
+	children := []ui.Child{
+		ui.Fixed(ui.Label{Text: "Upload Image", Size: 18, Color: ui.DefaultTheme().Title}),
+		ui.Fixed(ui.Spacer{H: 12}),
+		ui.Fixed(ui.Paragraph{
+			Text:  "Pick a local ISO or IMG file and upload it into JetKVM storage. The same device storage browser can mount it afterward.",
+			Size:  12,
+			Color: ui.DefaultTheme().Muted,
+		}),
+		ui.Fixed(ui.Spacer{H: 18}),
+		ui.Fixed(ui.Row{
+			Children: []ui.Child{
+				ui.Flex(ui.TextField{
+					ID:          "media_focus_upload",
+					Value:       e.app.mediaUploadPath,
+					Placeholder: "/path/to/image.iso",
+					Focused:     e.app.mediaUploadFocused,
+					Enabled:     !e.app.mediaUploading,
+				}, 1),
+				ui.Fixed(ui.Button{ID: "media_browse_upload", Label: "Browse", Enabled: !e.app.mediaUploading}),
+			},
+			Spacing: 10,
+		}),
+		ui.Fixed(ui.Spacer{H: 18}),
+		ui.Fixed(ui.Label{Text: "Mount Mode", Size: 13, Color: ui.DefaultTheme().Muted}),
+		ui.Fixed(ui.Spacer{H: 10}),
+		ui.Fixed(mediaModeButtons{app: e.app, disabled: e.app.mediaUploading}),
+		ui.Fixed(ui.Spacer{H: 18}),
+		ui.Fixed(ui.Button{
+			ID:      "media_start_upload",
+			Label:   "Start Upload",
+			Enabled: !e.app.mediaUploading && strings.TrimSpace(e.app.mediaUploadPath) != "",
+		}),
+		ui.Flex(ui.Spacer{}, 1),
+	}
+	if e.app.mediaUploadTotal > 0 {
+		children = append(children,
+			ui.Fixed(ui.ProgressBar{Progress: e.app.mediaUploadProgress}),
+			ui.Fixed(ui.Spacer{H: 10}),
+			ui.Fixed(mediaUploadMetaElement(e)),
+			ui.Fixed(ui.Spacer{H: 12}),
+		)
+	}
+	if strings.TrimSpace(e.app.mediaUploadPath) != "" {
+		children = append(children, ui.Fixed(ui.Label{
+			Text:  trimTextToWidth("Selected: "+filepath.Base(e.app.mediaUploadPath), 640, 12),
+			Size:  12,
+			Color: ui.DefaultTheme().Muted,
+		}))
+	}
+	if e.app.mediaError != "" {
+		children = append(children, ui.Fixed(ui.Spacer{H: 12}), ui.Fixed(ui.Paragraph{Text: e.app.mediaError, Size: 12, Color: ui.DefaultTheme().Error}))
+	}
+	return children
+}
+
+func mediaBodyColumn(children []ui.Child) ui.Element {
+	return ui.Column{Children: children, Spacing: 0}
+}
+
+type mediaModeButtons struct {
+	app      *App
+	disabled bool
+}
+
+func (mediaModeButtons) Measure(_ *ui.Context, constraints ui.Constraints) ui.Size {
+	return constraints.Clamp(ui.Size{W: constraints.MaxW, H: 30})
+}
+
+func (e mediaModeButtons) Draw(ctx *ui.Context, bounds ui.Rect) {
+	ui.Row{
+		Children: []ui.Child{
+			ui.Fixed(ui.Button{ID: "media_mode_cdrom", Label: "CD/DVD", Enabled: !e.disabled, Active: e.app.mediaMode == virtualmedia.ModeCDROM}),
+			ui.Fixed(ui.Button{ID: "media_mode_disk", Label: "Disk", Enabled: !e.disabled, Active: e.app.mediaMode == virtualmedia.ModeDisk}),
+		},
+		Spacing: 12,
+	}.Draw(ctx, bounds)
+}
+
+type mediaFileRowElement struct {
+	app  *App
+	file mediaFileRow
+}
+
+func (mediaFileRowElement) Measure(_ *ui.Context, constraints ui.Constraints) ui.Size {
+	return constraints.Clamp(ui.Size{W: constraints.MaxW, H: 38})
+}
+
+func (e mediaFileRowElement) Draw(ctx *ui.Context, bounds ui.Rect) {
 	fill := color.RGBA{R: 18, G: 26, B: 38, A: 255}
-	stroke := color.RGBA{R: 84, G: 104, B: 122, A: 120}
-	label := color.RGBA{R: 236, G: 241, B: 245, A: 255}
-	if active {
-		fill = color.RGBA{R: 34, G: 78, B: 130, A: 255}
-		stroke = color.RGBA{R: 147, G: 197, B: 253, A: 180}
+	if e.app.mediaSelectedFile == e.file.Filename {
+		fill = color.RGBA{R: 32, G: 74, B: 122, A: 255}
 	}
-	if !btn.enabled {
-		fill = color.RGBA{R: 18, G: 24, B: 32, A: 200}
-		label = color.RGBA{R: 110, G: 120, B: 132, A: 255}
+	ui.Panel{
+		Fill:   fill,
+		Stroke: ctx.Theme.PanelStroke,
+		Insets: ui.SymmetricInsets(12, 10),
+		Child: ui.Row{
+			Children: []ui.Child{
+				ui.Flex(ui.Label{Text: e.file.Filename, Size: 13, Color: ctx.Theme.Body}, 1),
+				ui.Fixed(ui.Label{Text: humanBytes(e.file.Size), Size: 12, Color: ctx.Theme.Muted}),
+				ui.Fixed(ui.Spacer{W: 12}),
+				ui.Fixed(ui.Button{
+					ID:      "media_delete:" + e.file.Filename,
+					Label:   "Delete",
+					Enabled: !e.app.mediaUploading && !e.app.mediaLoading,
+				}),
+			},
+			Spacing: 0,
+		},
+	}.Draw(ctx, bounds)
+	ctx.AddHit("media_select:"+e.file.Filename, ui.Rect{X: bounds.X, Y: bounds.Y, W: bounds.W - 92, H: bounds.H}, true)
+}
+
+type mediaUploadMetaElement struct {
+	app *App
+}
+
+func (mediaUploadMetaElement) Measure(_ *ui.Context, constraints ui.Constraints) ui.Size {
+	return constraints.Clamp(ui.Size{W: constraints.MaxW, H: 14})
+}
+
+func (e mediaUploadMetaElement) Draw(ctx *ui.Context, bounds ui.Rect) {
+	left := fmt.Sprintf("%s / %s", humanBytes(e.app.mediaUploadSent), humanBytes(e.app.mediaUploadTotal))
+	ui.Label{Text: left, Size: 12, Color: ctx.Theme.Body}.Draw(ctx, ui.Rect{X: bounds.X, Y: bounds.Y, W: 160, H: bounds.H})
+	if e.app.mediaUploadSpeed <= 0 {
+		return
 	}
-	vector.FillRect(screen, float32(btn.rect.x), float32(btn.rect.y), float32(btn.rect.w), float32(btn.rect.h), fill, false)
-	vector.StrokeRect(screen, float32(btn.rect.x), float32(btn.rect.y), float32(btn.rect.w), float32(btn.rect.h), 1, stroke, false)
-	a.mediaButtons = append(a.mediaButtons, btn)
-	tw, th := measureText(btn.label, 13)
-	drawText(screen, btn.label, btn.rect.x+(btn.rect.w-tw)/2, btn.rect.y+(btn.rect.h-th)/2, 13, label)
+	speedLabel := fmt.Sprintf("%s/s", humanBytes(int64(e.app.mediaUploadSpeed)))
+	if etaLabel := mediaUploadETA(e.app.mediaUploadSent, e.app.mediaUploadTotal, e.app.mediaUploadSpeed); etaLabel != "" {
+		speedLabel += "  ETA " + etaLabel
+	}
+	ui.Label{Text: speedLabel, Size: 12, Color: ctx.Theme.Muted}.Draw(ctx, ui.Rect{X: bounds.X + 182, Y: bounds.Y, W: bounds.W - 182, H: bounds.H})
 }
 
 func humanBytes(value int64) string {
