@@ -219,6 +219,13 @@ func (c *Context) StrokeLine(from, to Point, width float64, clr color.Color) {
 	vector.StrokeLine(c.Screen, float32(from.X), float32(from.Y), float32(to.X), float32(to.Y), float32(width), clr, false)
 }
 
+func (c *Context) FillCircle(center Point, radius float64, clr color.Color) {
+	if radius <= 0 {
+		return
+	}
+	vector.FillCircle(c.Screen, float32(center.X), float32(center.Y), float32(radius), clr, false)
+}
+
 func (c *Context) AddHit(id string, r Rect, enabled bool) {
 	if c.RegisterHitTarget == nil || id == "" {
 		return

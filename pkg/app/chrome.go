@@ -1134,14 +1134,14 @@ func (a *App) settingsGeneralBody(snap session.Snapshot) ui.Element {
 		actionChildren = append(actionChildren, ui.Fixed(ui.Label{Text: "Loading…", Size: 12, Color: color.RGBA{R: 166, G: 178, B: 190, A: 255}}))
 	} else {
 		actionChildren = append(actionChildren,
-			ui.Fixed(ui.Row{Children: []ui.Child{
-				ui.Fixed(ui.Label{Text: "Enabled", Size: 13, Color: color.RGBA{R: 236, G: 241, B: 245, A: 255}}),
-				ui.Fixed(ui.Spacer{W: 12}),
+			ui.Fixed(ui.Row{AlignY: ui.AlignCenter, Children: []ui.Child{
 				ui.Fixed(settingsToggleElement("auto_update_toggle", settingsActionVisual{
 					Enabled: state.AutoUpdate != nil && !autoUpdate.Pending,
 					Active:  state.AutoUpdate != nil && *state.AutoUpdate,
 					Pending: autoUpdate.Pending,
 				})),
+				ui.Fixed(ui.Spacer{W: 12}),
+				ui.Fixed(ui.Label{Text: "Enabled", Size: 13, Color: color.RGBA{R: 236, G: 241, B: 245, A: 255}}),
 			}}),
 		)
 		switch {

@@ -90,16 +90,20 @@ func (t Toggle) Draw(ctx *Context, bounds Rect) {
 		trackFill = ctx.Theme.DisabledFill
 		knobFill = color.RGBA{R: 140, G: 148, B: 160, A: 255}
 	}
-	ctx.FillRect(bounds, trackFill)
-	ctx.StrokeRect(bounds, 1, trackStroke)
-	knobSize := bounds.H - 6
-	knobX := bounds.X + 3
+	cy := bounds.Y + bounds.H/2
+	radius := bounds.H / 2
+	leftCx := bounds.X + radius
+	rightCx := bounds.Right() - radius
+	ctx.StrokeLine(Point{X: leftCx, Y: cy}, Point{X: rightCx, Y: cy}, bounds.H, trackFill)
+	ctx.StrokeLine(Point{X: leftCx, Y: cy}, Point{X: rightCx, Y: cy}, bounds.H-2, trackStroke)
+	knobRadius := (bounds.H - 6) / 2
+	knobCx := bounds.X + 3 + knobRadius
 	if t.Active {
-		knobX = bounds.Right() - knobSize - 3
+		knobCx = bounds.Right() - 3 - knobRadius
 	}
-	knobRect := Rect{X: knobX, Y: bounds.Y + 3, W: knobSize, H: knobSize}
-	ctx.FillRect(knobRect, knobFill)
-	ctx.StrokeRect(knobRect, 1, color.RGBA{R: 90, G: 102, B: 118, A: 200})
+	ctx.FillCircle(Point{X: knobCx, Y: cy}, knobRadius, knobFill)
+	ctx.FillCircle(Point{X: knobCx, Y: cy}, knobRadius-1, color.RGBA{R: 90, G: 102, B: 118, A: 32})
+	ctx.StrokeLine(Point{X: knobCx, Y: cy}, Point{X: knobCx, Y: cy}, knobRadius*2, color.RGBA{R: 90, G: 102, B: 118, A: 180})
 	ctx.AddHit(t.ID, bounds, t.Enabled)
 }
 
