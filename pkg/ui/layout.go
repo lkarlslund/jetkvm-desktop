@@ -243,7 +243,7 @@ type Panel struct {
 }
 
 func (p Panel) Measure(ctx *Context, constraints Constraints) Size {
-	return Inset{Insets: p.Insets, Child: p.Child}.Measure(ctx, constraints)
+	return Inset{Insets: p.contentInsets(), Child: p.Child}.Measure(ctx, constraints)
 }
 
 func (p Panel) Draw(ctx *Context, bounds Rect) {
@@ -254,8 +254,19 @@ func (p Panel) Draw(ctx *Context, bounds Rect) {
 		ctx.StrokeRect(bounds, 1, p.Stroke)
 	}
 	if p.Child != nil {
-		p.Child.Draw(ctx, bounds.Inset(p.Insets))
+		p.Child.Draw(ctx, bounds.Inset(p.contentInsets()))
 	}
+}
+
+func (p Panel) contentInsets() Insets {
+	insets := p.Insets
+	if p.Stroke != nil {
+		insets.Top += 1
+		insets.Right += 1
+		insets.Bottom += 1
+		insets.Left += 1
+	}
+	return insets
 }
 
 type Alignment uint8
