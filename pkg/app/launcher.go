@@ -124,12 +124,16 @@ func (e launcherScreenElement) Draw(ctx *ui.Context, bounds ui.Rect) {
 		ui.Fixed(ui.Spacer{H: 12}),
 		ui.Fixed(ui.Label{Text: "Available devices on your local network", Size: 15, Color: color.RGBA{R: 148, G: 163, B: 184, A: 255}}),
 		ui.Fixed(ui.Spacer{H: 28}),
-		ui.Flex(ui.Panel{
-			Fill:   color.RGBA{R: 15, G: 23, B: 34, A: 255},
-			Stroke: color.RGBA{R: 71, G: 85, B: 105, A: 180},
-			Insets: ui.UniformInsets(18),
-			Child:  launcherListElement(e),
-		}, 1),
+		ui.Fixed(ui.Constrained{
+			MinH: 240,
+			MaxH: 520,
+			Child: ui.Panel{
+				Fill:   color.RGBA{R: 15, G: 23, B: 34, A: 255},
+				Stroke: color.RGBA{R: 71, G: 85, B: 105, A: 180},
+				Insets: ui.UniformInsets(18),
+				Child:  launcherListElement(e),
+			},
+		}),
 		ui.Fixed(ui.Spacer{H: 18}),
 		ui.Fixed(ui.Column{
 			Children: []ui.Child{
@@ -158,7 +162,10 @@ func (e launcherScreenElement) Draw(ctx *ui.Context, bounds ui.Rect) {
 	}
 	ui.Inset{
 		Insets: ui.Insets{Top: 42, Right: 48, Bottom: 44, Left: 48},
-		Child:  ui.Column{Children: children},
+		Child: ui.Constrained{
+			MaxW:  1380,
+			Child: ui.Column{Children: children},
+		},
 	}.Draw(ctx, bounds)
 }
 
@@ -225,29 +232,41 @@ func (e launcherListElement) Draw(ctx *ui.Context, bounds ui.Rect) {
 		}.Draw(ctx, bounds)
 		return
 	}
-	rowY := bounds.Y
+	children := make([]ui.Child, 0, len(e.app.discovered)*2+2)
 	lastUpdated := ""
 	for i, device := range e.app.discovered {
-		if rowY+54 > bounds.Bottom()-18 {
+		if i >= 7 {
 			break
 		}
-		rowBounds := ui.Rect{X: bounds.X, Y: rowY, W: bounds.W, H: 54}
-		ui.Panel{
-			Fill:   color.RGBA{R: 20, G: 31, B: 46, A: 255},
-			Stroke: color.RGBA{R: 56, G: 189, B: 248, A: 80},
-			Insets: ui.SymmetricInsets(16, 12),
-			Child:  launcherDeviceRowElement{device: device},
-		}.Draw(ctx, rowBounds)
-		ctx.AddHit("discover:"+device.BaseURL, rowBounds, true)
-		rowY += 62
-		if i == len(e.app.discovered)-1 {
-			lastUpdated = fmt.Sprintf("Updated %s", humanDiscoveryAge(device.UpdatedAt))
+		if i > 0 {
+			children = append(children, ui.Fixed(ui.Spacer{H: 8}))
 		}
+		children = append(children, ui.Fixed(launcherDevicePanelElement{app: e.app, device: device}))
+		lastUpdated = fmt.Sprintf("Updated %s", humanDiscoveryAge(device.UpdatedAt))
 	}
 	if lastUpdated != "" {
-		ui.Label{Text: lastUpdated, Size: 11, Color: color.RGBA{R: 100, G: 116, B: 139, A: 255}}.
-			Draw(ctx, ui.Rect{X: bounds.X + 4, Y: bounds.Bottom() - 12, W: bounds.W, H: 12})
+		children = append(children, ui.Flex(ui.Spacer{}, 1), ui.Fixed(ui.Label{Text: lastUpdated, Size: 11, Color: color.RGBA{R: 100, G: 116, B: 139, A: 255}}))
 	}
+	ui.Column{Children: children}.Draw(ctx, bounds)
+}
+
+type launcherDevicePanelElement struct {
+	app    *App
+	device discovery.Device
+}
+
+func (launcherDevicePanelElement) Measure(_ *ui.Context, constraints ui.Constraints) ui.Size {
+	return constraints.Clamp(ui.Size{W: constraints.MaxW, H: 54})
+}
+
+func (e launcherDevicePanelElement) Draw(ctx *ui.Context, bounds ui.Rect) {
+	ui.Panel{
+		Fill:   color.RGBA{R: 20, G: 31, B: 46, A: 255},
+		Stroke: color.RGBA{R: 56, G: 189, B: 248, A: 80},
+		Insets: ui.SymmetricInsets(16, 12),
+		Child:  launcherDeviceRowElement{device: e.device},
+	}.Draw(ctx, bounds)
+	ctx.AddHit("discover:"+e.device.BaseURL, bounds, true)
 }
 
 type launcherDeviceRowElement struct {
@@ -265,14 +284,20 @@ func (e launcherDeviceRowElement) Draw(ctx *ui.Context, bounds ui.Rect) {
 	}
 	ui.Row{
 		Children: []ui.Child{
-			ui.Flex(ui.Column{
-				Children: []ui.Child{
-					ui.Fixed(ui.Label{Text: e.device.Name, Size: 17, Color: color.RGBA{R: 241, G: 245, B: 249, A: 255}}),
-					ui.Fixed(ui.Spacer{H: 8}),
-					ui.Fixed(ui.Label{Text: e.device.BaseURL, Size: 13, Color: color.RGBA{R: 148, G: 163, B: 184, A: 255}}),
+			ui.Flex(ui.Align{
+				Vertical: ui.AlignCenter,
+				Child: ui.Column{
+					Children: []ui.Child{
+						ui.Fixed(ui.Label{Text: e.device.Name, Size: 17, Color: color.RGBA{R: 241, G: 245, B: 249, A: 255}}),
+						ui.Fixed(ui.Spacer{H: 8}),
+						ui.Fixed(ui.Label{Text: e.device.BaseURL, Size: 13, Color: color.RGBA{R: 148, G: 163, B: 184, A: 255}}),
+					},
 				},
 			}, 1),
-			ui.Fixed(ui.Label{Text: state, Size: 13, Color: color.RGBA{R: 191, G: 219, B: 254, A: 255}}),
+			ui.Fixed(ui.Align{
+				Vertical: ui.AlignCenter,
+				Child:    ui.Label{Text: state, Size: 13, Color: color.RGBA{R: 191, G: 219, B: 254, A: 255}},
+			}),
 		},
 	}.Draw(ctx, bounds)
 }
@@ -286,42 +311,19 @@ func (launcherInputElement) Measure(_ *ui.Context, constraints ui.Constraints) u
 }
 
 func (e launcherInputElement) Draw(ctx *ui.Context, bounds ui.Rect) {
-	ui.Panel{
-		Fill:   color.RGBA{R: 15, G: 23, B: 34, A: 255},
-		Stroke: color.RGBA{R: 71, G: 85, B: 105, A: 180},
-		Insets: ui.SymmetricInsets(14, 12),
-		Child:  launcherInputTextElement(e),
+	ui.TextField{
+		Value:            e.app.launcherInput,
+		Placeholder:      "jetkvm.local or 192.168.1.50",
+		Focused:          true,
+		Enabled:          true,
+		TextSize:         15,
+		FillColor:        color.RGBA{R: 15, G: 23, B: 34, A: 255},
+		StrokeColor:      color.RGBA{R: 71, G: 85, B: 105, A: 180},
+		FocusColor:       color.RGBA{R: 96, G: 165, B: 250, A: 180},
+		TextColor:        color.RGBA{R: 241, G: 245, B: 249, A: 255},
+		PlaceholderColor: color.RGBA{R: 100, G: 116, B: 139, A: 255},
+		CaretColor:       color.RGBA{R: 191, G: 219, B: 254, A: 255},
 	}.Draw(ctx, bounds)
-}
-
-type launcherInputTextElement struct {
-	app *App
-}
-
-func (launcherInputTextElement) Measure(_ *ui.Context, constraints ui.Constraints) ui.Size {
-	return constraints.Clamp(ui.Size{W: constraints.MaxW, H: constraints.MaxH})
-}
-
-func (e launcherInputTextElement) Draw(ctx *ui.Context, bounds ui.Rect) {
-	textSize := 15.0
-	text := e.app.launcherInput
-	textColor := color.RGBA{R: 241, G: 245, B: 249, A: 255}
-	showPlaceholder := text == ""
-	if showPlaceholder {
-		text = "jetkvm.local or 192.168.1.50"
-		textColor = color.RGBA{R: 100, G: 116, B: 139, A: 255}
-	}
-	textY := bounds.Y + (bounds.H-ui.LineHeight(textSize))/2
-	ctx.DrawText(ctx.Screen, text, bounds.X, textY, textSize, textColor)
-	if time.Now().UnixMilli()/500%2 != 0 {
-		return
-	}
-	caretX := bounds.X
-	if !showPlaceholder {
-		textW, _ := ctx.MeasureText(e.app.launcherInput, textSize)
-		caretX += textW + 2
-	}
-	ctx.FillRect(ui.Rect{X: caretX, Y: textY, W: 2, H: ui.LineHeight(textSize)}, color.RGBA{R: 191, G: 219, B: 254, A: 255})
 }
 
 type launcherPasswordElement struct {
@@ -344,12 +346,7 @@ func (e launcherPasswordElement) children() []ui.Child {
 		ui.Fixed(ui.Spacer{H: 12}),
 		ui.Fixed(ui.Paragraph{Text: e.targetLabel, Size: 14, Color: color.RGBA{R: 148, G: 163, B: 184, A: 255}}),
 		ui.Fixed(ui.Spacer{H: 22}),
-		ui.Fixed(ui.Panel{
-			Fill:   color.RGBA{R: 11, G: 16, B: 24, A: 255},
-			Stroke: color.RGBA{R: 127, G: 29, B: 29, A: 180},
-			Insets: ui.SymmetricInsets(14, 14),
-			Child:  launcherPasswordFieldElement{app: e.app, passDisplay: passDisplay},
-		}),
+		ui.Fixed(launcherPasswordFieldElement{app: e.app, passDisplay: passDisplay}),
 		ui.Fixed(ui.Spacer{H: 18}),
 	}
 	if e.app.launcherError != "" {
@@ -375,29 +372,23 @@ type launcherPasswordFieldElement struct {
 }
 
 func (launcherPasswordFieldElement) Measure(_ *ui.Context, constraints ui.Constraints) ui.Size {
-	return constraints.Clamp(ui.Size{W: constraints.MaxW, H: 44})
+	return constraints.Clamp(ui.Size{W: constraints.MaxW, H: 72})
 }
 
 func (e launcherPasswordFieldElement) Draw(ctx *ui.Context, bounds ui.Rect) {
-	textSize := 15.0
-	text := e.passDisplay
-	textColor := color.RGBA{R: 241, G: 245, B: 249, A: 255}
-	showPlaceholder := text == ""
-	if showPlaceholder {
-		text = "Local password"
-		textColor = color.RGBA{R: 100, G: 116, B: 139, A: 255}
-	}
-	textY := bounds.Y + (bounds.H-ui.LineHeight(textSize))/2
-	ctx.DrawText(ctx.Screen, text, bounds.X, textY, textSize, textColor)
-	if time.Now().UnixMilli()/500%2 != 0 {
-		return
-	}
-	caretX := bounds.X
-	if !showPlaceholder {
-		textW, _ := ctx.MeasureText(e.passDisplay, textSize)
-		caretX += textW + 2
-	}
-	ctx.FillRect(ui.Rect{X: caretX, Y: textY, W: 2, H: ui.LineHeight(textSize)}, color.RGBA{R: 248, G: 113, B: 113, A: 255})
+	ui.TextField{
+		DisplayValue:     e.passDisplay,
+		Placeholder:      "Local password",
+		Focused:          true,
+		Enabled:          true,
+		TextSize:         15,
+		FillColor:        color.RGBA{R: 11, G: 16, B: 24, A: 255},
+		StrokeColor:      color.RGBA{R: 127, G: 29, B: 29, A: 180},
+		FocusColor:       color.RGBA{R: 127, G: 29, B: 29, A: 180},
+		TextColor:        color.RGBA{R: 241, G: 245, B: 249, A: 255},
+		PlaceholderColor: color.RGBA{R: 100, G: 116, B: 139, A: 255},
+		CaretColor:       color.RGBA{R: 248, G: 113, B: 113, A: 255},
+	}.Draw(ctx, bounds)
 }
 
 func humanDiscoveryAge(at time.Time) string {

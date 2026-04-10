@@ -122,11 +122,19 @@ func (kv KeyValue) Draw(ctx *Context, bounds Rect) {
 }
 
 type TextField struct {
-	ID          string
-	Value       string
-	Placeholder string
-	Focused     bool
-	Enabled     bool
+	ID               string
+	Value            string
+	DisplayValue     string
+	Placeholder      string
+	Focused          bool
+	Enabled          bool
+	TextSize         float64
+	FillColor        color.Color
+	StrokeColor      color.Color
+	FocusColor       color.Color
+	TextColor        color.Color
+	PlaceholderColor color.Color
+	CaretColor       color.Color
 }
 
 func (t TextField) Measure(_ *Context, constraints Constraints) Size {
@@ -140,22 +148,44 @@ func (t TextField) Measure(_ *Context, constraints Constraints) Size {
 
 func (t TextField) Draw(ctx *Context, bounds Rect) {
 	stroke := ctx.Theme.InputStroke
+	if t.StrokeColor != nil {
+		stroke = t.StrokeColor
+	}
 	if t.Focused {
 		stroke = ctx.Theme.InputFocus
+		if t.FocusColor != nil {
+			stroke = t.FocusColor
+		}
 	}
-	ctx.FillRect(bounds, ctx.Theme.InputFill)
+	fill := ctx.Theme.InputFill
+	if t.FillColor != nil {
+		fill = t.FillColor
+	}
+	ctx.FillRect(bounds, fill)
 	ctx.StrokeRect(bounds, 1, stroke)
 	ctx.AddHit(t.ID, bounds, t.Enabled)
 	if ctx.DrawText == nil {
 		return
 	}
-	textSize := 13.0
-	text := t.Value
+	textSize := t.TextSize
+	if textSize <= 0 {
+		textSize = 13
+	}
+	text := t.DisplayValue
+	if text == "" {
+		text = t.Value
+	}
 	textColor := ctx.Theme.Body
+	if t.TextColor != nil {
+		textColor = t.TextColor
+	}
 	showPlaceholder := strings.TrimSpace(text) == ""
 	if strings.TrimSpace(text) == "" {
 		text = t.Placeholder
 		textColor = ctx.Theme.DisabledText
+		if t.PlaceholderColor != nil {
+			textColor = t.PlaceholderColor
+		}
 	}
 	textY := bounds.Y + (bounds.H-LineHeight(textSize))/2
 	ctx.DrawText(ctx.Screen, text, bounds.X+12, textY, textSize, textColor)
@@ -164,11 +194,15 @@ func (t TextField) Draw(ctx *Context, bounds Rect) {
 	}
 	caretX := bounds.X + 12
 	if !showPlaceholder {
-		textW, _ := ctx.MeasureText(t.Value, textSize)
+		textW, _ := ctx.MeasureText(text, textSize)
 		caretX += textW + 2
 	}
 	caretH := LineHeight(textSize)
-	ctx.FillRect(Rect{X: caretX, Y: textY, W: 2, H: caretH}, ctx.Theme.Body)
+	caretColor := ctx.Theme.Body
+	if t.CaretColor != nil {
+		caretColor = t.CaretColor
+	}
+	ctx.FillRect(Rect{X: caretX, Y: textY, W: 2, H: caretH}, caretColor)
 }
 
 type ProgressBar struct {
