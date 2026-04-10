@@ -72,6 +72,8 @@ type DeviceState struct {
 	JigglerEnabled      bool
 	JigglerConfig       map[string]any
 	TLSMode             string
+	TLSCertificate      string
+	TLSPrivateKey       string
 	DisplayRotation     string
 	BacklightSettings   map[string]any
 	VideoSleepDuration  int
@@ -166,6 +168,8 @@ func NewServer(cfg Config) (*Server, error) {
 				"schedule_cron_tab":        "0 * * * * *",
 			},
 			TLSMode:         "disabled",
+			TLSCertificate:  "",
+			TLSPrivateKey:   "",
 			DisplayRotation: "270",
 			BacklightSettings: map[string]any{
 				"max_brightness": 64,
@@ -982,11 +986,21 @@ func (s *session) handleRPC(data []byte) error {
 	case "getCloudState":
 		resp = jsonrpc.NewResponse(req.ID, map[string]any{"connected": s.serverRef.state.CloudURL != "", "url": s.serverRef.state.CloudURL, "appUrl": s.serverRef.state.CloudAppURL})
 	case "getTLSState":
-		resp = jsonrpc.NewResponse(req.ID, map[string]any{"mode": s.serverRef.state.TLSMode})
+		resp = jsonrpc.NewResponse(req.ID, map[string]any{
+			"mode":        s.serverRef.state.TLSMode,
+			"certificate": s.serverRef.state.TLSCertificate,
+			"privateKey":  s.serverRef.state.TLSPrivateKey,
+		})
 	case "setTLSState":
 		if state, ok := params["state"].(map[string]any); ok {
 			if mode, ok := state["mode"].(string); ok && mode != "" {
 				s.serverRef.state.TLSMode = mode
+				if certificate, ok := state["certificate"].(string); ok {
+					s.serverRef.state.TLSCertificate = certificate
+				}
+				if privateKey, ok := state["privateKey"].(string); ok {
+					s.serverRef.state.TLSPrivateKey = privateKey
+				}
 				if applyButDrop == req.Method {
 					return nil
 				}

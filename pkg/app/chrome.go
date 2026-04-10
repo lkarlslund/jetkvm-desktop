@@ -967,16 +967,17 @@ func (a *App) loadSettingsSection(section settingsSection, seq uint64) error {
 		if cloud, callErr := a.ctrl.GetCloudState(ctx); callErr == nil {
 			state.State.Cloud = cloud
 		}
-		if tlsMode, callErr := a.ctrl.GetTLSState(ctx); callErr == nil {
-			state.State.TLS = tlsMode
+		if tlsState, callErr := a.ctrl.GetTLSState(ctx); callErr == nil {
+			state.State.TLS = tlsState
 		}
-		if state.State.LocalAuthMode == session.LocalAuthModeUnknown && state.State.Cloud.URL == "" && state.State.TLS == session.TLSModeUnknown {
+		if state.State.LocalAuthMode == session.LocalAuthModeUnknown && state.State.Cloud.URL == "" && state.State.TLS.Mode == session.TLSModeUnknown {
 			state.Error = "No access RPC state available on this target"
 			err = errors.New(state.Error)
 		}
 		a.mu.Lock()
 		if a.sectionLoadSeq[section] == seq {
 			a.sectionData.Access = state
+			a.syncTLSEditorLocked(state.State.TLS)
 		}
 		a.mu.Unlock()
 	case sectionHardware:
@@ -1797,20 +1798,50 @@ func (a *App) settingsAccessBody() ui.Element {
 
 	tlsState := a.settingsAction(settingsGroupTLSMode)
 	tlsChildren := []ui.Child{
-		ui.Fixed(settingsKeyValueElement("Mode", string(state.State.TLS), 70)),
+		ui.Fixed(settingsKeyValueElement("Mode", string(state.State.TLS.Mode), 70)),
 		ui.Fixed(ui.Spacer{H: 14}),
 		ui.Fixed(ui.Paragraph{Text: "Use the target's currently exposed TLS mode. Native client transport follows whatever the device publishes.", Size: 12, Color: color.RGBA{R: 166, G: 178, B: 190, A: 255}}),
 		ui.Fixed(ui.Spacer{H: 14}),
 		ui.Fixed(ui.Wrap{Children: []ui.Element{
-			settingsActionElement("tls_disabled", "Disabled", settingsActionVisual{Enabled: state.State.TLS != session.TLSModeUnknown && (!tlsState.Pending || tlsState.PendingChoice == "disabled"), Active: state.State.TLS == session.TLSModeDisabled, Pending: tlsState.Pending && tlsState.PendingChoice == "disabled"}, 92),
-			settingsActionElement("tls_self_signed", "Self-Signed", settingsActionVisual{Enabled: state.State.TLS != session.TLSModeUnknown && (!tlsState.Pending || tlsState.PendingChoice == "self-signed"), Active: state.State.TLS == session.TLSModeSelfSigned, Pending: tlsState.Pending && tlsState.PendingChoice == "self-signed"}, 114),
+			settingsActionElement("tls_disabled", "Disabled", settingsActionVisual{Enabled: state.State.TLS.Mode != session.TLSModeUnknown && (!tlsState.Pending || tlsState.PendingChoice == "disabled"), Active: state.State.TLS.Mode == session.TLSModeDisabled, Pending: tlsState.Pending && tlsState.PendingChoice == "disabled"}, 92),
+			settingsActionElement("tls_self_signed", "Self-Signed", settingsActionVisual{Enabled: state.State.TLS.Mode != session.TLSModeUnknown && (!tlsState.Pending || tlsState.PendingChoice == "self-signed"), Active: state.State.TLS.Mode == session.TLSModeSelfSigned, Pending: tlsState.Pending && tlsState.PendingChoice == "self-signed"}, 114),
+			settingsActionElement("tls_custom", "Custom", settingsActionVisual{Enabled: state.State.TLS.Mode != session.TLSModeUnknown && (!tlsState.Pending || tlsState.PendingChoice == "custom"), Active: state.State.TLS.Mode == session.TLSModeCustom, Pending: tlsState.Pending && tlsState.PendingChoice == "custom"}, 82),
 		}, Spacing: 12, LineSpacing: 8}),
+		ui.Fixed(ui.Spacer{H: 16}),
+		ui.Fixed(settingsSectionLabelElement("Certificate")),
+		ui.Fixed(ui.Spacer{H: 8}),
+		ui.Fixed(ui.Paragraph{Text: pemSummary(a.tlsEditor.Certificate), Size: 12, Color: color.RGBA{R: 236, G: 241, B: 245, A: 255}}),
+		ui.Fixed(ui.Spacer{H: 10}),
+		ui.Fixed(ui.Wrap{Children: []ui.Element{
+			settingsActionElement("tls_custom_load_certificate", "Load from Clipboard", settingsActionVisual{Enabled: !tlsState.Pending}, 146),
+			settingsActionElement("tls_custom_clear_certificate", "Clear", settingsActionVisual{Enabled: !tlsState.Pending}, 70),
+		}, Spacing: 12, LineSpacing: 8}),
+		ui.Fixed(ui.Spacer{H: 16}),
+		ui.Fixed(settingsSectionLabelElement("Private Key")),
+		ui.Fixed(ui.Spacer{H: 8}),
+		ui.Fixed(ui.Paragraph{Text: pemSummary(a.tlsEditor.PrivateKey), Size: 12, Color: color.RGBA{R: 236, G: 241, B: 245, A: 255}}),
+		ui.Fixed(ui.Spacer{H: 10}),
+		ui.Fixed(ui.Wrap{Children: []ui.Element{
+			settingsActionElement("tls_custom_load_key", "Load from Clipboard", settingsActionVisual{Enabled: !tlsState.Pending}, 146),
+			settingsActionElement("tls_custom_clear_key", "Clear", settingsActionVisual{Enabled: !tlsState.Pending}, 70),
+		}, Spacing: 12, LineSpacing: 8}),
+		ui.Fixed(ui.Spacer{H: 16}),
+		ui.Fixed(ui.Paragraph{Text: "Load the full PEM certificate chain and matching private key from the system clipboard, then apply Custom TLS.", Size: 12, Color: color.RGBA{R: 166, G: 178, B: 190, A: 255}}),
+		ui.Fixed(ui.Spacer{H: 12}),
+		ui.Fixed(settingsActionElement("tls_custom_save", "Apply Custom TLS", settingsActionVisual{Enabled: !tlsState.Pending}, 142)),
 	}
 	switch {
 	case tlsState.Pending:
 		tlsChildren = append(tlsChildren, ui.Fixed(ui.Spacer{H: 12}), ui.Fixed(settingsStatusElement("Applying…", color.RGBA{R: 245, G: 200, B: 96, A: 255})))
 	case tlsState.Error != "":
 		tlsChildren = append(tlsChildren, ui.Fixed(ui.Spacer{H: 12}), ui.Fixed(settingsStatusElement(tlsState.Error, color.RGBA{R: 220, G: 132, B: 132, A: 255})))
+	}
+	if a.tlsEditor.Message != "" {
+		msgColor := color.RGBA{R: 245, G: 200, B: 96, A: 255}
+		if a.tlsEditor.Success {
+			msgColor = color.RGBA{R: 134, G: 239, B: 172, A: 255}
+		}
+		tlsChildren = append(tlsChildren, ui.Fixed(ui.Spacer{H: 12}), ui.Fixed(settingsStatusElement(a.tlsEditor.Message, msgColor)))
 	}
 	if state.Error != "" {
 		tlsChildren = append(tlsChildren, ui.Fixed(ui.Spacer{H: 12}), ui.Fixed(settingsStatusElement(state.Error, color.RGBA{R: 220, G: 132, B: 132, A: 255})))
@@ -1858,6 +1889,15 @@ func obscuredText(value string) string {
 		return ""
 	}
 	return strings.Repeat("*", len([]rune(value)))
+}
+
+func pemSummary(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "Not loaded"
+	}
+	lines := strings.Count(value, "\n") + 1
+	return fmt.Sprintf("%d bytes across %d lines", len(value), lines)
 }
 
 func (a *App) settingsAccessEditorCard(pending bool) ui.Element {

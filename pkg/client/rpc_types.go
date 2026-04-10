@@ -67,7 +67,9 @@ type CloudState struct {
 }
 
 type TLSState struct {
-	Mode string `json:"mode"`
+	Mode        string `json:"mode"`
+	Certificate string `json:"certificate,omitempty"`
+	PrivateKey  string `json:"privateKey,omitempty"`
 }
 
 type USBConfig struct {

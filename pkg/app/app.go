@@ -117,6 +117,9 @@ type App struct {
 	jigglerEditorConfig    session.JigglerConfig
 	jigglerEditorError     string
 	accessEditor           accessEditorState
+	tlsEditor              tlsEditorState
+	tlsEditorLoaded        bool
+	tlsEditorDirty         bool
 	advancedSSHKey         string
 	advancedSSHLoaded      bool
 	advancedSSHDirty       bool
@@ -256,6 +259,13 @@ type accessEditorState struct {
 	DisablePassword    string
 	Message            string
 	Success            bool
+}
+
+type tlsEditorState struct {
+	Certificate string
+	PrivateKey  string
+	Message     string
+	Success     bool
 }
 
 type macroEditorMode uint8
@@ -1081,6 +1091,17 @@ func (a *App) syncAdvancedSSHKeyLocked(sshKey string) {
 	a.advancedSSHLoaded = true
 }
 
+func (a *App) syncTLSEditorLocked(state session.TLSState) {
+	if a.tlsEditorDirty {
+		return
+	}
+	a.tlsEditor = tlsEditorState{
+		Certificate: state.Certificate,
+		PrivateKey:  state.PrivateKey,
+	}
+	a.tlsEditorLoaded = true
+}
+
 func (a *App) syncNetworkEditorLocked(settings session.NetworkSettings) {
 	if a.networkEditorDirty {
 		return
@@ -1712,8 +1733,45 @@ func (a *App) invokeAction(id string) {
 			if err := a.ctrl.SetTLSMode(session.TLSModeSelfSigned); err != nil {
 				return err
 			}
+			a.tlsEditorDirty = false
 			return a.refreshSettingsSectionSync(sectionAccess)
 		})
+	case "tls_custom_load_certificate":
+		text, err := readClipboardText()
+		if err != nil {
+			a.tlsEditor.Message = err.Error()
+			a.tlsEditor.Success = false
+			return
+		}
+		a.tlsEditor.Certificate = text
+		a.tlsEditorDirty = true
+		a.tlsEditor.Message = "Certificate loaded from clipboard"
+		a.tlsEditor.Success = true
+	case "tls_custom_load_key":
+		text, err := readClipboardText()
+		if err != nil {
+			a.tlsEditor.Message = err.Error()
+			a.tlsEditor.Success = false
+			return
+		}
+		a.tlsEditor.PrivateKey = text
+		a.tlsEditorDirty = true
+		a.tlsEditor.Message = "Private key loaded from clipboard"
+		a.tlsEditor.Success = true
+	case "tls_custom_clear_certificate":
+		a.tlsEditor.Certificate = ""
+		a.tlsEditorDirty = true
+		a.tlsEditor.Message = ""
+		a.tlsEditor.Success = false
+	case "tls_custom_clear_key":
+		a.tlsEditor.PrivateKey = ""
+		a.tlsEditorDirty = true
+		a.tlsEditor.Message = ""
+		a.tlsEditor.Success = false
+	case "tls_custom":
+		a.invokeCustomTLS()
+	case "tls_custom_save":
+		a.invokeCustomTLS()
 	case "video_codec:auto":
 		a.invokeVideoCodecAction("auto", session.VideoCodecAuto)
 	case "video_codec:h265":
@@ -2336,6 +2394,25 @@ func (a *App) invokeSaveSSHKey() {
 		}
 		a.advancedSSHDirty = false
 		return a.refreshSettingsSectionSync(sectionAdvanced)
+	})
+}
+
+func (a *App) invokeCustomTLS() {
+	if a.settingsActionPending(settingsGroupTLSMode) {
+		return
+	}
+	a.withSettingsAction(settingsGroupTLSMode, "custom", func() error {
+		if err := a.ctrl.SetTLSState(session.TLSState{
+			Mode:        session.TLSModeCustom,
+			Certificate: strings.TrimSpace(a.tlsEditor.Certificate),
+			PrivateKey:  strings.TrimSpace(a.tlsEditor.PrivateKey),
+		}); err != nil {
+			return err
+		}
+		a.tlsEditorDirty = false
+		a.tlsEditor.Message = "Custom TLS settings updated"
+		a.tlsEditor.Success = true
+		return a.refreshSettingsSectionSync(sectionAccess)
 	})
 }
 

@@ -245,19 +245,7 @@ func (c *Controller) SetTLSMode(mode TLSMode) error {
 	if mode == "" {
 		return errors.New("tls mode is required")
 	}
-	return c.mutateAndConfirm(func(ctx context.Context) error {
-		current := c.clientIfConnected()
-		if current == nil {
-			return errors.New("client not connected")
-		}
-		return current.SetTLSState(ctx, string(mode))
-	}, func(ctx context.Context) (bool, error) {
-		state, err := c.GetTLSState(ctx)
-		if err != nil {
-			return false, err
-		}
-		return state == mode, nil
-	})
+	return c.SetTLSState(TLSState{Mode: mode})
 }
 
 func (c *Controller) SetDisplayRotation(rotation DisplayRotation) error {
@@ -368,16 +356,57 @@ func (c *Controller) GetLocalAccessState(ctx context.Context) (LocalAuthMode, bo
 	return sessionLocalAuthMode(info.AuthMode), info.LoopbackOnly, nil
 }
 
-func (c *Controller) GetTLSState(ctx context.Context) (TLSMode, error) {
+func (c *Controller) GetTLSState(ctx context.Context) (TLSState, error) {
 	current := c.clientIfConnected()
 	if current == nil {
-		return TLSModeUnknown, errors.New("client not connected")
+		return TLSState{}, errors.New("client not connected")
 	}
 	state, err := current.GetTLSState(ctx)
 	if err != nil {
-		return TLSModeUnknown, err
+		return TLSState{}, err
 	}
-	return TLSMode(state.Mode), nil
+	return TLSState{
+		Mode:        TLSMode(state.Mode),
+		Certificate: state.Certificate,
+		PrivateKey:  state.PrivateKey,
+	}, nil
+}
+
+func (c *Controller) SetTLSState(state TLSState) error {
+	if state.Mode == TLSModeUnknown {
+		return errors.New("tls mode is required")
+	}
+	if state.Mode == TLSModeCustom {
+		if strings.TrimSpace(state.Certificate) == "" {
+			return errors.New("certificate is required for custom TLS")
+		}
+		if strings.TrimSpace(state.PrivateKey) == "" {
+			return errors.New("private key is required for custom TLS")
+		}
+	}
+	return c.mutateAndConfirm(func(ctx context.Context) error {
+		current := c.clientIfConnected()
+		if current == nil {
+			return errors.New("client not connected")
+		}
+		return current.SetTLSState(ctx, client.TLSState{
+			Mode:        string(state.Mode),
+			Certificate: state.Certificate,
+			PrivateKey:  state.PrivateKey,
+		})
+	}, func(ctx context.Context) (bool, error) {
+		current, err := c.GetTLSState(ctx)
+		if err != nil {
+			return false, err
+		}
+		if current.Mode != state.Mode {
+			return false, nil
+		}
+		if state.Mode != TLSModeCustom {
+			return true, nil
+		}
+		return current.Certificate == state.Certificate && current.PrivateKey == state.PrivateKey, nil
+	})
 }
 
 func (c *Controller) CreateLocalPassword(password string) error {

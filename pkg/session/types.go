@@ -14,7 +14,14 @@ const (
 	TLSModeUnknown    TLSMode = ""
 	TLSModeDisabled   TLSMode = "disabled"
 	TLSModeSelfSigned TLSMode = "self-signed"
+	TLSModeCustom     TLSMode = "custom"
 )
+
+type TLSState struct {
+	Mode        TLSMode
+	Certificate string
+	PrivateKey  string
+}
 
 type DisplayRotation string
 
@@ -34,7 +41,7 @@ type AccessState struct {
 	LocalAuthMode LocalAuthMode
 	LoopbackOnly  bool
 	Cloud         CloudState
-	TLS           TLSMode
+	TLS           TLSState
 }
 
 type USBConfig struct {

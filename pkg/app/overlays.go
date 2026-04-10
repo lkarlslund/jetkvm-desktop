@@ -91,18 +91,29 @@ func (a *App) updatePastePreview() {
 
 func (a *App) loadClipboardText() {
 	a.pasteError = ""
-	if !clipboardReady {
-		a.pasteError = "System clipboard is not available on this platform/session"
+	text, err := readClipboardText()
+	if err != nil {
+		a.pasteError = err.Error()
 		return
 	}
-	data := clipboard.Read(clipboard.FmtText)
-	if len(data) == 0 {
+	if text == "" {
 		a.pasteText = ""
 		a.pasteInvalid = ""
 		return
 	}
-	a.pasteText = string(data)
+	a.pasteText = text
 	a.updatePastePreview()
+}
+
+func readClipboardText() (string, error) {
+	if !clipboardReady {
+		return "", fmt.Errorf("system clipboard is not available on this platform/session")
+	}
+	data := clipboard.Read(clipboard.FmtText)
+	if len(data) == 0 {
+		return "", nil
+	}
+	return string(data), nil
 }
 
 func (a *App) submitPaste() {

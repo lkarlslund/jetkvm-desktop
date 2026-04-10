@@ -158,8 +158,8 @@ func (c *Client) GetTLSState(ctx context.Context) (TLSState, error) {
 	return state, err
 }
 
-func (c *Client) SetTLSState(ctx context.Context, mode string) error {
-	return c.Call(ctx, "setTLSState", setTLSStateRequest{State: TLSState{Mode: mode}}, nil)
+func (c *Client) SetTLSState(ctx context.Context, state TLSState) error {
+	return c.Call(ctx, "setTLSState", setTLSStateRequest{State: state}, nil)
 }
 
 func (c *Client) GetUSBEmulationState(ctx context.Context) (bool, error) {
