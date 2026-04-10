@@ -379,44 +379,66 @@ func (a *App) drawMediaOverlay(screen *ebiten.Image, snap session.Snapshot) {
 		return
 	}
 	bounds := screen.Bounds()
-	panelW := min(820, float64(bounds.Dx()-56))
-	panelH := min(560, float64(bounds.Dy()-56))
-	panelX := float64(bounds.Dx())/2 - panelW/2
-	panelY := float64(bounds.Dy())/2 - panelH/2
-	a.mediaPanel = rect{x: panelX, y: panelY, w: panelW, h: panelH}
+	a.mediaPanel = rect{}
 	a.mediaButtons = a.mediaButtons[:0]
 	ctx := a.newUIContext(screen, func(btn chromeButton) {
 		a.mediaButtons = append(a.mediaButtons, btn)
 	})
-	panelRect := ui.Rect{X: panelX, Y: panelY, W: panelW, H: panelH}
-	ctx.FillRect(ui.Rect{W: float64(bounds.Dx()), H: float64(bounds.Dy())}, ctx.Theme.Backdrop)
+	ui.Inset{
+		Insets: ui.UniformInsets(28),
+		Child: ui.Align{
+			Horizontal: ui.AlignCenter,
+			Vertical:   ui.AlignCenter,
+			Child: ui.Constrained{
+				MaxW: 820,
+				MaxH: 560,
+				Child: mediaOverlayElement{
+					app:  a,
+					snap: snap,
+				},
+			},
+		},
+	}.Draw(ctx, ui.Rect{W: float64(bounds.Dx()), H: float64(bounds.Dy())})
+}
+
+type mediaOverlayElement struct {
+	app  *App
+	snap session.Snapshot
+}
+
+func (mediaOverlayElement) Measure(_ *ui.Context, constraints ui.Constraints) ui.Size {
+	return constraints.Clamp(ui.Size{W: constraints.MaxW, H: constraints.MaxH})
+}
+
+func (e mediaOverlayElement) Draw(ctx *ui.Context, bounds ui.Rect) {
+	e.app.mediaPanel = rect{x: bounds.X, y: bounds.Y, w: bounds.W, h: bounds.H}
+	ctx.FillRect(ui.Rect{W: float64(ctx.Screen.Bounds().Dx()), H: float64(ctx.Screen.Bounds().Dy())}, ctx.Theme.Backdrop)
 	ui.Panel{
 		Fill:   ctx.Theme.ModalFill,
 		Stroke: ctx.Theme.ModalStroke,
 		Insets: ui.UniformInsets(18),
 		Child: ui.Column{
 			Children: []ui.Child{
-				ui.Fixed(mediaHeaderElement{app: a}),
+				ui.Fixed(mediaHeaderElement{app: e.app}),
 				ui.Fixed(ui.Spacer{H: 18}),
 				ui.Fixed(ui.Panel{
 					Fill:   ctx.Theme.SectionFill,
 					Stroke: ctx.Theme.SectionStroke,
 					Insets: ui.UniformInsets(16),
-					Child:  mediaStateElement{app: a},
+					Child:  mediaStateElement{app: e.app},
 				}),
 				ui.Fixed(ui.Spacer{H: 18}),
-				ui.Fixed(mediaTabsElement{app: a}),
+				ui.Fixed(mediaTabsElement{app: e.app}),
 				ui.Fixed(ui.Spacer{H: 14}),
 				ui.Flex(ui.Panel{
 					Fill:   ctx.Theme.PanelFill,
 					Stroke: ctx.Theme.PanelStroke,
 					Insets: ui.UniformInsets(18),
-					Child:  a.mediaBodyElement(snap),
+					Child:  e.app.mediaBodyElement(e.snap),
 				}, 1),
 			},
-			Spacing: 0,
 		},
-	}.Draw(ctx, panelRect)
+	}.Draw(ctx, bounds)
 }
 
 func (a *App) mediaBodyElement(snap session.Snapshot) ui.Element {
@@ -452,18 +474,18 @@ func (h mediaHeaderElement) Draw(ctx *ui.Context, bounds ui.Rect) {
 			}),
 		},
 	}
+	rightChildren := []ui.Child{}
+	if h.app.mediaLoading {
+		rightChildren = append(rightChildren, ui.Fixed(ui.Label{Text: "Working…", Size: 12, Color: color.RGBA{R: 147, G: 197, B: 253, A: 255}}), ui.Fixed(ui.Spacer{H: 10}))
+	}
+	rightChildren = append(rightChildren, ui.Fixed(ui.Button{ID: "media_close", Label: "X", Enabled: !h.app.mediaUploading}))
 	ui.Row{
 		Children: []ui.Child{
 			ui.Flex(title, 1),
-			ui.Fixed(ui.Button{ID: "media_close", Label: "X", Enabled: !h.app.mediaUploading}),
+			ui.Fixed(ui.Column{Children: rightChildren}),
 		},
 		Spacing: 12,
 	}.Draw(ctx, bounds)
-	if h.app.mediaLoading {
-		labelW, _ := ctx.MeasureText("Working…", 12)
-		ui.Label{Text: "Working…", Size: 12, Color: color.RGBA{R: 147, G: 197, B: 253, A: 255}}.
-			Draw(ctx, ui.Rect{X: bounds.Right() - labelW - 116, Y: bounds.Y + 34, W: labelW, H: 16})
-	}
 }
 
 type mediaStateElement struct {
@@ -836,15 +858,17 @@ func (mediaUploadMetaElement) Measure(_ *ui.Context, constraints ui.Constraints)
 
 func (e mediaUploadMetaElement) Draw(ctx *ui.Context, bounds ui.Rect) {
 	left := fmt.Sprintf("%s / %s", humanBytes(e.app.mediaUploadSent), humanBytes(e.app.mediaUploadTotal))
-	ui.Label{Text: left, Size: 12, Color: ctx.Theme.Body}.Draw(ctx, ui.Rect{X: bounds.X, Y: bounds.Y, W: 160, H: bounds.H})
-	if e.app.mediaUploadSpeed <= 0 {
-		return
+	children := []ui.Child{
+		ui.Fixed(ui.Label{Text: left, Size: 12, Color: ctx.Theme.Body}),
 	}
-	speedLabel := fmt.Sprintf("%s/s", humanBytes(int64(e.app.mediaUploadSpeed)))
-	if etaLabel := mediaUploadETA(e.app.mediaUploadSent, e.app.mediaUploadTotal, e.app.mediaUploadSpeed); etaLabel != "" {
-		speedLabel += "  ETA " + etaLabel
+	if e.app.mediaUploadSpeed > 0 {
+		speedLabel := fmt.Sprintf("%s/s", humanBytes(int64(e.app.mediaUploadSpeed)))
+		if etaLabel := mediaUploadETA(e.app.mediaUploadSent, e.app.mediaUploadTotal, e.app.mediaUploadSpeed); etaLabel != "" {
+			speedLabel += "  ETA " + etaLabel
+		}
+		children = append(children, ui.Flex(ui.Spacer{}, 1), ui.Fixed(ui.Label{Text: speedLabel, Size: 12, Color: ctx.Theme.Muted}))
 	}
-	ui.Label{Text: speedLabel, Size: 12, Color: ctx.Theme.Muted}.Draw(ctx, ui.Rect{X: bounds.X + 182, Y: bounds.Y, W: bounds.W - 182, H: bounds.H})
+	ui.Row{Children: children, Spacing: 12}.Draw(ctx, bounds)
 }
 
 func humanBytes(value int64) string {

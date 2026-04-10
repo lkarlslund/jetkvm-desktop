@@ -246,6 +246,82 @@ func (p Panel) Draw(ctx *Context, bounds Rect) {
 	}
 }
 
+type Alignment uint8
+
+const (
+	AlignStart Alignment = iota
+	AlignCenter
+	AlignEnd
+)
+
+type Constrained struct {
+	MinW  float64
+	MaxW  float64
+	MinH  float64
+	MaxH  float64
+	Child Element
+}
+
+func (c Constrained) Measure(ctx *Context, constraints Constraints) Size {
+	if c.Child == nil {
+		return constraints.Clamp(Size{})
+	}
+	childConstraints := constraints
+	if c.MinW > 0 {
+		childConstraints.MinW = c.MinW
+	}
+	if c.MaxW > 0 && (childConstraints.MaxW == 0 || c.MaxW < childConstraints.MaxW) {
+		childConstraints.MaxW = c.MaxW
+	}
+	if c.MinH > 0 {
+		childConstraints.MinH = c.MinH
+	}
+	if c.MaxH > 0 && (childConstraints.MaxH == 0 || c.MaxH < childConstraints.MaxH) {
+		childConstraints.MaxH = c.MaxH
+	}
+	return constraints.Clamp(c.Child.Measure(ctx, childConstraints))
+}
+
+func (c Constrained) Draw(ctx *Context, bounds Rect) {
+	if c.Child == nil {
+		return
+	}
+	childSize := c.Measure(ctx, Constraints{MaxW: bounds.W, MaxH: bounds.H})
+	c.Child.Draw(ctx, Rect{X: bounds.X, Y: bounds.Y, W: childSize.W, H: childSize.H})
+}
+
+type Align struct {
+	Horizontal Alignment
+	Vertical   Alignment
+	Child      Element
+}
+
+func (a Align) Measure(_ *Context, constraints Constraints) Size {
+	return constraints.Clamp(Size{W: constraints.MaxW, H: constraints.MaxH})
+}
+
+func (a Align) Draw(ctx *Context, bounds Rect) {
+	if a.Child == nil {
+		return
+	}
+	childSize := a.Child.Measure(ctx, Constraints{MaxW: bounds.W, MaxH: bounds.H})
+	x := bounds.X
+	y := bounds.Y
+	switch a.Horizontal {
+	case AlignCenter:
+		x += (bounds.W - childSize.W) / 2
+	case AlignEnd:
+		x += bounds.W - childSize.W
+	}
+	switch a.Vertical {
+	case AlignCenter:
+		y += (bounds.H - childSize.H) / 2
+	case AlignEnd:
+		y += bounds.H - childSize.H
+	}
+	a.Child.Draw(ctx, Rect{X: x, Y: y, W: childSize.W, H: childSize.H})
+}
+
 type Wrap struct {
 	Children    []Element
 	Spacing     float64

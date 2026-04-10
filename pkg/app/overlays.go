@@ -173,33 +173,15 @@ func (a *App) drawStatsOverlay(screen *ebiten.Image) {
 			Series: statsSeries(a.statsHistory, func(p statsPoint) float64 { return p.FramesPerSecond }),
 		},
 	}
-	w := 0.0
-	for _, line := range lines {
-		lineW, _ := ui.MeasureText(line, 12)
-		if lineW > w {
-			w = lineW
-		}
-	}
-	graphAreaW := 320.0
-	if w > graphAreaW {
-		graphAreaW = w
-	}
-	const pad = 16.0
-	boxW := graphAreaW + pad*2
-	boxH := float64(len(lines))*18 + pad*2 + 18 + float64(len(graphs))*72
-	x := float64(screen.Bounds().Dx()) - boxW - 16
-	y := 58.0
 	ctx := a.newUIContext(screen, func(chromeButton) {})
-	ui.Panel{
-		Fill:   color.RGBA{R: 9, G: 14, B: 22, A: 224},
-		Stroke: color.RGBA{R: 88, G: 108, B: 126, A: 180},
-		Insets: ui.UniformInsets(pad),
-		Child: statsOverlayElement{
+	statsOverlayRootElement{
+		app: a,
+		child: statsOverlayElement{
 			app:    a,
 			lines:  lines,
 			graphs: graphs,
 		},
-	}.Draw(ctx, ui.Rect{X: x, Y: y, W: boxW, H: boxH})
+	}.Draw(ctx, ui.Rect{W: float64(screen.Bounds().Dx()), H: float64(screen.Bounds().Dy())})
 }
 
 type graphMetric struct {
@@ -249,25 +231,18 @@ func (a *App) drawPasteOverlay(screen *ebiten.Image, snap session.Snapshot) {
 		return
 	}
 	bounds := screen.Bounds()
-	panelW := min(760, float64(bounds.Dx()-72))
-	panelH := min(420, float64(bounds.Dy()-96))
-	panelX := (float64(bounds.Dx()) - panelW) / 2
-	panelY := (float64(bounds.Dy()) - panelH) / 2
-	a.pastePanel = rect{x: panelX, y: panelY, w: panelW, h: panelH}
+	a.pastePanel = rect{}
 	a.pasteButtons = a.pasteButtons[:0]
 	ctx := a.newUIContext(screen, func(btn chromeButton) {
 		a.pasteButtons = append(a.pasteButtons, btn)
 	})
-	ctx.FillRect(ui.Rect{W: float64(bounds.Dx()), H: float64(bounds.Dy())}, color.RGBA{A: 168})
-	ui.Panel{
-		Fill:   color.RGBA{R: 13, G: 20, B: 30, A: 246},
-		Stroke: color.RGBA{R: 88, G: 102, B: 118, A: 180},
-		Insets: ui.UniformInsets(22),
-		Child: pasteOverlayElement{
+	pasteOverlayRootElement{
+		app: a,
+		child: pasteOverlayElement{
 			app:  a,
 			snap: snap,
 		},
-	}.Draw(ctx, ui.Rect{X: panelX, Y: panelY, W: panelW, H: panelH})
+	}.Draw(ctx, ui.Rect{W: float64(bounds.Dx()), H: float64(bounds.Dy())})
 }
 
 type statsOverlayElement struct {
@@ -276,11 +251,15 @@ type statsOverlayElement struct {
 	graphs []graphMetric
 }
 
-func (e statsOverlayElement) Measure(_ *ui.Context, constraints ui.Constraints) ui.Size {
-	return constraints.Clamp(ui.Size{W: constraints.MaxW, H: constraints.MaxH})
+func (e statsOverlayElement) Measure(ctx *ui.Context, constraints ui.Constraints) ui.Size {
+	return ui.Column{Children: e.children()}.Measure(ctx, constraints)
 }
 
 func (e statsOverlayElement) Draw(ctx *ui.Context, bounds ui.Rect) {
+	ui.Column{Children: e.children()}.Draw(ctx, bounds)
+}
+
+func (e statsOverlayElement) children() []ui.Child {
 	children := []ui.Child{
 		ui.Fixed(ui.Label{Text: "Connection Stats", Size: 14, Color: color.RGBA{R: 240, G: 244, B: 248, A: 255}}),
 		ui.Fixed(ui.Spacer{H: 8}),
@@ -298,7 +277,7 @@ func (e statsOverlayElement) Draw(ctx *ui.Context, bounds ui.Rect) {
 		}
 		children = append(children, ui.Fixed(statsGraphElement{app: e.app, metric: graph}))
 	}
-	ui.Column{Children: children}.Draw(ctx, bounds)
+	return children
 }
 
 type statsGraphElement struct {
@@ -388,6 +367,75 @@ func (e pasteOverlayElement) Draw(ctx *ui.Context, bounds ui.Rect) {
 		}),
 	)
 	ui.Column{Children: bodyChildren}.Draw(ctx, bounds)
+}
+
+type statsOverlayRootElement struct {
+	app   *App
+	child ui.Element
+}
+
+func (statsOverlayRootElement) Measure(_ *ui.Context, constraints ui.Constraints) ui.Size {
+	return constraints.Clamp(ui.Size{W: constraints.MaxW, H: constraints.MaxH})
+}
+
+func (e statsOverlayRootElement) Draw(ctx *ui.Context, bounds ui.Rect) {
+	ui.Inset{
+		Insets: ui.Insets{Top: 58, Right: 16, Bottom: 16, Left: 16},
+		Child: ui.Align{
+			Horizontal: ui.AlignEnd,
+			Vertical:   ui.AlignStart,
+			Child: ui.Panel{
+				Fill:   color.RGBA{R: 9, G: 14, B: 22, A: 224},
+				Stroke: color.RGBA{R: 88, G: 108, B: 126, A: 180},
+				Insets: ui.UniformInsets(16),
+				Child:  e.child,
+			},
+		},
+	}.Draw(ctx, bounds)
+}
+
+type pasteOverlayRootElement struct {
+	app   *App
+	child ui.Element
+}
+
+func (pasteOverlayRootElement) Measure(_ *ui.Context, constraints ui.Constraints) ui.Size {
+	return constraints.Clamp(ui.Size{W: constraints.MaxW, H: constraints.MaxH})
+}
+
+func (e pasteOverlayRootElement) Draw(ctx *ui.Context, bounds ui.Rect) {
+	ctx.FillRect(ui.Rect{W: bounds.W, H: bounds.H}, color.RGBA{A: 168})
+	ui.Inset{
+		Insets: ui.Insets{Top: 48, Right: 36, Bottom: 48, Left: 36},
+		Child: ui.Align{
+			Horizontal: ui.AlignCenter,
+			Vertical:   ui.AlignCenter,
+			Child: ui.Constrained{
+				MaxW:  760,
+				MaxH:  420,
+				Child: pastePanelElement(e),
+			},
+		},
+	}.Draw(ctx, bounds)
+}
+
+type pastePanelElement struct {
+	app   *App
+	child ui.Element
+}
+
+func (pastePanelElement) Measure(_ *ui.Context, constraints ui.Constraints) ui.Size {
+	return constraints.Clamp(ui.Size{W: constraints.MaxW, H: constraints.MaxH})
+}
+
+func (e pastePanelElement) Draw(ctx *ui.Context, bounds ui.Rect) {
+	e.app.pastePanel = rect{x: bounds.X, y: bounds.Y, w: bounds.W, h: bounds.H}
+	ui.Panel{
+		Fill:   color.RGBA{R: 13, G: 20, B: 30, A: 246},
+		Stroke: color.RGBA{R: 88, G: 102, B: 118, A: 180},
+		Insets: ui.UniformInsets(22),
+		Child:  e.child,
+	}.Draw(ctx, bounds)
 }
 
 type pasteTextElement struct {
