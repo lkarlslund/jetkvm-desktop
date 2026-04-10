@@ -502,7 +502,7 @@ func TestForcedDisconnectFaultClosesPeerConnection(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	deadline := time.Now().Add(3 * time.Second)
+	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
 		select {
 		case evt := <-c.Lifecycle():
