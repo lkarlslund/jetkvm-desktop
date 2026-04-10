@@ -63,6 +63,46 @@ type Button struct {
 	Width   float64
 }
 
+type Toggle struct {
+	ID      string
+	Enabled bool
+	Active  bool
+	Pending bool
+}
+
+func (t Toggle) Measure(_ *Context, constraints Constraints) Size {
+	return constraints.Clamp(Size{W: 46, H: 24})
+}
+
+func (t Toggle) Draw(ctx *Context, bounds Rect) {
+	var trackFill color.Color = color.RGBA{R: 34, G: 45, B: 60, A: 255}
+	trackStroke := ctx.Theme.ButtonStroke
+	var knobFill color.Color = color.RGBA{R: 214, G: 222, B: 230, A: 255}
+	if t.Active {
+		trackFill = color.RGBA{R: 34, G: 78, B: 130, A: 255}
+		trackStroke = ctx.Theme.ActiveStroke
+	}
+	if t.Pending {
+		trackFill = color.RGBA{R: 88, G: 70, B: 24, A: 255}
+		trackStroke = color.RGBA{R: 234, G: 179, B: 8, A: 180}
+	}
+	if !t.Enabled {
+		trackFill = ctx.Theme.DisabledFill
+		knobFill = color.RGBA{R: 140, G: 148, B: 160, A: 255}
+	}
+	ctx.FillRect(bounds, trackFill)
+	ctx.StrokeRect(bounds, 1, trackStroke)
+	knobSize := bounds.H - 6
+	knobX := bounds.X + 3
+	if t.Active {
+		knobX = bounds.Right() - knobSize - 3
+	}
+	knobRect := Rect{X: knobX, Y: bounds.Y + 3, W: knobSize, H: knobSize}
+	ctx.FillRect(knobRect, knobFill)
+	ctx.StrokeRect(knobRect, 1, color.RGBA{R: 90, G: 102, B: 118, A: 200})
+	ctx.AddHit(t.ID, bounds, t.Enabled)
+}
+
 func (b Button) Measure(ctx *Context, constraints Constraints) Size {
 	labelW, labelH := 0.0, 0.0
 	if ctx.MeasureText != nil {

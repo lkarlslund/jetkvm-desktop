@@ -1156,6 +1156,27 @@ func (a *App) invokeAction(id string) {
 			}
 			return a.refreshSettingsSectionSync(sectionGeneral)
 		})
+	case "auto_update_toggle":
+		if a.settingsActionPending(settingsGroupAutoUpdate) {
+			return
+		}
+		a.mu.RLock()
+		autoUpdate := a.sectionData.General.AutoUpdate
+		a.mu.RUnlock()
+		if autoUpdate == nil {
+			return
+		}
+		next := !*autoUpdate
+		choice := "off"
+		if next {
+			choice = "on"
+		}
+		a.withSettingsAction(settingsGroupAutoUpdate, choice, func() error {
+			if err := a.ctrl.SetAutoUpdateState(next); err != nil {
+				return err
+			}
+			return a.refreshSettingsSectionSync(sectionGeneral)
+		})
 	case "developer_mode_on":
 		if a.settingsActionPending(settingsGroupDeveloperMode) {
 			return
