@@ -113,6 +113,7 @@ type hardwareState struct {
 type networkState struct {
 	Loading        bool
 	Error          string
+	Settings       session.NetworkSettings
 	State          session.NetworkState
 	PublicIPs      []session.PublicIP
 	PublicIPError  string
@@ -997,6 +998,14 @@ func (a *App) loadSettingsSection(section settingsSection, seq uint64) error {
 			state.State.USBDevices = devices
 			state.State.USBDeviceCount = usbDeviceCount(devices)
 		}
+		if usbNetwork, callErr := a.ctrl.GetUSBNetworkConfig(ctx); callErr == nil {
+			state.State.USBNetwork = &usbNetwork
+			a.mu.Lock()
+			if a.sectionLoadSeq[section] == seq {
+				a.syncUSBNetworkEditorLocked(usbNetwork)
+			}
+			a.mu.Unlock()
+		}
 		if rotation, callErr := a.ctrl.GetDisplayRotation(ctx); callErr == nil {
 			state.State.DisplayRotation = rotation
 		}
@@ -1008,6 +1017,7 @@ func (a *App) loadSettingsSection(section settingsSection, seq uint64) error {
 		}
 		if state.State.USBEmulation == nil &&
 			state.State.USBConfig == (session.USBConfig{}) &&
+			state.State.USBNetwork == nil &&
 			state.State.DisplayRotation == session.DisplayRotationUnknown &&
 			state.State.Backlight == (session.BacklightSettings{}) &&
 			state.State.VideoSleepMode == nil {
@@ -1027,17 +1037,10 @@ func (a *App) loadSettingsSection(section settingsSection, seq uint64) error {
 				a.syncNetworkEditorLocked(settings)
 			}
 			a.mu.Unlock()
-			state.State.Hostname = settings.Hostname
-			state.State.IP = settings.IP
+			state.Settings = settings
 		}
 		if current, callErr := a.ctrl.GetNetworkState(ctx); callErr == nil {
-			if state.State.Hostname == "" {
-				state.State.Hostname = current.Hostname
-			}
-			if state.State.IP == "" {
-				state.State.IP = current.IP
-			}
-			state.State.DHCP = current.DHCP
+			state.State = current
 		}
 		if addresses, callErr := a.ctrl.GetPublicIPAddresses(ctx, false); callErr == nil {
 			state.PublicIPs = addresses
@@ -1049,7 +1052,7 @@ func (a *App) loadSettingsSection(section settingsSection, seq uint64) error {
 		} else {
 			state.TailscaleError = callErr.Error()
 		}
-		if state.State.Hostname == "" && state.State.IP == "" && state.State.DHCP == nil {
+		if state.Settings.Hostname == "" && state.State.Hostname == "" && state.State.InterfaceName == "" {
 			state.Error = "No network RPC state available on this target"
 			err = errors.New(state.Error)
 		}
@@ -1781,7 +1784,73 @@ func (a *App) settingsHardwareBody() ui.Element {
 	if state.Error != "" {
 		usbChildren = append(usbChildren, ui.Fixed(ui.Spacer{H: 12}), ui.Fixed(settingsStatusElement(state.Error, color.RGBA{R: 220, G: 132, B: 132, A: 255})))
 	}
-	return settingsTwoPane(settingsCardElement("Display", ui.Column{Children: displayChildren}), 48, settingsCardElement("USB", ui.Column{Children: usbChildren}), 52)
+	children := []ui.Child{ui.Fixed(settingsTwoPane(settingsCardElement("Display", ui.Column{Children: displayChildren}), 48, settingsCardElement("USB", ui.Column{Children: usbChildren}), 52))}
+	if state.State.USBNetwork != nil || a.usbNetworkEditorLoaded {
+		usbNetworkState := a.settingsAction(settingsGroupUSBNetworkSave)
+		protocolEditable := a.usbNetworkEditor.HostPreset == "custom"
+		usbNetworkChildren := []ui.Child{
+			ui.Fixed(settingsToggleRowElement("usb_network_enabled_toggle", "Enable USB Network Gadget", settingsActionVisual{Enabled: !usbNetworkState.Pending, Active: a.usbNetworkEditor.Enabled, Pending: usbNetworkState.Pending})),
+			ui.Fixed(ui.Spacer{H: 14}),
+			ui.Fixed(settingsSectionLabelElement("Host preset")),
+			ui.Fixed(ui.Spacer{H: 8}),
+			ui.Fixed(ui.Wrap{Children: []ui.Element{
+				settingsActionElement("usb_network_host_preset:auto", "Auto", settingsActionVisual{Enabled: !usbNetworkState.Pending, Active: a.usbNetworkEditor.HostPreset == "auto"}, 72),
+				settingsActionElement("usb_network_host_preset:linux", "Linux", settingsActionVisual{Enabled: !usbNetworkState.Pending, Active: a.usbNetworkEditor.HostPreset == "linux"}, 72),
+				settingsActionElement("usb_network_host_preset:macos", "macOS", settingsActionVisual{Enabled: !usbNetworkState.Pending, Active: a.usbNetworkEditor.HostPreset == "macos"}, 80),
+				settingsActionElement("usb_network_host_preset:windows", "Windows", settingsActionVisual{Enabled: !usbNetworkState.Pending, Active: a.usbNetworkEditor.HostPreset == "windows"}, 92),
+				settingsActionElement("usb_network_host_preset:custom", "Custom", settingsActionVisual{Enabled: !usbNetworkState.Pending, Active: a.usbNetworkEditor.HostPreset == "custom"}, 82),
+			}, Spacing: 12, LineSpacing: 8}),
+			ui.Fixed(ui.Spacer{H: 14}),
+			ui.Fixed(settingsSectionLabelElement("Protocol")),
+			ui.Fixed(ui.Spacer{H: 8}),
+			ui.Fixed(ui.Wrap{Children: []ui.Element{
+				settingsActionElement("usb_network_protocol:ecm", "ECM", settingsActionVisual{Enabled: !usbNetworkState.Pending && protocolEditable, Active: a.usbNetworkEditor.Protocol == "ecm"}, 68),
+				settingsActionElement("usb_network_protocol:ncm", "NCM", settingsActionVisual{Enabled: !usbNetworkState.Pending && protocolEditable, Active: a.usbNetworkEditor.Protocol == "ncm"}, 68),
+				settingsActionElement("usb_network_protocol:rndis", "RNDIS", settingsActionVisual{Enabled: !usbNetworkState.Pending && protocolEditable, Active: a.usbNetworkEditor.Protocol == "rndis"}, 78),
+			}, Spacing: 12, LineSpacing: 8}),
+		}
+		if !protocolEditable {
+			usbNetworkChildren = append(usbNetworkChildren, ui.Fixed(ui.Spacer{H: 8}), ui.Fixed(ui.Paragraph{Text: "Protocol follows the selected host preset. Switch to Custom to edit it directly.", Size: 12, Color: color.RGBA{R: 166, G: 178, B: 190, A: 255}}))
+		}
+		usbNetworkChildren = append(usbNetworkChildren,
+			ui.Fixed(ui.Spacer{H: 14}),
+			ui.Fixed(settingsSectionLabelElement("Sharing mode")),
+			ui.Fixed(ui.Spacer{H: 8}),
+			ui.Fixed(ui.Wrap{Children: []ui.Element{
+				settingsActionElement("usb_network_sharing_mode:nat", "NAT", settingsActionVisual{Enabled: !usbNetworkState.Pending, Active: a.usbNetworkEditor.SharingMode == "nat"}, 72),
+				settingsActionElement("usb_network_sharing_mode:bridge", "Bridge", settingsActionVisual{Enabled: !usbNetworkState.Pending, Active: a.usbNetworkEditor.SharingMode == "bridge"}, 84),
+			}, Spacing: 12, LineSpacing: 8}),
+			ui.Fixed(ui.Spacer{H: 14}),
+			ui.Fixed(settingsSectionLabelElement("Uplink")),
+			ui.Fixed(ui.Spacer{H: 8}),
+			ui.Fixed(ui.Wrap{Children: []ui.Element{
+				settingsActionElement("usb_network_uplink_mode:auto", "Auto", settingsActionVisual{Enabled: !usbNetworkState.Pending, Active: a.usbNetworkEditor.UplinkMode == "auto"}, 72),
+				settingsActionElement("usb_network_uplink_mode:manual", "Manual", settingsActionVisual{Enabled: !usbNetworkState.Pending, Active: a.usbNetworkEditor.UplinkMode == "manual"}, 82),
+			}, Spacing: 12, LineSpacing: 8}),
+			ui.Fixed(ui.Spacer{H: 12}),
+			ui.Fixed(settingsSectionLabelElement("Uplink interface")),
+			ui.Fixed(ui.Spacer{H: 8}),
+			ui.Fixed(ui.TextField{ID: "usb_network_focus_uplink_interface", Value: a.usbNetworkEditor.UplinkInterface, Placeholder: "eth0", Focused: a.settingsInputFocus == settingsInputUSBNetworkUplinkInterface, Enabled: !usbNetworkState.Pending && a.usbNetworkEditor.UplinkMode == "manual"}),
+			ui.Fixed(ui.Spacer{H: 12}),
+			ui.Fixed(settingsSectionLabelElement("IPv4 subnet CIDR")),
+			ui.Fixed(ui.Spacer{H: 8}),
+			ui.Fixed(ui.TextField{ID: "usb_network_focus_subnet", Value: a.usbNetworkEditor.IPv4SubnetCIDR, Placeholder: "10.55.0.0/24", Focused: a.settingsInputFocus == settingsInputUSBNetworkSubnetCIDR, Enabled: !usbNetworkState.Pending}),
+			ui.Fixed(ui.Spacer{H: 12}),
+			ui.Fixed(settingsToggleRowElement("usb_network_dhcp_toggle", "Enable DHCP", settingsActionVisual{Enabled: !usbNetworkState.Pending, Active: a.usbNetworkEditor.DHCPEnabled})),
+			ui.Fixed(ui.Spacer{H: 8}),
+			ui.Fixed(settingsToggleRowElement("usb_network_dns_proxy_toggle", "Enable DNS Proxy", settingsActionVisual{Enabled: !usbNetworkState.Pending, Active: a.usbNetworkEditor.DNSProxyEnabled})),
+			ui.Fixed(ui.Spacer{H: 16}),
+			ui.Fixed(settingsActionElement("usb_network_save", "Save USB Network", settingsActionVisual{Enabled: !usbNetworkState.Pending}, 0)),
+		)
+		switch {
+		case usbNetworkState.Pending:
+			usbNetworkChildren = append(usbNetworkChildren, ui.Fixed(ui.Spacer{H: 12}), ui.Fixed(settingsStatusElement("Saving…", color.RGBA{R: 245, G: 200, B: 96, A: 255})))
+		case usbNetworkState.Error != "":
+			usbNetworkChildren = append(usbNetworkChildren, ui.Fixed(ui.Spacer{H: 12}), ui.Fixed(settingsStatusElement(usbNetworkState.Error, color.RGBA{R: 220, G: 132, B: 132, A: 255})))
+		}
+		children = append(children, ui.Fixed(ui.Spacer{H: 14}), ui.Fixed(settingsCardElement("USB Network", ui.Column{Children: usbNetworkChildren})))
+	}
+	return ui.Column{Children: children}
 }
 
 func (a *App) settingsAccessBody() ui.Element {
@@ -2022,23 +2091,101 @@ func (a *App) settingsNetworkBody() ui.Element {
 	state := a.sectionData.Network
 	a.mu.RUnlock()
 	saveState := a.settingsAction(settingsGroupNetworkSave)
+	renewState := a.settingsAction(settingsGroupNetworkRenew)
 	refreshState := a.settingsAction(settingsGroupNetworkRefresh)
 	editorChildren := []ui.Child{}
 	if state.Loading && !a.networkEditorLoaded {
 		editorChildren = append(editorChildren, ui.Fixed(ui.Label{Text: "Loading network settings…", Size: 13, Color: color.RGBA{R: 236, G: 241, B: 245, A: 255}}))
 	} else {
 		editorChildren = append(editorChildren,
-			ui.Fixed(settingsSectionLabelElement("Hostname")),
-			ui.Fixed(ui.Spacer{H: 8}),
-			ui.Fixed(ui.TextField{ID: "network_focus_hostname", Value: a.networkEditor.Hostname, Placeholder: state.State.Hostname, Focused: a.settingsInputFocus == settingsInputNetworkHostname, Enabled: !saveState.Pending}),
+			ui.Fixed(settingsSectionLabelElement("Hostname")), ui.Fixed(ui.Spacer{H: 8}),
+			ui.Fixed(ui.TextField{ID: "network_focus_hostname", Value: a.networkEditor.Hostname, Placeholder: fallbackLabel(state.Settings.Hostname, state.State.Hostname), Focused: a.settingsInputFocus == settingsInputNetworkHostname, Enabled: !saveState.Pending}),
+			ui.Fixed(ui.Spacer{H: 12}),
+			ui.Fixed(settingsSectionLabelElement("Domain")), ui.Fixed(ui.Spacer{H: 8}),
+			ui.Fixed(ui.TextField{ID: "network_focus_domain", Value: a.networkEditor.Domain, Placeholder: fallbackLabel(state.Settings.Domain, dhcpLeaseDomain(state.State.DHCPLease)), Focused: a.settingsInputFocus == settingsInputNetworkDomain, Enabled: !saveState.Pending}),
+			ui.Fixed(ui.Spacer{H: 12}),
+			ui.Fixed(settingsSectionLabelElement("HTTP Proxy")), ui.Fixed(ui.Spacer{H: 8}),
+			ui.Fixed(ui.TextField{ID: "network_focus_http_proxy", Value: a.networkEditor.HTTPProxy, Placeholder: state.Settings.HTTPProxy, Focused: a.settingsInputFocus == settingsInputNetworkHTTPProxy, Enabled: !saveState.Pending}),
 			ui.Fixed(ui.Spacer{H: 14}),
-			ui.Fixed(settingsSectionLabelElement("Static IP")),
-			ui.Fixed(ui.Spacer{H: 8}),
-			ui.Fixed(ui.TextField{ID: "network_focus_ip", Value: a.networkEditor.IP, Placeholder: state.State.IP, Focused: a.settingsInputFocus == settingsInputNetworkIP, Enabled: !saveState.Pending}),
+			ui.Fixed(settingsSectionLabelElement("IPv4 Mode")), ui.Fixed(ui.Spacer{H: 8}),
+			ui.Fixed(ui.Wrap{Children: []ui.Element{
+				settingsActionElement("network_ipv4_mode:dhcp", "DHCP", settingsActionVisual{Enabled: !saveState.Pending, Active: a.networkEditor.IPv4Mode == "dhcp"}, 74),
+				settingsActionElement("network_ipv4_mode:static", "Static", settingsActionVisual{Enabled: !saveState.Pending, Active: a.networkEditor.IPv4Mode == "static"}, 78),
+				settingsActionElement("network_ipv4_mode:disabled", "Disabled", settingsActionVisual{Enabled: !saveState.Pending, Active: a.networkEditor.IPv4Mode == "disabled"}, 92),
+			}, Spacing: 12, LineSpacing: 8}),
+		)
+		if a.networkEditor.IPv4Mode == "static" {
+			editorChildren = append(editorChildren,
+				ui.Fixed(ui.Spacer{H: 12}),
+				ui.Fixed(settingsSectionLabelElement("IPv4 Address")), ui.Fixed(ui.Spacer{H: 8}),
+				ui.Fixed(ui.TextField{ID: "network_focus_ipv4_address", Value: a.networkEditor.IPv4Address, Placeholder: networkIPv4StaticAddress(state.Settings), Focused: a.settingsInputFocus == settingsInputNetworkIPv4Address, Enabled: !saveState.Pending}),
+				ui.Fixed(ui.Spacer{H: 12}),
+				ui.Fixed(settingsSectionLabelElement("IPv4 Netmask")), ui.Fixed(ui.Spacer{H: 8}),
+				ui.Fixed(ui.TextField{ID: "network_focus_ipv4_netmask", Value: a.networkEditor.IPv4Netmask, Placeholder: networkIPv4StaticNetmask(state.Settings), Focused: a.settingsInputFocus == settingsInputNetworkIPv4Netmask, Enabled: !saveState.Pending}),
+				ui.Fixed(ui.Spacer{H: 12}),
+				ui.Fixed(settingsSectionLabelElement("IPv4 Gateway")), ui.Fixed(ui.Spacer{H: 8}),
+				ui.Fixed(ui.TextField{ID: "network_focus_ipv4_gateway", Value: a.networkEditor.IPv4Gateway, Placeholder: networkIPv4StaticGateway(state.Settings), Focused: a.settingsInputFocus == settingsInputNetworkIPv4Gateway, Enabled: !saveState.Pending}),
+				ui.Fixed(ui.Spacer{H: 12}),
+				ui.Fixed(settingsSectionLabelElement("IPv4 DNS Servers")), ui.Fixed(ui.Spacer{H: 8}),
+				ui.Fixed(ui.TextField{ID: "network_focus_ipv4_dns", Value: a.networkEditor.IPv4DNS, Placeholder: strings.Join(networkIPv4StaticDNS(state.Settings), ", "), Focused: a.settingsInputFocus == settingsInputNetworkIPv4DNS, Enabled: !saveState.Pending}),
+			)
+		}
+		editorChildren = append(editorChildren,
 			ui.Fixed(ui.Spacer{H: 14}),
-			ui.Fixed(ui.Paragraph{Text: "The desktop client currently exposes hostname and static IP editing directly. Leave a field blank to follow the device default.", Size: 12, Color: color.RGBA{R: 166, G: 178, B: 190, A: 255}}),
+			ui.Fixed(settingsSectionLabelElement("IPv6 Mode")), ui.Fixed(ui.Spacer{H: 8}),
+			ui.Fixed(ui.Wrap{Children: []ui.Element{
+				settingsActionElement("network_ipv6_mode:slaac", "SLAAC", settingsActionVisual{Enabled: !saveState.Pending, Active: a.networkEditor.IPv6Mode == "slaac"}, 76),
+				settingsActionElement("network_ipv6_mode:static", "Static", settingsActionVisual{Enabled: !saveState.Pending, Active: a.networkEditor.IPv6Mode == "static"}, 78),
+				settingsActionElement("network_ipv6_mode:disabled", "Disabled", settingsActionVisual{Enabled: !saveState.Pending, Active: a.networkEditor.IPv6Mode == "disabled"}, 92),
+			}, Spacing: 12, LineSpacing: 8}),
+		)
+		if a.networkEditor.IPv6Mode == "static" {
+			editorChildren = append(editorChildren,
+				ui.Fixed(ui.Spacer{H: 12}),
+				ui.Fixed(settingsSectionLabelElement("IPv6 Prefix")), ui.Fixed(ui.Spacer{H: 8}),
+				ui.Fixed(ui.TextField{ID: "network_focus_ipv6_prefix", Value: a.networkEditor.IPv6Prefix, Placeholder: networkIPv6StaticPrefix(state.Settings), Focused: a.settingsInputFocus == settingsInputNetworkIPv6Prefix, Enabled: !saveState.Pending}),
+				ui.Fixed(ui.Spacer{H: 12}),
+				ui.Fixed(settingsSectionLabelElement("IPv6 Gateway")), ui.Fixed(ui.Spacer{H: 8}),
+				ui.Fixed(ui.TextField{ID: "network_focus_ipv6_gateway", Value: a.networkEditor.IPv6Gateway, Placeholder: networkIPv6StaticGateway(state.Settings), Focused: a.settingsInputFocus == settingsInputNetworkIPv6Gateway, Enabled: !saveState.Pending}),
+				ui.Fixed(ui.Spacer{H: 12}),
+				ui.Fixed(settingsSectionLabelElement("IPv6 DNS Servers")), ui.Fixed(ui.Spacer{H: 8}),
+				ui.Fixed(ui.TextField{ID: "network_focus_ipv6_dns", Value: a.networkEditor.IPv6DNS, Placeholder: strings.Join(networkIPv6StaticDNS(state.Settings), ", "), Focused: a.settingsInputFocus == settingsInputNetworkIPv6DNS, Enabled: !saveState.Pending}),
+			)
+		}
+		editorChildren = append(editorChildren,
+			ui.Fixed(ui.Spacer{H: 14}),
+			ui.Fixed(settingsSectionLabelElement("mDNS")), ui.Fixed(ui.Spacer{H: 8}),
+			ui.Fixed(ui.Wrap{Children: []ui.Element{
+				settingsActionElement("network_mdns_mode:auto", "Auto", settingsActionVisual{Enabled: !saveState.Pending, Active: a.networkEditor.MDNSMode == "auto"}, 72),
+				settingsActionElement("network_mdns_mode:disabled", "Disabled", settingsActionVisual{Enabled: !saveState.Pending, Active: a.networkEditor.MDNSMode == "disabled"}, 92),
+				settingsActionElement("network_mdns_mode:ipv4_only", "IPv4 Only", settingsActionVisual{Enabled: !saveState.Pending, Active: a.networkEditor.MDNSMode == "ipv4_only"}, 100),
+				settingsActionElement("network_mdns_mode:ipv6_only", "IPv6 Only", settingsActionVisual{Enabled: !saveState.Pending, Active: a.networkEditor.MDNSMode == "ipv6_only"}, 100),
+			}, Spacing: 12, LineSpacing: 8}),
+			ui.Fixed(ui.Spacer{H: 14}),
+			ui.Fixed(settingsSectionLabelElement("Time Sync")), ui.Fixed(ui.Spacer{H: 8}),
+			ui.Fixed(ui.Wrap{Children: []ui.Element{
+				settingsActionElement("network_time_sync_mode:ntp_only", "NTP Only", settingsActionVisual{Enabled: !saveState.Pending, Active: a.networkEditor.TimeSyncMode == "ntp_only"}, 94),
+				settingsActionElement("network_time_sync_mode:ntp_and_http", "NTP + HTTP", settingsActionVisual{Enabled: !saveState.Pending, Active: a.networkEditor.TimeSyncMode == "ntp_and_http"}, 106),
+				settingsActionElement("network_time_sync_mode:http_only", "HTTP Only", settingsActionVisual{Enabled: !saveState.Pending, Active: a.networkEditor.TimeSyncMode == "http_only"}, 102),
+				settingsActionElement("network_time_sync_mode:custom", "Custom", settingsActionVisual{Enabled: !saveState.Pending, Active: a.networkEditor.TimeSyncMode == "custom"}, 82),
+			}, Spacing: 12, LineSpacing: 8}),
+		)
+		if a.networkEditor.TimeSyncMode == "custom" {
+			editorChildren = append(editorChildren,
+				ui.Fixed(ui.Spacer{H: 12}),
+				ui.Fixed(settingsSectionLabelElement("NTP Servers")), ui.Fixed(ui.Spacer{H: 8}),
+				ui.Fixed(ui.TextField{ID: "network_focus_time_sync_ntp", Value: a.networkEditor.TimeSyncNTPServers, Placeholder: strings.Join(state.Settings.TimeSyncNTPServers, ", "), Focused: a.settingsInputFocus == settingsInputNetworkTimeSyncNTP, Enabled: !saveState.Pending}),
+				ui.Fixed(ui.Spacer{H: 12}),
+				ui.Fixed(settingsSectionLabelElement("HTTP Time URLs")), ui.Fixed(ui.Spacer{H: 8}),
+				ui.Fixed(ui.TextField{ID: "network_focus_time_sync_http", Value: a.networkEditor.TimeSyncHTTPURLs, Placeholder: strings.Join(state.Settings.TimeSyncHTTPUrls, ", "), Focused: a.settingsInputFocus == settingsInputNetworkTimeSyncHTTP, Enabled: !saveState.Pending}),
+			)
+		}
+		editorChildren = append(editorChildren,
 			ui.Fixed(ui.Spacer{H: 16}),
-			ui.Fixed(settingsActionElement("network_save", "Save Settings", settingsActionVisual{Enabled: !saveState.Pending}, 0)),
+			ui.Fixed(ui.Wrap{Children: []ui.Element{
+				settingsActionElement("network_save", "Save Settings", settingsActionVisual{Enabled: !saveState.Pending}, 140),
+				settingsActionElement("network_renew_dhcp", "Renew DHCP Lease", settingsActionVisual{Enabled: !renewState.Pending}, 152),
+			}, Spacing: 12, LineSpacing: 8}),
 		)
 	}
 	switch {
@@ -2047,16 +2194,53 @@ func (a *App) settingsNetworkBody() ui.Element {
 	case saveState.Error != "":
 		editorChildren = append(editorChildren, ui.Fixed(ui.Spacer{H: 12}), ui.Fixed(settingsStatusElement(saveState.Error, color.RGBA{R: 220, G: 132, B: 132, A: 255})))
 	}
+	switch {
+	case renewState.Pending:
+		editorChildren = append(editorChildren, ui.Fixed(ui.Spacer{H: 12}), ui.Fixed(settingsStatusElement("Renewing DHCP lease…", color.RGBA{R: 245, G: 200, B: 96, A: 255})))
+	case renewState.Error != "":
+		editorChildren = append(editorChildren, ui.Fixed(ui.Spacer{H: 12}), ui.Fixed(settingsStatusElement(renewState.Error, color.RGBA{R: 220, G: 132, B: 132, A: 255})))
+	}
 	if state.Error != "" {
 		editorChildren = append(editorChildren, ui.Fixed(ui.Spacer{H: 12}), ui.Fixed(settingsStatusElement(state.Error, color.RGBA{R: 220, G: 132, B: 132, A: 255})))
 	}
 
 	stateChildren := []ui.Child{
-		ui.Fixed(settingsKeyValueElement("Hostname", state.State.Hostname, 96)),
-		ui.Fixed(ui.Spacer{H: 10}),
-		ui.Fixed(settingsKeyValueElement("IP", state.State.IP, 96)),
-		ui.Fixed(ui.Spacer{H: 10}),
-		ui.Fixed(settingsKeyValueElement("DHCP", boolPtrWord(state.State.DHCP), 96)),
+		ui.Fixed(settingsKeyValueElement("Interface", fallbackLabel(state.State.InterfaceName, "Unavailable"), 96)),
+		ui.Fixed(ui.Spacer{H: 8}),
+		ui.Fixed(settingsKeyValueElement("MAC", fallbackLabel(state.State.MACAddress, "Unavailable"), 96)),
+		ui.Fixed(ui.Spacer{H: 8}),
+		ui.Fixed(settingsKeyValueElement("Hostname", fallbackLabel(state.State.Hostname, state.Settings.Hostname, "Unavailable"), 96)),
+		ui.Fixed(ui.Spacer{H: 8}),
+		ui.Fixed(settingsKeyValueElement("IPv4", fallbackLabel(state.State.IPv4, "Unavailable"), 96)),
+		ui.Fixed(ui.Spacer{H: 8}),
+		ui.Fixed(settingsKeyValueElement("IPv4 Addr", fallbackLabel(strings.Join(state.State.IPv4Addresses, ", "), "Unavailable"), 96)),
+		ui.Fixed(ui.Spacer{H: 8}),
+		ui.Fixed(settingsKeyValueElement("IPv6", fallbackLabel(state.State.IPv6, "Unavailable"), 96)),
+		ui.Fixed(ui.Spacer{H: 8}),
+		ui.Fixed(settingsKeyValueElement("IPv6 Addr", fallbackLabel(ipv6AddressListLabel(state.State.IPv6Addresses), "Unavailable"), 96)),
+		ui.Fixed(ui.Spacer{H: 8}),
+		ui.Fixed(settingsKeyValueElement("IPv6 LL", fallbackLabel(state.State.IPv6LinkLocal, "Unavailable"), 96)),
+		ui.Fixed(ui.Spacer{H: 8}),
+		ui.Fixed(settingsKeyValueElement("IPv6 GW", fallbackLabel(state.State.IPv6Gateway, "Unavailable"), 96)),
+	}
+
+	leaseChildren := []ui.Child{}
+	if state.State.DHCPLease == nil {
+		leaseChildren = append(leaseChildren, ui.Fixed(ui.Paragraph{Text: "No DHCP lease is available for the current interface.", Size: 12, Color: color.RGBA{R: 166, G: 178, B: 190, A: 255}}))
+	} else {
+		leaseChildren = append(leaseChildren,
+			ui.Fixed(settingsKeyValueElement("Address", fallbackLabel(state.State.DHCPLease.IP, "Unavailable"), 104)),
+			ui.Fixed(ui.Spacer{H: 8}),
+			ui.Fixed(settingsKeyValueElement("Netmask", fallbackLabel(state.State.DHCPLease.Netmask, "Unavailable"), 104)),
+			ui.Fixed(ui.Spacer{H: 8}),
+			ui.Fixed(settingsKeyValueElement("Routers", fallbackLabel(strings.Join(state.State.DHCPLease.Routers, ", "), "Unavailable"), 104)),
+			ui.Fixed(ui.Spacer{H: 8}),
+			ui.Fixed(settingsKeyValueElement("DNS", fallbackLabel(strings.Join(state.State.DHCPLease.DNSServers, ", "), "Unavailable"), 104)),
+			ui.Fixed(ui.Spacer{H: 8}),
+			ui.Fixed(settingsKeyValueElement("Domain", fallbackLabel(state.State.DHCPLease.Domain, "Unavailable"), 104)),
+			ui.Fixed(ui.Spacer{H: 8}),
+			ui.Fixed(settingsKeyValueElement("Lease Expiry", leaseExpiryLabel(state.State.DHCPLease.LeaseExpiry), 104)),
+		)
 	}
 
 	serviceChildren := []ui.Child{
@@ -2116,18 +2300,86 @@ func (a *App) settingsNetworkBody() ui.Element {
 		}
 	}
 
-	return ui.Column{
-		Children: []ui.Child{
-			ui.Fixed(settingsTwoPane(
-				settingsCardElement("Editable Settings", ui.Column{Children: editorChildren}),
-				54,
-				settingsCardElement("Current State", ui.Column{Children: stateChildren}),
-				46,
-			)),
-			ui.Fixed(ui.Spacer{H: 14}),
-			ui.Fixed(settingsCardElement("Public Reachability", ui.Column{Children: serviceChildren})),
-		},
+	return ui.Column{Children: []ui.Child{
+		ui.Fixed(settingsTwoPane(settingsCardElement("Editable Settings", ui.Column{Children: editorChildren}), 54, settingsCardElement("Current State", ui.Column{Children: stateChildren}), 46)),
+		ui.Fixed(ui.Spacer{H: 14}),
+		ui.Fixed(settingsTwoPane(settingsCardElement("DHCP Lease", ui.Column{Children: leaseChildren}), 46, settingsCardElement("Public Reachability", ui.Column{Children: serviceChildren}), 54)),
+	}}
+}
+
+func ipv6AddressListLabel(addresses []session.IPv6Address) string {
+	items := make([]string, 0, len(addresses))
+	for _, address := range addresses {
+		if address.Prefix != "" {
+			items = append(items, address.Address+"/"+address.Prefix)
+			continue
+		}
+		items = append(items, address.Address)
 	}
+	return strings.Join(items, ", ")
+}
+
+func leaseExpiryLabel(value time.Time) string {
+	if value.IsZero() {
+		return "Unavailable"
+	}
+	return value.Local().Format("2006-01-02 15:04")
+}
+
+func dhcpLeaseDomain(lease *session.DHCPLease) string {
+	if lease == nil {
+		return ""
+	}
+	return lease.Domain
+}
+
+func networkIPv4StaticAddress(settings session.NetworkSettings) string {
+	if settings.IPv4Static == nil {
+		return ""
+	}
+	return settings.IPv4Static.Address
+}
+
+func networkIPv4StaticNetmask(settings session.NetworkSettings) string {
+	if settings.IPv4Static == nil {
+		return ""
+	}
+	return settings.IPv4Static.Netmask
+}
+
+func networkIPv4StaticGateway(settings session.NetworkSettings) string {
+	if settings.IPv4Static == nil {
+		return ""
+	}
+	return settings.IPv4Static.Gateway
+}
+
+func networkIPv4StaticDNS(settings session.NetworkSettings) []string {
+	if settings.IPv4Static == nil {
+		return nil
+	}
+	return settings.IPv4Static.DNS
+}
+
+func networkIPv6StaticPrefix(settings session.NetworkSettings) string {
+	if settings.IPv6Static == nil {
+		return ""
+	}
+	return settings.IPv6Static.Prefix
+}
+
+func networkIPv6StaticGateway(settings session.NetworkSettings) string {
+	if settings.IPv6Static == nil {
+		return ""
+	}
+	return settings.IPv6Static.Gateway
+}
+
+func networkIPv6StaticDNS(settings session.NetworkSettings) []string {
+	if settings.IPv6Static == nil {
+		return nil
+	}
+	return settings.IPv6Static.DNS
 }
 
 func tailscaleStatusLabel(status *session.TailscaleStatus) string {

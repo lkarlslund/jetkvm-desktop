@@ -131,6 +131,9 @@ type App struct {
 	networkEditor          networkEditorState
 	networkEditorLoaded    bool
 	networkEditorDirty     bool
+	usbNetworkEditor       usbNetworkEditorState
+	usbNetworkEditorLoaded bool
+	usbNetworkEditorDirty  bool
 	macroEditor            macroEditorState
 	mqttEditor             mqttEditorState
 	mqttEditorLoaded       bool
@@ -189,6 +192,8 @@ const (
 	settingsGroupUpdateInstall                             // update_install
 	settingsGroupFactoryReset                              // factory_reset
 	settingsGroupNetworkRefresh                            // network_refresh
+	settingsGroupNetworkRenew                              // network_renew_dhcp
+	settingsGroupUSBNetworkSave                            // usb_network_save
 )
 
 type settingsActionState struct {
@@ -221,7 +226,19 @@ const (
 	settingsInputAccessDisablePassword
 	settingsInputAdvancedSSH
 	settingsInputNetworkHostname
-	settingsInputNetworkIP
+	settingsInputNetworkDomain
+	settingsInputNetworkHTTPProxy
+	settingsInputNetworkIPv4Address
+	settingsInputNetworkIPv4Netmask
+	settingsInputNetworkIPv4Gateway
+	settingsInputNetworkIPv4DNS
+	settingsInputNetworkIPv6Prefix
+	settingsInputNetworkIPv6Gateway
+	settingsInputNetworkIPv6DNS
+	settingsInputNetworkTimeSyncNTP
+	settingsInputNetworkTimeSyncHTTP
+	settingsInputUSBNetworkUplinkInterface
+	settingsInputUSBNetworkSubnetCIDR
 	settingsInputMacroName
 	settingsInputMacroKeys
 	settingsInputMacroModifiers
@@ -249,8 +266,35 @@ type mqttEditorState struct {
 }
 
 type networkEditorState struct {
-	Hostname string
-	IP       string
+	DHCPClient         string
+	Hostname           string
+	Domain             string
+	HTTPProxy          string
+	IPv4Mode           string
+	IPv4Address        string
+	IPv4Netmask        string
+	IPv4Gateway        string
+	IPv4DNS            string
+	IPv6Mode           string
+	IPv6Prefix         string
+	IPv6Gateway        string
+	IPv6DNS            string
+	MDNSMode           string
+	TimeSyncMode       string
+	TimeSyncNTPServers string
+	TimeSyncHTTPURLs   string
+}
+
+type usbNetworkEditorState struct {
+	Enabled         bool
+	HostPreset      string
+	Protocol        string
+	SharingMode     string
+	UplinkMode      string
+	UplinkInterface string
+	IPv4SubnetCIDR  string
+	DHCPEnabled     bool
+	DNSProxyEnabled bool
 }
 
 type accessEditorMode uint8
@@ -982,8 +1026,32 @@ func (a *App) currentSettingsTextValue() *string {
 		return &a.advancedSSHKey
 	case settingsInputNetworkHostname:
 		return &a.networkEditor.Hostname
-	case settingsInputNetworkIP:
-		return &a.networkEditor.IP
+	case settingsInputNetworkDomain:
+		return &a.networkEditor.Domain
+	case settingsInputNetworkHTTPProxy:
+		return &a.networkEditor.HTTPProxy
+	case settingsInputNetworkIPv4Address:
+		return &a.networkEditor.IPv4Address
+	case settingsInputNetworkIPv4Netmask:
+		return &a.networkEditor.IPv4Netmask
+	case settingsInputNetworkIPv4Gateway:
+		return &a.networkEditor.IPv4Gateway
+	case settingsInputNetworkIPv4DNS:
+		return &a.networkEditor.IPv4DNS
+	case settingsInputNetworkIPv6Prefix:
+		return &a.networkEditor.IPv6Prefix
+	case settingsInputNetworkIPv6Gateway:
+		return &a.networkEditor.IPv6Gateway
+	case settingsInputNetworkIPv6DNS:
+		return &a.networkEditor.IPv6DNS
+	case settingsInputNetworkTimeSyncNTP:
+		return &a.networkEditor.TimeSyncNTPServers
+	case settingsInputNetworkTimeSyncHTTP:
+		return &a.networkEditor.TimeSyncHTTPURLs
+	case settingsInputUSBNetworkUplinkInterface:
+		return &a.usbNetworkEditor.UplinkInterface
+	case settingsInputUSBNetworkSubnetCIDR:
+		return &a.usbNetworkEditor.IPv4SubnetCIDR
 	case settingsInputMacroName:
 		return &a.macroEditor.Name
 	case settingsInputMacroKeys:
@@ -1056,15 +1124,108 @@ func (a *App) mqttSettingsFromEditor() (session.MQTTSettings, error) {
 }
 
 func (a *App) networkSettingsFromEditor() (session.NetworkSettings, error) {
-	hostname := strings.TrimSpace(a.networkEditor.Hostname)
-	ip := strings.TrimSpace(a.networkEditor.IP)
-	if ip != "" && net.ParseIP(ip) == nil {
-		return session.NetworkSettings{}, errors.New("IP must be a valid IPv4 or IPv6 address")
+	settings := session.NetworkSettings{
+		DHCPClient:   strings.TrimSpace(a.networkEditor.DHCPClient),
+		Hostname:     strings.TrimSpace(a.networkEditor.Hostname),
+		Domain:       strings.TrimSpace(a.networkEditor.Domain),
+		HTTPProxy:    strings.TrimSpace(a.networkEditor.HTTPProxy),
+		IPv4Mode:     strings.TrimSpace(a.networkEditor.IPv4Mode),
+		IPv6Mode:     strings.TrimSpace(a.networkEditor.IPv6Mode),
+		MDNSMode:     strings.TrimSpace(a.networkEditor.MDNSMode),
+		TimeSyncMode: strings.TrimSpace(a.networkEditor.TimeSyncMode),
 	}
-	return session.NetworkSettings{
-		Hostname: hostname,
-		IP:       ip,
-	}, nil
+	if settings.IPv4Mode == "" {
+		settings.IPv4Mode = "dhcp"
+	}
+	if settings.IPv6Mode == "" {
+		settings.IPv6Mode = "slaac"
+	}
+	if settings.MDNSMode == "" {
+		settings.MDNSMode = "auto"
+	}
+	if settings.TimeSyncMode == "" {
+		settings.TimeSyncMode = "ntp_only"
+	}
+	if settings.IPv4Mode == "static" {
+		address := strings.TrimSpace(a.networkEditor.IPv4Address)
+		gateway := strings.TrimSpace(a.networkEditor.IPv4Gateway)
+		if address == "" {
+			return session.NetworkSettings{}, errors.New("IPv4 address is required in static IPv4 mode")
+		}
+		if net.ParseIP(address) == nil {
+			return session.NetworkSettings{}, errors.New("IPv4 address must be valid")
+		}
+		if gateway != "" && net.ParseIP(gateway) == nil {
+			return session.NetworkSettings{}, errors.New("IPv4 gateway must be valid")
+		}
+		settings.IPv4Static = &session.IPv4StaticConfig{
+			Address: address,
+			Netmask: strings.TrimSpace(a.networkEditor.IPv4Netmask),
+			Gateway: gateway,
+			DNS:     splitCSV(a.networkEditor.IPv4DNS),
+		}
+	}
+	if settings.IPv6Mode == "static" {
+		prefix := strings.TrimSpace(a.networkEditor.IPv6Prefix)
+		if prefix == "" {
+			return session.NetworkSettings{}, errors.New("IPv6 prefix is required in static IPv6 mode")
+		}
+		settings.IPv6Static = &session.IPv6StaticConfig{
+			Prefix:  prefix,
+			Gateway: strings.TrimSpace(a.networkEditor.IPv6Gateway),
+			DNS:     splitCSV(a.networkEditor.IPv6DNS),
+		}
+	}
+	if settings.TimeSyncMode == "custom" {
+		settings.TimeSyncNTPServers = splitCSV(a.networkEditor.TimeSyncNTPServers)
+		settings.TimeSyncHTTPUrls = splitCSV(a.networkEditor.TimeSyncHTTPURLs)
+	}
+	return settings, nil
+}
+
+func splitCSV(value string) []string {
+	parts := strings.Split(value, ",")
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		trimmed := strings.TrimSpace(part)
+		if trimmed != "" {
+			out = append(out, trimmed)
+		}
+	}
+	return out
+}
+
+func (a *App) usbNetworkConfigFromEditor() (session.USBNetworkConfig, error) {
+	cfg := session.USBNetworkConfig{
+		Enabled:         a.usbNetworkEditor.Enabled,
+		HostPreset:      strings.TrimSpace(a.usbNetworkEditor.HostPreset),
+		Protocol:        strings.TrimSpace(a.usbNetworkEditor.Protocol),
+		SharingMode:     strings.TrimSpace(a.usbNetworkEditor.SharingMode),
+		UplinkMode:      strings.TrimSpace(a.usbNetworkEditor.UplinkMode),
+		UplinkInterface: strings.TrimSpace(a.usbNetworkEditor.UplinkInterface),
+		IPv4SubnetCIDR:  strings.TrimSpace(a.usbNetworkEditor.IPv4SubnetCIDR),
+		DHCPEnabled:     a.usbNetworkEditor.DHCPEnabled,
+		DNSProxyEnabled: a.usbNetworkEditor.DNSProxyEnabled,
+	}
+	if cfg.HostPreset == "" {
+		cfg.HostPreset = "auto"
+	}
+	if cfg.Protocol == "" {
+		cfg.Protocol = "ncm"
+	}
+	if cfg.SharingMode == "" {
+		cfg.SharingMode = "nat"
+	}
+	if cfg.UplinkMode == "" {
+		cfg.UplinkMode = "auto"
+	}
+	if cfg.IPv4SubnetCIDR == "" {
+		cfg.IPv4SubnetCIDR = "10.55.0.0/24"
+	}
+	if cfg.UplinkMode == "manual" && cfg.UplinkInterface == "" {
+		return session.USBNetworkConfig{}, errors.New("uplink interface is required in manual uplink mode")
+	}
+	return cfg, nil
 }
 
 const (
@@ -1127,11 +1288,57 @@ func (a *App) syncNetworkEditorLocked(settings session.NetworkSettings) {
 	if a.networkEditorDirty {
 		return
 	}
+	var ipv4Address, ipv4Netmask, ipv4Gateway, ipv4DNS string
+	if settings.IPv4Static != nil {
+		ipv4Address = settings.IPv4Static.Address
+		ipv4Netmask = settings.IPv4Static.Netmask
+		ipv4Gateway = settings.IPv4Static.Gateway
+		ipv4DNS = strings.Join(settings.IPv4Static.DNS, ", ")
+	}
+	var ipv6Prefix, ipv6Gateway, ipv6DNS string
+	if settings.IPv6Static != nil {
+		ipv6Prefix = settings.IPv6Static.Prefix
+		ipv6Gateway = settings.IPv6Static.Gateway
+		ipv6DNS = strings.Join(settings.IPv6Static.DNS, ", ")
+	}
 	a.networkEditor = networkEditorState{
-		Hostname: settings.Hostname,
-		IP:       settings.IP,
+		DHCPClient:         settings.DHCPClient,
+		Hostname:           settings.Hostname,
+		Domain:             settings.Domain,
+		HTTPProxy:          settings.HTTPProxy,
+		IPv4Mode:           settings.IPv4Mode,
+		IPv4Address:        ipv4Address,
+		IPv4Netmask:        ipv4Netmask,
+		IPv4Gateway:        ipv4Gateway,
+		IPv4DNS:            ipv4DNS,
+		IPv6Mode:           settings.IPv6Mode,
+		IPv6Prefix:         ipv6Prefix,
+		IPv6Gateway:        ipv6Gateway,
+		IPv6DNS:            ipv6DNS,
+		MDNSMode:           settings.MDNSMode,
+		TimeSyncMode:       settings.TimeSyncMode,
+		TimeSyncNTPServers: strings.Join(settings.TimeSyncNTPServers, ", "),
+		TimeSyncHTTPURLs:   strings.Join(settings.TimeSyncHTTPUrls, ", "),
 	}
 	a.networkEditorLoaded = true
+}
+
+func (a *App) syncUSBNetworkEditorLocked(cfg session.USBNetworkConfig) {
+	if a.usbNetworkEditorDirty {
+		return
+	}
+	a.usbNetworkEditor = usbNetworkEditorState{
+		Enabled:         cfg.Enabled,
+		HostPreset:      cfg.HostPreset,
+		Protocol:        cfg.Protocol,
+		SharingMode:     cfg.SharingMode,
+		UplinkMode:      cfg.UplinkMode,
+		UplinkInterface: cfg.UplinkInterface,
+		IPv4SubnetCIDR:  cfg.IPv4SubnetCIDR,
+		DHCPEnabled:     cfg.DHCPEnabled,
+		DNSProxyEnabled: cfg.DNSProxyEnabled,
+	}
+	a.usbNetworkEditorLoaded = true
 }
 
 func (a *App) setAccessEditorMode(mode accessEditorMode) {
@@ -1373,6 +1580,9 @@ func (a *App) syncSettingsInput() {
 		if a.settingsSection == sectionAdvanced {
 			a.advancedSSHDirty = true
 		}
+		if a.settingsSection == sectionHardware {
+			a.usbNetworkEditorDirty = true
+		}
 		if a.settingsSection == sectionNetwork {
 			a.networkEditorDirty = true
 		}
@@ -1433,10 +1643,37 @@ func (a *App) syncSettingsInput() {
 			}
 		case sectionAdvanced:
 			a.settingsInputFocus = settingsInputAdvancedSSH
-		case sectionNetwork:
-			if a.settingsInputFocus == settingsInputNetworkHostname {
-				a.settingsInputFocus = settingsInputNetworkIP
+		case sectionHardware:
+			if a.settingsInputFocus == settingsInputUSBNetworkUplinkInterface {
+				a.settingsInputFocus = settingsInputUSBNetworkSubnetCIDR
 			} else {
+				a.settingsInputFocus = settingsInputUSBNetworkUplinkInterface
+			}
+		case sectionNetwork:
+			switch a.settingsInputFocus {
+			case settingsInputNetworkHostname:
+				a.settingsInputFocus = settingsInputNetworkDomain
+			case settingsInputNetworkDomain:
+				a.settingsInputFocus = settingsInputNetworkHTTPProxy
+			case settingsInputNetworkHTTPProxy:
+				a.settingsInputFocus = settingsInputNetworkIPv4Address
+			case settingsInputNetworkIPv4Address:
+				a.settingsInputFocus = settingsInputNetworkIPv4Netmask
+			case settingsInputNetworkIPv4Netmask:
+				a.settingsInputFocus = settingsInputNetworkIPv4Gateway
+			case settingsInputNetworkIPv4Gateway:
+				a.settingsInputFocus = settingsInputNetworkIPv4DNS
+			case settingsInputNetworkIPv4DNS:
+				a.settingsInputFocus = settingsInputNetworkIPv6Prefix
+			case settingsInputNetworkIPv6Prefix:
+				a.settingsInputFocus = settingsInputNetworkIPv6Gateway
+			case settingsInputNetworkIPv6Gateway:
+				a.settingsInputFocus = settingsInputNetworkIPv6DNS
+			case settingsInputNetworkIPv6DNS:
+				a.settingsInputFocus = settingsInputNetworkTimeSyncNTP
+			case settingsInputNetworkTimeSyncNTP:
+				a.settingsInputFocus = settingsInputNetworkTimeSyncHTTP
+			default:
 				a.settingsInputFocus = settingsInputNetworkHostname
 			}
 		case sectionMacros:
@@ -1484,6 +1721,9 @@ func (a *App) syncSettingsInput() {
 		}
 		if a.settingsSection == sectionAdvanced {
 			a.advancedSSHDirty = true
+		}
+		if a.settingsSection == sectionHardware {
+			a.usbNetworkEditorDirty = true
 		}
 		if a.settingsSection == sectionNetwork {
 			a.networkEditorDirty = true
@@ -1856,12 +2096,127 @@ func (a *App) invokeAction(id string) {
 		a.settingsInputFocus = settingsInputAdvancedSSH
 	case "advanced_save_ssh":
 		a.invokeSaveSSHKey()
+	case "usb_network_focus_uplink_interface":
+		a.settingsInputFocus = settingsInputUSBNetworkUplinkInterface
+	case "usb_network_focus_subnet":
+		a.settingsInputFocus = settingsInputUSBNetworkSubnetCIDR
 	case "network_focus_hostname":
 		a.settingsInputFocus = settingsInputNetworkHostname
-	case "network_focus_ip":
-		a.settingsInputFocus = settingsInputNetworkIP
+	case "network_focus_domain":
+		a.settingsInputFocus = settingsInputNetworkDomain
+	case "network_focus_http_proxy":
+		a.settingsInputFocus = settingsInputNetworkHTTPProxy
+	case "network_focus_ipv4_address":
+		a.settingsInputFocus = settingsInputNetworkIPv4Address
+	case "network_focus_ipv4_netmask":
+		a.settingsInputFocus = settingsInputNetworkIPv4Netmask
+	case "network_focus_ipv4_gateway":
+		a.settingsInputFocus = settingsInputNetworkIPv4Gateway
+	case "network_focus_ipv4_dns":
+		a.settingsInputFocus = settingsInputNetworkIPv4DNS
+	case "network_focus_ipv6_prefix":
+		a.settingsInputFocus = settingsInputNetworkIPv6Prefix
+	case "network_focus_ipv6_gateway":
+		a.settingsInputFocus = settingsInputNetworkIPv6Gateway
+	case "network_focus_ipv6_dns":
+		a.settingsInputFocus = settingsInputNetworkIPv6DNS
+	case "network_focus_time_sync_ntp":
+		a.settingsInputFocus = settingsInputNetworkTimeSyncNTP
+	case "network_focus_time_sync_http":
+		a.settingsInputFocus = settingsInputNetworkTimeSyncHTTP
 	case "network_save":
 		a.invokeNetworkSave()
+	case "network_renew_dhcp":
+		a.invokeRenewDHCPLease()
+	case "network_ipv4_mode:disabled":
+		a.networkEditor.IPv4Mode = "disabled"
+		a.networkEditorDirty = true
+	case "network_ipv4_mode:dhcp":
+		a.networkEditor.IPv4Mode = "dhcp"
+		a.networkEditorDirty = true
+	case "network_ipv4_mode:static":
+		a.networkEditor.IPv4Mode = "static"
+		a.networkEditorDirty = true
+	case "network_ipv6_mode:disabled":
+		a.networkEditor.IPv6Mode = "disabled"
+		a.networkEditorDirty = true
+	case "network_ipv6_mode:slaac":
+		a.networkEditor.IPv6Mode = "slaac"
+		a.networkEditorDirty = true
+	case "network_ipv6_mode:static":
+		a.networkEditor.IPv6Mode = "static"
+		a.networkEditorDirty = true
+	case "network_mdns_mode:auto":
+		a.networkEditor.MDNSMode = "auto"
+		a.networkEditorDirty = true
+	case "network_mdns_mode:disabled":
+		a.networkEditor.MDNSMode = "disabled"
+		a.networkEditorDirty = true
+	case "network_mdns_mode:ipv4_only":
+		a.networkEditor.MDNSMode = "ipv4_only"
+		a.networkEditorDirty = true
+	case "network_mdns_mode:ipv6_only":
+		a.networkEditor.MDNSMode = "ipv6_only"
+		a.networkEditorDirty = true
+	case "network_time_sync_mode:ntp_only":
+		a.networkEditor.TimeSyncMode = "ntp_only"
+		a.networkEditorDirty = true
+	case "network_time_sync_mode:ntp_and_http":
+		a.networkEditor.TimeSyncMode = "ntp_and_http"
+		a.networkEditorDirty = true
+	case "network_time_sync_mode:http_only":
+		a.networkEditor.TimeSyncMode = "http_only"
+		a.networkEditorDirty = true
+	case "network_time_sync_mode:custom":
+		a.networkEditor.TimeSyncMode = "custom"
+		a.networkEditorDirty = true
+	case "usb_network_enabled_toggle":
+		a.usbNetworkEditor.Enabled = !a.usbNetworkEditor.Enabled
+		a.usbNetworkEditorDirty = true
+	case "usb_network_dhcp_toggle":
+		a.usbNetworkEditor.DHCPEnabled = !a.usbNetworkEditor.DHCPEnabled
+		a.usbNetworkEditorDirty = true
+	case "usb_network_dns_proxy_toggle":
+		a.usbNetworkEditor.DNSProxyEnabled = !a.usbNetworkEditor.DNSProxyEnabled
+		a.usbNetworkEditorDirty = true
+	case "usb_network_host_preset:auto":
+		a.usbNetworkEditor.HostPreset = "auto"
+		a.usbNetworkEditorDirty = true
+	case "usb_network_host_preset:linux":
+		a.usbNetworkEditor.HostPreset = "linux"
+		a.usbNetworkEditorDirty = true
+	case "usb_network_host_preset:macos":
+		a.usbNetworkEditor.HostPreset = "macos"
+		a.usbNetworkEditorDirty = true
+	case "usb_network_host_preset:windows":
+		a.usbNetworkEditor.HostPreset = "windows"
+		a.usbNetworkEditorDirty = true
+	case "usb_network_host_preset:custom":
+		a.usbNetworkEditor.HostPreset = "custom"
+		a.usbNetworkEditorDirty = true
+	case "usb_network_protocol:ecm":
+		a.usbNetworkEditor.Protocol = "ecm"
+		a.usbNetworkEditorDirty = true
+	case "usb_network_protocol:ncm":
+		a.usbNetworkEditor.Protocol = "ncm"
+		a.usbNetworkEditorDirty = true
+	case "usb_network_protocol:rndis":
+		a.usbNetworkEditor.Protocol = "rndis"
+		a.usbNetworkEditorDirty = true
+	case "usb_network_sharing_mode:nat":
+		a.usbNetworkEditor.SharingMode = "nat"
+		a.usbNetworkEditorDirty = true
+	case "usb_network_sharing_mode:bridge":
+		a.usbNetworkEditor.SharingMode = "bridge"
+		a.usbNetworkEditorDirty = true
+	case "usb_network_uplink_mode:auto":
+		a.usbNetworkEditor.UplinkMode = "auto"
+		a.usbNetworkEditorDirty = true
+	case "usb_network_uplink_mode:manual":
+		a.usbNetworkEditor.UplinkMode = "manual"
+		a.usbNetworkEditorDirty = true
+	case "usb_network_save":
+		a.invokeUSBNetworkSave()
 	case "rotate_normal":
 		if a.settingsActionPending(settingsGroupDisplayRotate) {
 			return
@@ -2247,9 +2602,18 @@ func (a *App) invokeAction(id string) {
 			if section != sectionAdvanced && a.settingsInputFocus == settingsInputAdvancedSSH {
 				a.settingsInputFocus = settingsInputNone
 			}
+			if section != sectionHardware {
+				switch a.settingsInputFocus {
+				case settingsInputUSBNetworkUplinkInterface, settingsInputUSBNetworkSubnetCIDR:
+					a.settingsInputFocus = settingsInputNone
+				}
+			}
 			if section != sectionNetwork {
 				switch a.settingsInputFocus {
-				case settingsInputNetworkHostname, settingsInputNetworkIP:
+				case settingsInputNetworkHostname, settingsInputNetworkDomain, settingsInputNetworkHTTPProxy,
+					settingsInputNetworkIPv4Address, settingsInputNetworkIPv4Netmask, settingsInputNetworkIPv4Gateway,
+					settingsInputNetworkIPv4DNS, settingsInputNetworkIPv6Prefix, settingsInputNetworkIPv6Gateway,
+					settingsInputNetworkIPv6DNS, settingsInputNetworkTimeSyncNTP, settingsInputNetworkTimeSyncHTTP:
 					a.settingsInputFocus = settingsInputNone
 				}
 			}
@@ -2528,6 +2892,36 @@ func (a *App) invokeRefreshNetworkServices() {
 	}
 	a.withSettingsAction(settingsGroupNetworkRefresh, "refresh", func() error {
 		return a.refreshSettingsSectionSync(sectionNetwork)
+	})
+}
+
+func (a *App) invokeRenewDHCPLease() {
+	if a.settingsActionPending(settingsGroupNetworkRenew) {
+		return
+	}
+	a.withSettingsAction(settingsGroupNetworkRenew, "renew", func() error {
+		if err := a.ctrl.RenewDHCPLease(); err != nil {
+			return err
+		}
+		return a.refreshSettingsSectionSync(sectionNetwork)
+	})
+}
+
+func (a *App) invokeUSBNetworkSave() {
+	if a.settingsActionPending(settingsGroupUSBNetworkSave) {
+		return
+	}
+	cfg, err := a.usbNetworkConfigFromEditor()
+	if err != nil {
+		a.finishSettingsAction(settingsGroupUSBNetworkSave, a.beginSettingsAction(settingsGroupUSBNetworkSave, "save"), err)
+		return
+	}
+	a.withSettingsAction(settingsGroupUSBNetworkSave, "save", func() error {
+		if err := a.ctrl.SetUSBNetworkConfig(cfg); err != nil {
+			return err
+		}
+		a.usbNetworkEditorDirty = false
+		return a.refreshSettingsSectionSync(sectionHardware)
 	})
 }
 

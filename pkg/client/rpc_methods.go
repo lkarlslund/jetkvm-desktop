@@ -168,6 +168,10 @@ func (c *Client) GetNetworkState(ctx context.Context) (NetworkState, error) {
 	return state, err
 }
 
+func (c *Client) RenewDHCPLease(ctx context.Context) error {
+	return c.Call(ctx, "renewDHCPLease", nil, nil)
+}
+
 func (c *Client) GetCloudState(ctx context.Context) (CloudState, error) {
 	var state CloudState
 	err := c.Call(ctx, "getCloudState", nil, &state)
@@ -210,6 +214,16 @@ func (c *Client) GetUSBDevices(ctx context.Context) (USBDevices, error) {
 
 func (c *Client) SetUSBDevices(ctx context.Context, devices USBDevices) error {
 	return c.Call(ctx, "setUsbDevices", usbDevicesRequest{Devices: devices}, nil)
+}
+
+func (c *Client) GetUSBNetworkConfig(ctx context.Context) (USBNetworkConfig, error) {
+	var cfg USBNetworkConfig
+	err := c.Call(ctx, "getUsbNetworkConfig", nil, &cfg)
+	return cfg, err
+}
+
+func (c *Client) SetUSBNetworkConfig(ctx context.Context, cfg USBNetworkConfig) error {
+	return c.Call(ctx, "setUsbNetworkConfig", usbNetworkConfigRequest{Config: cfg}, nil)
 }
 
 func (c *Client) GetDisplayRotation(ctx context.Context) (DisplayRotationState, error) {

@@ -7,6 +7,7 @@ import (
 	"image"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 	"time"
@@ -322,8 +323,50 @@ func (c *Controller) SetUSBDevices(devices USBDevices) error {
 	})
 }
 
+func (c *Controller) SetUSBNetworkConfig(cfg USBNetworkConfig) error {
+	return c.mutateAndConfirm(func(ctx context.Context) error {
+		current := c.clientIfConnected()
+		if current == nil {
+			return errors.New("client not connected")
+		}
+		return current.SetUSBNetworkConfig(ctx, client.USBNetworkConfig{
+			Enabled:         cfg.Enabled,
+			HostPreset:      cfg.HostPreset,
+			Protocol:        cfg.Protocol,
+			SharingMode:     cfg.SharingMode,
+			UplinkMode:      cfg.UplinkMode,
+			UplinkInterface: cfg.UplinkInterface,
+			IPv4SubnetCIDR:  cfg.IPv4SubnetCIDR,
+			DHCPEnabled:     cfg.DHCPEnabled,
+			DNSProxyEnabled: cfg.DNSProxyEnabled,
+		})
+	}, func(ctx context.Context) (bool, error) {
+		current, err := c.GetUSBNetworkConfig(ctx)
+		if err != nil {
+			return false, err
+		}
+		return current == cfg, nil
+	})
+}
+
 func (c *Controller) SetNetworkSettings(settings NetworkSettings) error {
-	if settings.Hostname == "" && settings.IP == "" {
+	if strings.TrimSpace(settings.DHCPClient) == "" &&
+		strings.TrimSpace(settings.Hostname) == "" &&
+		strings.TrimSpace(settings.Domain) == "" &&
+		strings.TrimSpace(settings.HTTPProxy) == "" &&
+		strings.TrimSpace(settings.IPv4Mode) == "" &&
+		settings.IPv4Static == nil &&
+		strings.TrimSpace(settings.IPv6Mode) == "" &&
+		settings.IPv6Static == nil &&
+		strings.TrimSpace(settings.LLDPMode) == "" &&
+		len(settings.LLDPTxTLVs) == 0 &&
+		strings.TrimSpace(settings.MDNSMode) == "" &&
+		strings.TrimSpace(settings.TimeSyncMode) == "" &&
+		len(settings.TimeSyncOrdering) == 0 &&
+		!settings.TimeSyncDisableFallback &&
+		settings.TimeSyncParallel == 0 &&
+		len(settings.TimeSyncNTPServers) == 0 &&
+		len(settings.TimeSyncHTTPUrls) == 0 {
 		return errors.New("network settings are required")
 	}
 	return c.mutateAndConfirm(func(ctx context.Context) error {
@@ -331,16 +374,13 @@ func (c *Controller) SetNetworkSettings(settings NetworkSettings) error {
 		if current == nil {
 			return errors.New("client not connected")
 		}
-		return current.SetNetworkSettings(ctx, client.NetworkSettings{
-			Hostname: settings.Hostname,
-			IP:       settings.IP,
-		})
+		return current.SetNetworkSettings(ctx, networkSettingsToClient(settings))
 	}, func(ctx context.Context) (bool, error) {
 		current, err := c.GetNetworkSettings(ctx)
 		if err != nil {
 			return false, err
 		}
-		return current == settings, nil
+		return reflect.DeepEqual(current, settings), nil
 	})
 }
 
@@ -494,6 +534,28 @@ func (c *Controller) GetUSBDevices(ctx context.Context) (USBDevices, error) {
 	}, nil
 }
 
+func (c *Controller) GetUSBNetworkConfig(ctx context.Context) (USBNetworkConfig, error) {
+	current := c.clientIfConnected()
+	if current == nil {
+		return USBNetworkConfig{}, errors.New("client not connected")
+	}
+	cfg, err := current.GetUSBNetworkConfig(ctx)
+	if err != nil {
+		return USBNetworkConfig{}, err
+	}
+	return USBNetworkConfig{
+		Enabled:         cfg.Enabled,
+		HostPreset:      cfg.HostPreset,
+		Protocol:        cfg.Protocol,
+		SharingMode:     cfg.SharingMode,
+		UplinkMode:      cfg.UplinkMode,
+		UplinkInterface: cfg.UplinkInterface,
+		IPv4SubnetCIDR:  cfg.IPv4SubnetCIDR,
+		DHCPEnabled:     cfg.DHCPEnabled,
+		DNSProxyEnabled: cfg.DNSProxyEnabled,
+	}, nil
+}
+
 func (c *Controller) GetDisplayRotation(ctx context.Context) (DisplayRotation, error) {
 	current := c.clientIfConnected()
 	if current == nil {
@@ -515,10 +577,7 @@ func (c *Controller) GetNetworkSettings(ctx context.Context) (NetworkSettings, e
 	if err != nil {
 		return NetworkSettings{}, err
 	}
-	return NetworkSettings{
-		Hostname: settings.Hostname,
-		IP:       settings.IP,
-	}, nil
+	return networkSettingsFromClient(settings), nil
 }
 
 func (c *Controller) GetNetworkState(ctx context.Context) (NetworkState, error) {
@@ -530,11 +589,51 @@ func (c *Controller) GetNetworkState(ctx context.Context) (NetworkState, error) 
 	if err != nil {
 		return NetworkState{}, err
 	}
+	var lease *DHCPLease
+	if state.DHCPLease != nil {
+		lease = &DHCPLease{
+			IP:              state.DHCPLease.IP,
+			Netmask:         state.DHCPLease.Netmask,
+			DNSServers:      append([]string(nil), state.DHCPLease.DNSServers...),
+			Broadcast:       state.DHCPLease.Broadcast,
+			Domain:          state.DHCPLease.Domain,
+			NTPServers:      append([]string(nil), state.DHCPLease.NTPServers...),
+			Hostname:        state.DHCPLease.Hostname,
+			Routers:         append([]string(nil), state.DHCPLease.Routers...),
+			ServerID:        state.DHCPLease.ServerID,
+			LeaseExpiry:     state.DHCPLease.LeaseExpiry,
+			MTU:             state.DHCPLease.MTU,
+			TTL:             state.DHCPLease.TTL,
+			BootpNextServer: state.DHCPLease.BootpNextServer,
+			BootpServerName: state.DHCPLease.BootpServerName,
+			BootpFile:       state.DHCPLease.BootpFile,
+			DHCPClient:      state.DHCPLease.DHCPClient,
+		}
+	}
+	addresses := make([]IPv6Address, 0, len(state.IPv6Addresses))
+	for _, address := range state.IPv6Addresses {
+		addresses = append(addresses, IPv6Address{Address: address.Address, Prefix: address.Prefix})
+	}
 	return NetworkState{
-		Hostname: state.Hostname,
-		IP:       state.IP,
-		DHCP:     &state.DHCP,
+		InterfaceName: state.InterfaceName,
+		MACAddress:    state.MACAddress,
+		IPv4:          state.IPv4,
+		IPv4Addresses: append([]string(nil), state.IPv4Addresses...),
+		IPv6:          state.IPv6,
+		IPv6Addresses: addresses,
+		IPv6LinkLocal: state.IPv6LinkLocal,
+		IPv6Gateway:   state.IPv6Gateway,
+		DHCPLease:     lease,
+		Hostname:      state.Hostname,
 	}, nil
+}
+
+func (c *Controller) RenewDHCPLease() error {
+	current := c.clientIfConnected()
+	if current == nil {
+		return errors.New("client not connected")
+	}
+	return current.RenewDHCPLease(withTimeout(context.Background(), c.cfg.MutationTimeout))
 }
 
 func (c *Controller) GetDeveloperModeState(ctx context.Context) (*bool, error) {
@@ -678,6 +777,84 @@ func (c *Controller) GetEDID(ctx context.Context) (string, error) {
 		return "", errors.New("client not connected")
 	}
 	return current.GetEDID(ctx)
+}
+
+func networkSettingsToClient(settings NetworkSettings) client.NetworkSettings {
+	var ipv4Static *client.IPv4StaticConfig
+	if settings.IPv4Static != nil {
+		ipv4Static = &client.IPv4StaticConfig{
+			Address: settings.IPv4Static.Address,
+			Netmask: settings.IPv4Static.Netmask,
+			Gateway: settings.IPv4Static.Gateway,
+			DNS:     append([]string(nil), settings.IPv4Static.DNS...),
+		}
+	}
+	var ipv6Static *client.IPv6StaticConfig
+	if settings.IPv6Static != nil {
+		ipv6Static = &client.IPv6StaticConfig{
+			Prefix:  settings.IPv6Static.Prefix,
+			Gateway: settings.IPv6Static.Gateway,
+			DNS:     append([]string(nil), settings.IPv6Static.DNS...),
+		}
+	}
+	return client.NetworkSettings{
+		DHCPClient:              settings.DHCPClient,
+		Hostname:                settings.Hostname,
+		Domain:                  settings.Domain,
+		HTTPProxy:               settings.HTTPProxy,
+		IPv4Mode:                settings.IPv4Mode,
+		IPv4Static:              ipv4Static,
+		IPv6Mode:                settings.IPv6Mode,
+		IPv6Static:              ipv6Static,
+		LLDPMode:                settings.LLDPMode,
+		LLDPTxTLVs:              append([]string(nil), settings.LLDPTxTLVs...),
+		MDNSMode:                settings.MDNSMode,
+		TimeSyncMode:            settings.TimeSyncMode,
+		TimeSyncOrdering:        append([]string(nil), settings.TimeSyncOrdering...),
+		TimeSyncDisableFallback: settings.TimeSyncDisableFallback,
+		TimeSyncParallel:        settings.TimeSyncParallel,
+		TimeSyncNTPServers:      append([]string(nil), settings.TimeSyncNTPServers...),
+		TimeSyncHTTPUrls:        append([]string(nil), settings.TimeSyncHTTPUrls...),
+	}
+}
+
+func networkSettingsFromClient(settings client.NetworkSettings) NetworkSettings {
+	var ipv4Static *IPv4StaticConfig
+	if settings.IPv4Static != nil {
+		ipv4Static = &IPv4StaticConfig{
+			Address: settings.IPv4Static.Address,
+			Netmask: settings.IPv4Static.Netmask,
+			Gateway: settings.IPv4Static.Gateway,
+			DNS:     append([]string(nil), settings.IPv4Static.DNS...),
+		}
+	}
+	var ipv6Static *IPv6StaticConfig
+	if settings.IPv6Static != nil {
+		ipv6Static = &IPv6StaticConfig{
+			Prefix:  settings.IPv6Static.Prefix,
+			Gateway: settings.IPv6Static.Gateway,
+			DNS:     append([]string(nil), settings.IPv6Static.DNS...),
+		}
+	}
+	return NetworkSettings{
+		DHCPClient:              settings.DHCPClient,
+		Hostname:                settings.Hostname,
+		Domain:                  settings.Domain,
+		HTTPProxy:               settings.HTTPProxy,
+		IPv4Mode:                settings.IPv4Mode,
+		IPv4Static:              ipv4Static,
+		IPv6Mode:                settings.IPv6Mode,
+		IPv6Static:              ipv6Static,
+		LLDPMode:                settings.LLDPMode,
+		LLDPTxTLVs:              append([]string(nil), settings.LLDPTxTLVs...),
+		MDNSMode:                settings.MDNSMode,
+		TimeSyncMode:            settings.TimeSyncMode,
+		TimeSyncOrdering:        append([]string(nil), settings.TimeSyncOrdering...),
+		TimeSyncDisableFallback: settings.TimeSyncDisableFallback,
+		TimeSyncParallel:        settings.TimeSyncParallel,
+		TimeSyncNTPServers:      append([]string(nil), settings.TimeSyncNTPServers...),
+		TimeSyncHTTPUrls:        append([]string(nil), settings.TimeSyncHTTPUrls...),
+	}
 }
 
 func (c *Controller) GetBacklightSettings(ctx context.Context) (BacklightSettings, error) {

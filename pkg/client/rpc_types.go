@@ -76,15 +76,86 @@ type MQTTTestResult struct {
 	Error   string `json:"error,omitempty"`
 }
 
+type IPv4StaticConfig struct {
+	Address string   `json:"address,omitempty"`
+	Netmask string   `json:"netmask,omitempty"`
+	Gateway string   `json:"gateway,omitempty"`
+	DNS     []string `json:"dns,omitempty"`
+}
+
+type IPv6StaticConfig struct {
+	Prefix  string   `json:"prefix,omitempty"`
+	Gateway string   `json:"gateway,omitempty"`
+	DNS     []string `json:"dns,omitempty"`
+}
+
 type NetworkSettings struct {
-	Hostname string `json:"hostname"`
-	IP       string `json:"ip"`
+	DHCPClient              string            `json:"dhcp_client,omitempty"`
+	Hostname                string            `json:"hostname,omitempty"`
+	Domain                  string            `json:"domain,omitempty"`
+	HTTPProxy               string            `json:"http_proxy,omitempty"`
+	IPv4Mode                string            `json:"ipv4_mode,omitempty"`
+	IPv4Static              *IPv4StaticConfig `json:"ipv4_static,omitempty"`
+	IPv6Mode                string            `json:"ipv6_mode,omitempty"`
+	IPv6Static              *IPv6StaticConfig `json:"ipv6_static,omitempty"`
+	LLDPMode                string            `json:"lldp_mode,omitempty"`
+	LLDPTxTLVs              []string          `json:"lldp_tx_tlvs,omitempty"`
+	MDNSMode                string            `json:"mdns_mode,omitempty"`
+	TimeSyncMode            string            `json:"time_sync_mode,omitempty"`
+	TimeSyncOrdering        []string          `json:"time_sync_ordering,omitempty"`
+	TimeSyncDisableFallback bool              `json:"time_sync_disable_fallback,omitempty"`
+	TimeSyncParallel        int               `json:"time_sync_parallel,omitempty"`
+	TimeSyncNTPServers      []string          `json:"time_sync_ntp_servers,omitempty"`
+	TimeSyncHTTPUrls        []string          `json:"time_sync_http_urls,omitempty"`
+}
+
+type DHCPLease struct {
+	IP              string    `json:"ip,omitempty"`
+	Netmask         string    `json:"netmask,omitempty"`
+	DNSServers      []string  `json:"dns_servers,omitempty"`
+	Broadcast       string    `json:"broadcast,omitempty"`
+	Domain          string    `json:"domain,omitempty"`
+	NTPServers      []string  `json:"ntp_servers,omitempty"`
+	Hostname        string    `json:"hostname,omitempty"`
+	Routers         []string  `json:"routers,omitempty"`
+	ServerID        string    `json:"server_id,omitempty"`
+	LeaseExpiry     time.Time `json:"lease_expiry,omitempty"`
+	MTU             int       `json:"mtu,omitempty"`
+	TTL             int       `json:"ttl,omitempty"`
+	BootpNextServer string    `json:"bootp_next_server,omitempty"`
+	BootpServerName string    `json:"bootp_server_name,omitempty"`
+	BootpFile       string    `json:"bootp_file,omitempty"`
+	DHCPClient      string    `json:"dhcp_client,omitempty"`
+}
+
+type IPv6Address struct {
+	Address string `json:"address"`
+	Prefix  string `json:"prefix"`
 }
 
 type NetworkState struct {
-	Hostname string `json:"hostname"`
-	IP       string `json:"ip"`
-	DHCP     bool   `json:"dhcp"`
+	InterfaceName string        `json:"interface_name,omitempty"`
+	MACAddress    string        `json:"mac_address,omitempty"`
+	IPv4          string        `json:"ipv4,omitempty"`
+	IPv4Addresses []string      `json:"ipv4_addresses,omitempty"`
+	IPv6          string        `json:"ipv6,omitempty"`
+	IPv6Addresses []IPv6Address `json:"ipv6_addresses,omitempty"`
+	IPv6LinkLocal string        `json:"ipv6_link_local,omitempty"`
+	IPv6Gateway   string        `json:"ipv6_gateway,omitempty"`
+	DHCPLease     *DHCPLease    `json:"dhcp_lease,omitempty"`
+	Hostname      string        `json:"hostname,omitempty"`
+}
+
+type USBNetworkConfig struct {
+	Enabled         bool   `json:"enabled"`
+	HostPreset      string `json:"host_preset"`
+	Protocol        string `json:"protocol"`
+	SharingMode     string `json:"sharing_mode"`
+	UplinkMode      string `json:"uplink_mode"`
+	UplinkInterface string `json:"uplink_interface,omitempty"`
+	IPv4SubnetCIDR  string `json:"ipv4_subnet_cidr"`
+	DHCPEnabled     bool   `json:"dhcp_enabled"`
+	DNSProxyEnabled bool   `json:"dns_proxy_enabled"`
 }
 
 type CloudState struct {
@@ -173,6 +244,10 @@ type storageUploadRequest struct {
 
 type networkSettingsRequest struct {
 	Settings NetworkSettings `json:"settings"`
+}
+
+type usbNetworkConfigRequest struct {
+	Config USBNetworkConfig `json:"config"`
 }
 
 type mqttSettingsRequest struct {

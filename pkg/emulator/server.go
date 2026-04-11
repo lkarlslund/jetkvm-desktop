@@ -80,6 +80,9 @@ type DeviceState struct {
 	USBEmulation        bool
 	USBConfig           map[string]any
 	USBDevices          map[string]any
+	USBNetworkConfig    map[string]any
+	NetworkSettings     map[string]any
+	NetworkState        map[string]any
 	MQTTSettings        map[string]any
 	MQTTConnected       bool
 	MQTTError           string
@@ -192,6 +195,61 @@ func NewServer(cfg Config) (*Server, error) {
 				"mass_storage":   true,
 				"serial_console": false,
 				"network":        false,
+			},
+			USBNetworkConfig: map[string]any{
+				"enabled":           false,
+				"host_preset":       "auto",
+				"protocol":          "ncm",
+				"sharing_mode":      "nat",
+				"uplink_mode":       "auto",
+				"uplink_interface":  "",
+				"ipv4_subnet_cidr":  "10.55.0.0/24",
+				"dhcp_enabled":      true,
+				"dns_proxy_enabled": true,
+			},
+			NetworkSettings: map[string]any{
+				"dhcp_client":    "dhcpcd",
+				"hostname":       "jetkvm-emulator",
+				"domain":         "lab.example",
+				"http_proxy":     "",
+				"ipv4_mode":      "dhcp",
+				"mdns_mode":      "auto",
+				"ipv6_mode":      "slaac",
+				"time_sync_mode": "ntp_only",
+				"ipv4_static": map[string]any{
+					"address": "192.168.1.50",
+					"netmask": "255.255.255.0",
+					"gateway": "192.168.1.1",
+					"dns":     []string{"1.1.1.1", "8.8.8.8"},
+				},
+				"ipv6_static": map[string]any{
+					"prefix":  "2001:db8::50/64",
+					"gateway": "2001:db8::1",
+					"dns":     []string{"2606:4700:4700::1111"},
+				},
+				"time_sync_ntp_servers": []string{"0.pool.ntp.org", "1.pool.ntp.org"},
+				"time_sync_http_urls":   []string{"https://time.cloudflare.com"},
+			},
+			NetworkState: map[string]any{
+				"interface_name":  "eth0",
+				"mac_address":     "02:42:ac:11:00:02",
+				"ipv4":            "192.168.1.50",
+				"ipv4_addresses":  []string{"192.168.1.50/24"},
+				"ipv6":            "2001:db8::50",
+				"ipv6_addresses":  []map[string]any{{"address": "2001:db8::50", "prefix": "64"}},
+				"ipv6_link_local": "fe80::1",
+				"ipv6_gateway":    "2001:db8::1",
+				"hostname":        "jetkvm-emulator",
+				"dhcp_lease": map[string]any{
+					"ip":           "192.168.1.50",
+					"netmask":      "255.255.255.0",
+					"dns_servers":  []string{"1.1.1.1", "8.8.8.8"},
+					"domain":       "lab.example",
+					"routers":      []string{"192.168.1.1"},
+					"server_id":    "192.168.1.1",
+					"lease_expiry": time.Now().Add(8 * time.Hour),
+					"dhcp_client":  "dhcpcd",
+				},
 			},
 			MQTTSettings: map[string]any{
 				"enabled":             false,
@@ -878,9 +936,16 @@ func (s *session) handleRPC(data []byte) error {
 	case "getVideoState":
 		resp = jsonrpc.NewResponse(req.ID, s.serverRef.state.VideoState)
 	case "getNetworkSettings":
-		resp = jsonrpc.NewResponse(req.ID, map[string]any{"hostname": s.serverRef.state.Hostname, "ip": "127.0.0.1"})
+		resp = jsonrpc.NewResponse(req.ID, mapsClone(s.serverRef.state.NetworkSettings))
 	case "getNetworkState":
-		resp = jsonrpc.NewResponse(req.ID, map[string]any{"hostname": s.serverRef.state.Hostname, "ip": "127.0.0.1", "dhcp": true})
+		resp = jsonrpc.NewResponse(req.ID, mapsClone(s.serverRef.state.NetworkState))
+	case "renewDHCPLease":
+		if lease, ok := s.serverRef.state.NetworkState["dhcp_lease"].(map[string]any); ok {
+			next := mapsClone(lease)
+			next["lease_expiry"] = time.Now().Add(8 * time.Hour)
+			s.serverRef.state.NetworkState["dhcp_lease"] = next
+		}
+		resp = jsonrpc.NewResponse(req.ID, true)
 	case "getPublicIPAddresses":
 		resp = jsonrpc.NewResponse(req.ID, []map[string]any{
 			{"ip": "198.51.100.10", "last_updated": time.Now().Add(-4 * time.Minute)},
@@ -902,8 +967,35 @@ func (s *session) handleRPC(data []byte) error {
 		})
 	case "setNetworkSettings":
 		if settings, ok := params["settings"].(map[string]any); ok {
-			if hostname, ok := settings["hostname"].(string); ok && hostname != "" {
+			next := mapsClone(s.serverRef.state.NetworkSettings)
+			for key, value := range settings {
+				next[key] = value
+			}
+			s.serverRef.state.NetworkSettings = next
+			if hostname, ok := next["hostname"].(string); ok {
 				s.serverRef.state.Hostname = hostname
+				networkState := mapsClone(s.serverRef.state.NetworkState)
+				networkState["hostname"] = hostname
+				s.serverRef.state.NetworkState = networkState
+			}
+			if applyButDrop == req.Method {
+				return nil
+			}
+		}
+		resp = jsonrpc.NewResponse(req.ID, true)
+	case "getUsbNetworkConfig":
+		resp = jsonrpc.NewResponse(req.ID, mapsClone(s.serverRef.state.USBNetworkConfig))
+	case "setUsbNetworkConfig":
+		if cfg, ok := params["config"].(map[string]any); ok {
+			next := mapsClone(s.serverRef.state.USBNetworkConfig)
+			for key, value := range cfg {
+				next[key] = value
+			}
+			s.serverRef.state.USBNetworkConfig = next
+			if enabled, ok := next["enabled"].(bool); ok {
+				devices := mapsClone(s.serverRef.state.USBDevices)
+				devices["network"] = enabled
+				s.serverRef.state.USBDevices = devices
 			}
 			if applyButDrop == req.Method {
 				return nil

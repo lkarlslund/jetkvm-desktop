@@ -67,21 +67,93 @@ type HardwareState struct {
 	USBEmulation    *bool
 	USBConfig       USBConfig
 	USBDevices      USBDevices
+	USBNetwork      *USBNetworkConfig
 	USBDeviceCount  int
 	DisplayRotation DisplayRotation
 	Backlight       BacklightSettings
 	VideoSleepMode  *VideoSleepMode
 }
 
+type IPv4StaticConfig struct {
+	Address string
+	Netmask string
+	Gateway string
+	DNS     []string
+}
+
+type IPv6StaticConfig struct {
+	Prefix  string
+	Gateway string
+	DNS     []string
+}
+
 type NetworkSettings struct {
-	Hostname string
-	IP       string
+	DHCPClient              string
+	Hostname                string
+	Domain                  string
+	HTTPProxy               string
+	IPv4Mode                string
+	IPv4Static              *IPv4StaticConfig
+	IPv6Mode                string
+	IPv6Static              *IPv6StaticConfig
+	LLDPMode                string
+	LLDPTxTLVs              []string
+	MDNSMode                string
+	TimeSyncMode            string
+	TimeSyncOrdering        []string
+	TimeSyncDisableFallback bool
+	TimeSyncParallel        int
+	TimeSyncNTPServers      []string
+	TimeSyncHTTPUrls        []string
+}
+
+type DHCPLease struct {
+	IP              string
+	Netmask         string
+	DNSServers      []string
+	Broadcast       string
+	Domain          string
+	NTPServers      []string
+	Hostname        string
+	Routers         []string
+	ServerID        string
+	LeaseExpiry     time.Time
+	MTU             int
+	TTL             int
+	BootpNextServer string
+	BootpServerName string
+	BootpFile       string
+	DHCPClient      string
+}
+
+type IPv6Address struct {
+	Address string
+	Prefix  string
 }
 
 type NetworkState struct {
-	Hostname string
-	IP       string
-	DHCP     *bool
+	InterfaceName string
+	MACAddress    string
+	IPv4          string
+	IPv4Addresses []string
+	IPv6          string
+	IPv6Addresses []IPv6Address
+	IPv6LinkLocal string
+	IPv6Gateway   string
+	DHCPLease     *DHCPLease
+	Hostname      string
+}
+
+type USBNetworkConfig struct {
+	Enabled         bool
+	HostPreset      string
+	Protocol        string
+	SharingMode     string
+	UplinkMode      string
+	UplinkInterface string
+	IPv4SubnetCIDR  string
+	DHCPEnabled     bool
+	DNSProxyEnabled bool
 }
 
 type PublicIP struct {
