@@ -408,7 +408,9 @@ func (c *Client) SendAbsPointer(x, y int32, buttons byte) error {
 		log.Debug().Err(err).Int32("x", x).Int32("y", y).Uint8("buttons", buttons).Msg("failed to marshal absolute pointer")
 		return err
 	}
-	log.Trace().Int32("x", x).Int32("y", y).Uint8("buttons", buttons).Msg("sending absolute pointer")
+	if buttons != 0 {
+		log.Trace().Int32("x", x).Int32("y", y).Uint8("buttons", buttons).Msg("sending absolute pointer")
+	}
 	if err := c.hidUnreliable.Send(data); err != nil {
 		log.Debug().Err(err).Int32("x", x).Int32("y", y).Uint8("buttons", buttons).Msg("failed to send absolute pointer")
 		return err
@@ -429,7 +431,9 @@ func (c *Client) SendRelMouse(dx, dy int8, buttons byte) error {
 		log.Debug().Err(err).Int8("dx", dx).Int8("dy", dy).Uint8("buttons", buttons).Msg("failed to marshal relative mouse")
 		return err
 	}
-	log.Trace().Int8("dx", dx).Int8("dy", dy).Uint8("buttons", buttons).Msg("sending relative mouse")
+	if buttons != 0 {
+		log.Trace().Int8("dx", dx).Int8("dy", dy).Uint8("buttons", buttons).Msg("sending relative mouse")
+	}
 	if err := c.hidDC.Send(data); err != nil {
 		log.Debug().Err(err).Int8("dx", dx).Int8("dy", dy).Uint8("buttons", buttons).Msg("failed to send relative mouse")
 		return err

@@ -1374,7 +1374,6 @@ func (c *Controller) SendAbsPointer(x, y int32, buttons byte) error {
 		log.Debug().Err(err).Int32("x", x).Int32("y", y).Uint8("buttons", buttons).Msg("failed to send absolute pointer")
 		return err
 	}
-	log.Trace().Int32("x", x).Int32("y", y).Uint8("buttons", buttons).Msg("forwarding absolute pointer")
 	if err := current.SendAbsPointer(x, y, buttons); err != nil {
 		log.Debug().Err(err).Int32("x", x).Int32("y", y).Uint8("buttons", buttons).Msg("failed to forward absolute pointer")
 		return err
@@ -1390,7 +1389,6 @@ func (c *Controller) SendRelMouse(dx, dy int8, buttons byte) error {
 		log.Debug().Err(err).Int8("dx", dx).Int8("dy", dy).Uint8("buttons", buttons).Msg("failed to send relative mouse")
 		return err
 	}
-	log.Trace().Int8("dx", dx).Int8("dy", dy).Uint8("buttons", buttons).Msg("forwarding relative mouse")
 	if err := current.SendRelMouse(dx, dy, buttons); err != nil {
 		log.Debug().Err(err).Int8("dx", dx).Int8("dy", dy).Uint8("buttons", buttons).Msg("failed to forward relative mouse")
 		return err

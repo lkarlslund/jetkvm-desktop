@@ -17,6 +17,7 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/pion/webrtc/v4"
 
+	"github.com/lkarlslund/jetkvm-desktop/pkg/logging"
 	"github.com/lkarlslund/jetkvm-desktop/pkg/protocol/hidrpc"
 	"github.com/lkarlslund/jetkvm-desktop/pkg/protocol/jsonrpc"
 	"github.com/lkarlslund/jetkvm-desktop/pkg/protocol/signaling"
@@ -1463,6 +1464,18 @@ func (s *session) handleHID(channel string, data []byte) error {
 		s.serverRef.applyKeypress(v.Key, v.Press)
 		return s.sendEvent("keysDownState", map[string]any{"modifier": s.serverRef.state.KeyboardModifiers, "keys": s.serverRef.state.KeysDown})
 	case hidrpc.KeypressKeepAlive:
+		return nil
+	case hidrpc.Pointer:
+		if v.Buttons != 0 {
+			log := logging.Subsystem("emulator")
+			log.Trace().Str("channel", channel).Int32("x", v.X).Int32("y", v.Y).Uint8("buttons", v.Buttons).Msg("received absolute pointer")
+		}
+		return nil
+	case hidrpc.Mouse:
+		if v.Buttons != 0 {
+			log := logging.Subsystem("emulator")
+			log.Trace().Str("channel", channel).Int8("dx", v.DX).Int8("dy", v.DY).Uint8("buttons", v.Buttons).Msg("received relative mouse")
+		}
 		return nil
 	case hidrpc.KeyboardMacroReport:
 		if v.IsPaste {

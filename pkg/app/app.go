@@ -555,7 +555,7 @@ func (a *App) syncMouse() {
 	x, y := ebiten.CursorPosition()
 	buttons := currentMouseButtons(ebiten.IsMouseButtonPressed)
 	if a.settingsOpen || a.pasteOpen || a.mediaOpen || snapshot.Phase != session.PhaseConnected {
-		if buttons != 0 {
+		if buttons != a.lastButtons {
 			log.Trace().
 				Int("x", x).
 				Int("y", y).
@@ -571,7 +571,7 @@ func (a *App) syncMouse() {
 	if a.suppressMouseUntilUp {
 		a.lastX = x
 		a.lastY = y
-		if buttons != 0 || a.lastButtons != 0 {
+		if buttons != a.lastButtons {
 			log.Trace().
 				Int("x", x).
 				Int("y", y).
@@ -589,12 +589,14 @@ func (a *App) syncMouse() {
 		dx := int8(clamp(float64(x-a.lastX), -127, 127))
 		dy := int8(clamp(float64(y-a.lastY), -127, 127))
 		if dx != 0 || dy != 0 || buttons != a.lastButtons {
-			log.Trace().
-				Int8("dx", dx).
-				Int8("dy", dy).
-				Uint8("buttons", buttons).
-				Uint8("last_buttons", a.lastButtons).
-				Msg("sending relative mouse report")
+			if buttons != a.lastButtons {
+				log.Trace().
+					Int8("dx", dx).
+					Int8("dy", dy).
+					Uint8("buttons", buttons).
+					Uint8("last_buttons", a.lastButtons).
+					Msg("sending relative mouse report")
+			}
 			if err := a.ctrl.SendRelMouse(dx, dy, buttons); err != nil {
 				log.Debug().
 					Err(err).
@@ -636,14 +638,16 @@ func (a *App) syncMouse() {
 		}
 		if x != a.lastX || y != a.lastY || buttons != a.lastButtons {
 			nx, ny := a.renderRect.toHID(x, y)
-			log.Trace().
-				Int("x", x).
-				Int("y", y).
-				Int32("hid_x", nx).
-				Int32("hid_y", ny).
-				Uint8("buttons", buttons).
-				Uint8("last_buttons", a.lastButtons).
-				Msg("sending absolute mouse report")
+			if buttons != a.lastButtons {
+				log.Trace().
+					Int("x", x).
+					Int("y", y).
+					Int32("hid_x", nx).
+					Int32("hid_y", ny).
+					Uint8("buttons", buttons).
+					Uint8("last_buttons", a.lastButtons).
+					Msg("sending absolute mouse report")
+			}
 			if err := a.ctrl.SendAbsPointer(nx, ny, buttons); err != nil {
 				log.Debug().
 					Err(err).
