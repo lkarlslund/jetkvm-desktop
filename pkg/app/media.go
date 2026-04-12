@@ -105,20 +105,7 @@ func (a *App) syncMediaInput() {
 	if !a.mediaOpen || a.mediaUploading {
 		return
 	}
-	if inpututil.IsKeyJustPressed(ebiten.KeyBackspace) {
-		switch {
-		case a.mediaURLFocused:
-			runes := []rune(a.mediaURL)
-			if len(runes) > 0 {
-				a.mediaURL = string(runes[:len(runes)-1])
-			}
-		case a.mediaUploadFocused:
-			runes := []rune(a.mediaUploadPath)
-			if len(runes) > 0 {
-				a.mediaUploadPath = string(runes[:len(runes)-1])
-			}
-		}
-	}
+	a.syncFocusedTextInput()
 	if inpututil.IsKeyJustPressed(ebiten.KeyEnter) {
 		switch {
 		case a.mediaView == mediaViewURL && a.mediaURLFocused:
@@ -127,17 +114,6 @@ func (a *App) syncMediaInput() {
 			a.invokeAction("media_start_upload")
 		}
 		return
-	}
-	for _, r := range ebiten.AppendInputChars(nil) {
-		if r < 32 || r == 127 {
-			continue
-		}
-		switch {
-		case a.mediaURLFocused:
-			a.mediaURL += string(r)
-		case a.mediaUploadFocused:
-			a.mediaUploadPath += string(r)
-		}
 	}
 }
 
@@ -634,13 +610,13 @@ func (e mediaURLBodyElement) content() []ui.Child {
 			Color: theme.Muted,
 		}),
 		ui.Fixed(ui.Spacer{H: 18}),
-		ui.Fixed(ui.TextField{
+		ui.Fixed(e.app.decorateTextField(ui.TextField{
 			ID:          "media_focus_url",
 			Value:       e.app.mediaURL,
 			Placeholder: "https://example.com/image.iso",
 			Focused:     e.app.mediaURLFocused,
 			Enabled:     true,
-		}),
+		})),
 		ui.Fixed(ui.Spacer{H: 18}),
 		ui.Fixed(ui.Label{Text: "USB Mode", Size: 13, Color: theme.Muted}),
 		ui.Fixed(ui.Spacer{H: 10}),
@@ -751,13 +727,13 @@ func (e mediaUploadBodyElement) content() []ui.Child {
 		ui.Fixed(ui.Spacer{H: 18}),
 		ui.Fixed(ui.Row{
 			Children: []ui.Child{
-				ui.Flex(ui.TextField{
+				ui.Flex(e.app.decorateTextField(ui.TextField{
 					ID:          "media_focus_upload",
 					Value:       e.app.mediaUploadPath,
 					Placeholder: "/path/to/image.iso",
 					Focused:     e.app.mediaUploadFocused,
 					Enabled:     !e.app.mediaUploading,
-				}, 1),
+				}), 1),
 				ui.Fixed(ui.Button{ID: "media_browse_upload", Label: "Browse", Enabled: !e.app.mediaUploading}),
 			},
 			Spacing: 10,

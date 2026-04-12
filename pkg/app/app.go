@@ -115,6 +115,7 @@ type App struct {
 	mediaUploadSpeed       float64
 	mediaStorageLoaded     bool
 	settingsInputFocus     settingsInputField
+	textInput              ui.TextInputState
 	jigglerEditorOpen      bool
 	jigglerEditorConfig    session.JigglerConfig
 	jigglerEditorError     string
@@ -430,6 +431,7 @@ func (a *App) Update() error {
 		if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) {
 			a.handleClick()
 		}
+		a.updateTextSelectionDrag()
 		return nil
 	}
 	if a.ctrl == nil {
@@ -452,6 +454,7 @@ func (a *App) Update() error {
 	if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) {
 		a.handleClick()
 	}
+	a.updateTextSelectionDrag()
 
 	a.syncPasteInput()
 	a.syncMediaInput()
@@ -1758,40 +1761,10 @@ func (a *App) syncSettingsInput() {
 	if !a.settingsOpen {
 		return
 	}
-	activeField := a.currentSettingsTextValue()
-	if activeField == nil {
+	if a.syncTextInputBinding() == nil {
 		return
 	}
-	if inpututil.IsKeyJustPressed(ebiten.KeyBackspace) {
-		runes := []rune(*activeField)
-		if len(runes) > 0 {
-			*activeField = string(runes[:len(runes)-1])
-		}
-		if a.settingsSection == sectionMouse {
-			a.jigglerEditorError = ""
-		}
-		if a.settingsSection == sectionAccess {
-			a.accessEditor.Message = ""
-			a.accessEditor.Success = false
-		}
-		if a.settingsSection == sectionAdvanced {
-			a.advancedSSHDirty = true
-		}
-		if a.settingsSection == sectionHardware {
-			a.usbNetworkEditorDirty = true
-		}
-		if a.settingsSection == sectionNetwork {
-			a.networkEditorDirty = true
-		}
-		if a.settingsSection == sectionMacros {
-			a.macroEditor.Message = ""
-			a.macroEditor.Success = false
-		}
-		if a.settingsSection == sectionMQTT {
-			a.mqttEditorDirty = true
-			a.mqttTestMessage = ""
-		}
-	}
+	a.syncFocusedTextInput()
 	if inpututil.IsKeyJustPressed(ebiten.KeyTab) {
 		switch a.settingsSection {
 		case sectionMouse:
@@ -1904,36 +1877,6 @@ func (a *App) syncSettingsInput() {
 		}
 		return
 	}
-	for _, r := range ebiten.AppendInputChars(nil) {
-		if r < 32 || r == 127 {
-			continue
-		}
-		*activeField += string(r)
-		if a.settingsSection == sectionMouse {
-			a.jigglerEditorError = ""
-		}
-		if a.settingsSection == sectionAccess {
-			a.accessEditor.Message = ""
-			a.accessEditor.Success = false
-		}
-		if a.settingsSection == sectionAdvanced {
-			a.advancedSSHDirty = true
-		}
-		if a.settingsSection == sectionHardware {
-			a.usbNetworkEditorDirty = true
-		}
-		if a.settingsSection == sectionNetwork {
-			a.networkEditorDirty = true
-		}
-		if a.settingsSection == sectionMacros {
-			a.macroEditor.Message = ""
-			a.macroEditor.Success = false
-		}
-		if a.settingsSection == sectionMQTT {
-			a.mqttEditorDirty = true
-			a.mqttTestMessage = ""
-		}
-	}
 }
 
 func (a *App) handleClick() {
@@ -1944,6 +1887,9 @@ func (a *App) handleClick() {
 				continue
 			}
 			a.invokeAction(btn.id)
+			if isTextFieldAction(btn.id) {
+				a.beginTextFieldPointer(btn.id, btn.rect, shiftPressed())
+			}
 			return
 		}
 		return
@@ -1960,6 +1906,9 @@ func (a *App) handleClick() {
 			continue
 		}
 		a.invokeAction(btn.id)
+		if isTextFieldAction(btn.id) {
+			a.beginTextFieldPointer(btn.id, btn.rect, shiftPressed())
+		}
 		return
 	}
 	if a.mediaOpen && !a.mediaPanel.contains(x, y) {
@@ -1982,6 +1931,9 @@ func (a *App) handleClick() {
 			continue
 		}
 		a.invokeAction(btn.id)
+		if isTextFieldAction(btn.id) {
+			a.beginTextFieldPointer(btn.id, btn.rect, shiftPressed())
+		}
 		return
 	}
 	if a.settingsOpen && !a.settingsPanel.contains(x, y) {
@@ -3041,7 +2993,10 @@ func (a *App) invokeSaveSSHKey() {
 			return err
 		}
 		a.advancedSSHDirty = false
-		return a.refreshSettingsSectionSync(sectionAdvanced)
+		a.mu.Lock()
+		a.sectionData.Advanced.State.SSHKey = sshKey
+		a.mu.Unlock()
+		return nil
 	})
 }
 
