@@ -147,6 +147,14 @@ type App struct {
 	factoryResetConfirm    bool
 	factoryResetMessage    string
 	factoryResetSuccess    bool
+	hardwareConn           hardwareConnectionState
+}
+
+type hardwareConnectionState struct {
+	USBDevices        session.USBDevices
+	USBDevicesLoaded  bool
+	USBDevicesLoading bool
+	USBDevicesError   string
 }
 
 type statsPoint struct {
@@ -585,6 +593,9 @@ func (a *App) syncMouse() {
 		}
 		return
 	}
+	if !a.relative && a.prefs.AbsoluteSideButtonsViaRel && buttons&sideMouseButtonMask != 0 {
+		a.ensureConnectionUSBDevicesLoaded()
+	}
 	if a.relative {
 		dx := int8(clamp(float64(x-a.lastX), -127, 127))
 		dy := int8(clamp(float64(y-a.lastY), -127, 127))
@@ -638,23 +649,40 @@ func (a *App) syncMouse() {
 		}
 		if x != a.lastX || y != a.lastY || buttons != a.lastButtons {
 			nx, ny := a.renderRect.toHID(x, y)
+			absButtons := buttons
+			if a.shouldRouteSideButtonsToRelative() {
+				absButtons &^= sideMouseButtonMask
+			}
 			if buttons != a.lastButtons {
 				log.Trace().
 					Int("x", x).
 					Int("y", y).
 					Int32("hid_x", nx).
 					Int32("hid_y", ny).
-					Uint8("buttons", buttons).
+					Uint8("buttons", absButtons).
 					Uint8("last_buttons", a.lastButtons).
 					Msg("sending absolute mouse report")
 			}
-			if err := a.ctrl.SendAbsPointer(nx, ny, buttons); err != nil {
+			if err := a.ctrl.SendAbsPointer(nx, ny, absButtons); err != nil {
 				log.Debug().
 					Err(err).
 					Int32("hid_x", nx).
 					Int32("hid_y", ny).
-					Uint8("buttons", buttons).
+					Uint8("buttons", absButtons).
 					Msg("failed to send absolute mouse report")
+			}
+			if a.shouldRouteSideButtonsToRelative() {
+				sideButtons := buttons & sideMouseButtonMask
+				lastSideButtons := a.lastButtons & sideMouseButtonMask
+				if sideButtons != lastSideButtons {
+					if err := a.ctrl.SendRelMouse(0, 0, sideButtons); err != nil {
+						log.Debug().
+							Err(err).
+							Uint8("buttons", sideButtons).
+							Uint8("last_buttons", lastSideButtons).
+							Msg("failed to route side buttons via relative mouse")
+					}
+				}
 			}
 		}
 	}
@@ -681,6 +709,7 @@ const (
 	mouseButtonMiddleMask  byte = 1 << 2
 	mouseButtonBackMask    byte = 1 << 3
 	mouseButtonForwardMask byte = 1 << 4
+	sideMouseButtonMask    byte = mouseButtonBackMask | mouseButtonForwardMask
 )
 
 type mouseButtonBinding struct {
@@ -704,6 +733,77 @@ func currentMouseButtons(isPressed func(ebiten.MouseButton) bool) byte {
 		}
 	}
 	return buttons
+}
+
+func (a *App) shouldRouteSideButtonsToRelative() bool {
+	if !a.prefs.AbsoluteSideButtonsViaRel || a.relative {
+		return false
+	}
+	a.mu.RLock()
+	devices := a.hardwareConn.USBDevices
+	devicesLoaded := a.hardwareConn.USBDevicesLoaded
+	a.mu.RUnlock()
+	return devicesLoaded && devices.AbsoluteMouse && devices.RelativeMouse
+}
+
+func (a *App) connectionUSBDevicesSnapshot() (session.USBDevices, bool) {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return a.hardwareConn.USBDevices, a.hardwareConn.USBDevicesLoaded
+}
+
+func (a *App) setConnectionUSBDevices(devices session.USBDevices) {
+	a.mu.Lock()
+	a.hardwareConn.USBDevices = devices
+	a.hardwareConn.USBDevicesLoaded = true
+	a.hardwareConn.USBDevicesLoading = false
+	a.hardwareConn.USBDevicesError = ""
+	a.mu.Unlock()
+}
+
+func (a *App) failConnectionUSBDevicesLoad(err error) {
+	a.mu.Lock()
+	a.hardwareConn.USBDevicesLoading = false
+	a.hardwareConn.USBDevicesError = err.Error()
+	a.mu.Unlock()
+}
+
+func (a *App) resetConnectionHardwareState() {
+	a.mu.Lock()
+	a.hardwareConn = hardwareConnectionState{}
+	a.mu.Unlock()
+}
+
+func (a *App) ensureConnectionUSBDevicesLoaded() {
+	if a.ctrl == nil || a.ctrl.Snapshot().Phase != session.PhaseConnected {
+		return
+	}
+
+	a.mu.Lock()
+	if a.hardwareConn.USBDevicesLoaded || a.hardwareConn.USBDevicesLoading {
+		a.mu.Unlock()
+		return
+	}
+	a.hardwareConn.USBDevicesLoading = true
+	a.mu.Unlock()
+
+	a.runAsync(func() {
+		log := logging.Subsystem("app")
+		timeout := a.cfg.RPCTimeout
+		if timeout <= 0 {
+			timeout = 5 * time.Second
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), timeout)
+		defer cancel()
+
+		devices, err := a.ctrl.GetUSBDevices(ctx)
+		if err != nil {
+			log.Debug().Err(err).Msg("failed to load connection-scoped USB device capabilities")
+			a.failConnectionUSBDevicesLoad(err)
+			return
+		}
+		a.setConnectionUSBDevices(devices)
+	})
 }
 
 func clamp(value, minValue, maxValue float64) float64 {
@@ -2032,6 +2132,9 @@ func (a *App) invokeAction(id string) {
 	case "scroll_invert":
 		a.invertScroll = !a.invertScroll
 		a.savePreferences()
+	case "absolute_side_buttons_via_relative_toggle":
+		a.prefs.AbsoluteSideButtonsViaRel = !a.prefs.AbsoluteSideButtonsViaRel
+		a.savePreferences()
 	case "toggle_pressed_keys":
 		a.showPressedKeys = !a.showPressedKeys
 		a.savePreferences()
@@ -3202,14 +3305,18 @@ func (a *App) invokeUSBDevicesAction(choice string, devices session.USBDevices) 
 		if err := a.ctrl.SetUSBDevices(devices); err != nil {
 			return err
 		}
+		a.setConnectionUSBDevices(devices)
 		return a.refreshSettingsSectionSync(sectionHardware)
 	})
 }
 
 func (a *App) toggleUSBDevice(kind string) {
-	a.mu.RLock()
-	devices := a.sectionData.Hardware.State.USBDevices
-	a.mu.RUnlock()
+	devices, loaded := a.connectionUSBDevicesSnapshot()
+	if !loaded {
+		a.mu.RLock()
+		devices = a.sectionData.Hardware.State.USBDevices
+		a.mu.RUnlock()
+	}
 	switch kind {
 	case "keyboard":
 		devices.Keyboard = !devices.Keyboard
@@ -3356,6 +3463,7 @@ func (a *App) syncSessionState() {
 		return
 	}
 	if a.lastPhase == session.PhaseConnected && phase != session.PhaseConnected {
+		a.resetConnectionHardwareState()
 		if a.pasteOpen {
 			a.pasteOpen = false
 		}
@@ -3371,6 +3479,7 @@ func (a *App) syncSessionState() {
 		}
 	}
 	if phase == session.PhaseConnected && a.lastPhase != session.PhaseConnected {
+		a.resetConnectionHardwareState()
 		a.launcherOpen = false
 		a.launcherMode = launcherModeBrowse
 		a.launcherError = ""
@@ -3378,6 +3487,9 @@ func (a *App) syncSessionState() {
 		a.lastX, a.lastY = ebiten.CursorPosition()
 		a.lastButtons = 0
 		a.revealUIFor(2 * time.Second)
+		if a.prefs.AbsoluteSideButtonsViaRel {
+			a.ensureConnectionUSBDevicesLoaded()
+		}
 	}
 	a.lastPhase = phase
 }
@@ -3803,6 +3915,7 @@ func (a *App) connectTo(target string) {
 	a.lastImg = nil
 	a.lastFrameAt = time.Time{}
 	a.lastPhase = session.PhaseIdle
+	a.resetConnectionHardwareState()
 	a.stats = client.StatsSnapshot{}
 	a.statsHistory = nil
 	a.ctrl = session.New(session.Config{

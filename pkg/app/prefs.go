@@ -9,16 +9,17 @@ import (
 )
 
 type Preferences struct {
-	Theme           Theme          `json:"theme"`
-	PinChrome       bool           `json:"pin_chrome"`
-	HideHeaderBar   bool           `json:"hide_header_bar"`
-	HideStatusBar   bool           `json:"hide_status_bar"`
-	ChromeAnchor    ChromeAnchor   `json:"chrome_anchor"`
-	ChromeLayout    ChromeLayout   `json:"chrome_layout"`
-	HideCursor      bool           `json:"hide_cursor"`
-	InvertScroll    bool           `json:"invert_scroll"`
-	ShowPressedKeys bool           `json:"show_pressed_keys"`
-	ScrollThrottle  ScrollThrottle `json:"scroll_throttle"`
+	Theme                     Theme          `json:"theme"`
+	PinChrome                 bool           `json:"pin_chrome"`
+	HideHeaderBar             bool           `json:"hide_header_bar"`
+	HideStatusBar             bool           `json:"hide_status_bar"`
+	ChromeAnchor              ChromeAnchor   `json:"chrome_anchor"`
+	ChromeLayout              ChromeLayout   `json:"chrome_layout"`
+	HideCursor                bool           `json:"hide_cursor"`
+	InvertScroll              bool           `json:"invert_scroll"`
+	ShowPressedKeys           bool           `json:"show_pressed_keys"`
+	AbsoluteSideButtonsViaRel bool           `json:"absolute_side_buttons_via_relative"`
+	ScrollThrottle            ScrollThrottle `json:"scroll_throttle"`
 }
 
 //go:generate go tool github.com/dmarkham/enumer -type=Theme,ChromeAnchor,ChromeLayout,ScrollThrottle -linecomment -json -text -output prefs_enums.go
@@ -67,16 +68,17 @@ const (
 
 func defaultPreferences() Preferences {
 	return Preferences{
-		Theme:           themeSystem,
-		PinChrome:       false,
-		HideHeaderBar:   false,
-		HideStatusBar:   false,
-		ChromeAnchor:    chromeAnchorTopRight,
-		ChromeLayout:    chromeLayoutHorizontal,
-		HideCursor:      false,
-		InvertScroll:    false,
-		ShowPressedKeys: false,
-		ScrollThrottle:  scrollThrottleOff,
+		Theme:                     themeSystem,
+		PinChrome:                 false,
+		HideHeaderBar:             false,
+		HideStatusBar:             false,
+		ChromeAnchor:              chromeAnchorTopRight,
+		ChromeLayout:              chromeLayoutHorizontal,
+		HideCursor:                false,
+		InvertScroll:              false,
+		ShowPressedKeys:           false,
+		AbsoluteSideButtonsViaRel: true,
+		ScrollThrottle:            scrollThrottleOff,
 	}
 }
 
@@ -89,9 +91,16 @@ func loadPreferences() Preferences {
 	if err != nil {
 		return defaultPreferences()
 	}
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return defaultPreferences()
+	}
 	var prefs Preferences
 	if err := json.Unmarshal(data, &prefs); err != nil {
 		return defaultPreferences()
+	}
+	if _, ok := raw["absolute_side_buttons_via_relative"]; !ok {
+		prefs.AbsoluteSideButtonsViaRel = true
 	}
 	prefs.normalize()
 	return prefs

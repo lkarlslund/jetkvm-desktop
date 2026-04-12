@@ -11,6 +11,7 @@ import (
 	"github.com/hajimehoshi/ebiten/v2"
 
 	"github.com/lkarlslund/jetkvm-desktop/pkg/input"
+	"github.com/lkarlslund/jetkvm-desktop/pkg/logging"
 	"github.com/lkarlslund/jetkvm-desktop/pkg/session"
 	"github.com/lkarlslund/jetkvm-desktop/pkg/ui"
 )
@@ -105,9 +106,14 @@ type videoState struct {
 }
 
 type hardwareState struct {
-	Loading bool
-	Error   string
-	State   session.HardwareState
+	Loading               bool
+	Error                 string
+	State                 session.HardwareState
+	USBConfigLoaded       bool
+	USBDevicesLoaded      bool
+	DisplayRotationLoaded bool
+	BacklightLoaded       bool
+	VideoSleepLoaded      bool
 }
 
 type networkState struct {
@@ -1001,15 +1007,29 @@ func (a *App) loadSettingsSection(section settingsSection, seq uint64) error {
 		a.mu.Unlock()
 	case sectionHardware:
 		state := hardwareState{Loading: false}
+		log := logging.Subsystem("app")
 		if usbEnabled, callErr := a.ctrl.GetUSBEmulationState(ctx); callErr == nil {
 			state.State.USBEmulation = &usbEnabled
+		} else {
+			log.Debug().Err(callErr).Str("section", string(section)).Msg("failed to load USB emulation state")
 		}
 		if usbConfig, callErr := a.ctrl.GetUSBConfig(ctx); callErr == nil {
 			state.State.USBConfig = usbConfig
+			state.USBConfigLoaded = true
+		} else {
+			log.Debug().Err(callErr).Str("section", string(section)).Msg("failed to load USB config")
 		}
-		if devices, callErr := a.ctrl.GetUSBDevices(ctx); callErr == nil {
+		if devices, loaded := a.connectionUSBDevicesSnapshot(); loaded {
 			state.State.USBDevices = devices
 			state.State.USBDeviceCount = usbDeviceCount(devices)
+			state.USBDevicesLoaded = true
+		} else if devices, callErr := a.ctrl.GetUSBDevices(ctx); callErr == nil {
+			state.State.USBDevices = devices
+			state.State.USBDeviceCount = usbDeviceCount(devices)
+			state.USBDevicesLoaded = true
+			a.setConnectionUSBDevices(devices)
+		} else {
+			log.Debug().Err(callErr).Str("section", string(section)).Msg("failed to load USB device set")
 		}
 		if usbNetwork, callErr := a.ctrl.GetUSBNetworkConfig(ctx); callErr == nil {
 			state.State.USBNetwork = &usbNetwork
@@ -1018,22 +1038,34 @@ func (a *App) loadSettingsSection(section settingsSection, seq uint64) error {
 				a.syncUSBNetworkEditorLocked(usbNetwork)
 			}
 			a.mu.Unlock()
+		} else {
+			log.Debug().Err(callErr).Str("section", string(section)).Msg("failed to load USB network config")
 		}
 		if rotation, callErr := a.ctrl.GetDisplayRotation(ctx); callErr == nil {
 			state.State.DisplayRotation = rotation
+			state.DisplayRotationLoaded = true
+		} else {
+			log.Debug().Err(callErr).Str("section", string(section)).Msg("failed to load display rotation")
 		}
 		if backlight, callErr := a.ctrl.GetBacklightSettings(ctx); callErr == nil {
 			state.State.Backlight = backlight
+			state.BacklightLoaded = true
+		} else {
+			log.Debug().Err(callErr).Str("section", string(section)).Msg("failed to load backlight settings")
 		}
 		if sleepMode, callErr := a.ctrl.GetVideoSleepMode(ctx); callErr == nil {
 			state.State.VideoSleepMode = sleepMode
+			state.VideoSleepLoaded = true
+		} else {
+			log.Debug().Err(callErr).Str("section", string(section)).Msg("failed to load HDMI sleep mode")
 		}
 		if state.State.USBEmulation == nil &&
-			state.State.USBConfig == (session.USBConfig{}) &&
+			!state.USBConfigLoaded &&
+			!state.USBDevicesLoaded &&
 			state.State.USBNetwork == nil &&
-			state.State.DisplayRotation == session.DisplayRotationUnknown &&
-			state.State.Backlight == (session.BacklightSettings{}) &&
-			state.State.VideoSleepMode == nil {
+			!state.DisplayRotationLoaded &&
+			!state.BacklightLoaded &&
+			!state.VideoSleepLoaded {
 			state.Error = "No hardware RPC state available on this target"
 			err = errors.New(state.Error)
 		}
@@ -1312,6 +1344,16 @@ func (a *App) settingsMouseBody(snap session.Snapshot) ui.Element {
 		}),
 		ui.Fixed(ui.Spacer{H: 14}),
 		ui.Fixed(settingsToggleRowElement("scroll_invert", "Invert Scroll", settingsActionVisual{Enabled: true, Active: a.invertScroll})),
+		ui.Fixed(ui.Spacer{H: 18}),
+		ui.Fixed(settingsSectionLabelElement("Compatibility")),
+		ui.Fixed(ui.Spacer{H: 8}),
+		ui.Fixed(ui.Paragraph{
+			Text:  "Mirror Back and Forward side-button presses through the relative mouse gadget while staying in absolute mode. Use this when the host ignores side buttons from the absolute pointer device.",
+			Size:  12,
+			Color: a.currentTheme().Muted,
+		}),
+		ui.Fixed(ui.Spacer{H: 12}),
+		ui.Fixed(settingsToggleRowElement("absolute_side_buttons_via_relative_toggle", "Mirror Side Buttons in Absolute Mode", settingsActionVisual{Enabled: true, Active: a.prefs.AbsoluteSideButtonsViaRel})),
 	}
 
 	rightChildren := []ui.Child{}
@@ -1721,50 +1763,73 @@ func (a *App) settingsHardwareBody() ui.Element {
 			52,
 		)
 	}
+
 	rotateState := a.settingsAction(settingsGroupDisplayRotate)
-	displayChildren := []ui.Child{
-		ui.Fixed(settingsKeyValueElement("Rotation", string(state.State.DisplayRotation), 86)),
-		ui.Fixed(ui.Spacer{H: 14}),
-		ui.Fixed(ui.Paragraph{Text: "Rotate the JetKVM device display. This does not rotate the remote host video feed.", Size: 12, Color: a.currentTheme().Muted}),
-		ui.Fixed(ui.Spacer{H: 14}),
-		ui.Fixed(ui.Wrap{Children: []ui.Element{
-			settingsActionElement("rotate_normal", "Normal", settingsActionVisual{Enabled: state.State.DisplayRotation != session.DisplayRotationUnknown && (!rotateState.Pending || rotateState.PendingChoice == "270"), Active: state.State.DisplayRotation == session.DisplayRotationNormal, Pending: rotateState.Pending && rotateState.PendingChoice == "270"}, 88),
-			settingsActionElement("rotate_inverted", "Inverted", settingsActionVisual{Enabled: state.State.DisplayRotation != session.DisplayRotationUnknown && (!rotateState.Pending || rotateState.PendingChoice == "90"), Active: state.State.DisplayRotation == session.DisplayRotationInverted, Pending: rotateState.Pending && rotateState.PendingChoice == "90"}, 98),
-		}, Spacing: 12, LineSpacing: 8}),
-	}
 	backlightState := a.settingsAction(settingsGroupBacklight)
-	displayChildren = append(displayChildren,
-		ui.Fixed(ui.Spacer{H: 18}),
-		ui.Fixed(settingsSectionLabelElement("Brightness")),
-		ui.Fixed(ui.Spacer{H: 8}),
-		ui.Fixed(ui.Wrap{Children: []ui.Element{
-			settingsActionElement("backlight_brightness:0", "Off", settingsActionVisual{Enabled: !backlightState.Pending || backlightState.PendingChoice == "0", Active: state.State.Backlight.MaxBrightness == 0, Pending: backlightState.Pending && backlightState.PendingChoice == "0"}, 64),
-			settingsActionElement("backlight_brightness:10", "Low", settingsActionVisual{Enabled: !backlightState.Pending || backlightState.PendingChoice == "10", Active: state.State.Backlight.MaxBrightness == 10, Pending: backlightState.Pending && backlightState.PendingChoice == "10"}, 64),
-			settingsActionElement("backlight_brightness:35", "Medium", settingsActionVisual{Enabled: !backlightState.Pending || backlightState.PendingChoice == "35", Active: state.State.Backlight.MaxBrightness == 35, Pending: backlightState.Pending && backlightState.PendingChoice == "35"}, 84),
-			settingsActionElement("backlight_brightness:64", "High", settingsActionVisual{Enabled: !backlightState.Pending || backlightState.PendingChoice == "64", Active: state.State.Backlight.MaxBrightness == 64, Pending: backlightState.Pending && backlightState.PendingChoice == "64"}, 72),
-		}, Spacing: 12, LineSpacing: 8}),
-		ui.Fixed(ui.Spacer{H: 18}),
-		ui.Fixed(settingsSectionLabelElement("Dim display after")),
-		ui.Fixed(ui.Spacer{H: 8}),
-		ui.Fixed(ui.Wrap{Children: []ui.Element{
-			settingsActionElement("backlight_dim:0", "Never", settingsActionVisual{Enabled: !backlightState.Pending || backlightState.PendingChoice == "0", Active: state.State.Backlight.DimAfter == 0, Pending: backlightState.Pending && backlightState.PendingChoice == "0"}, 76),
-			settingsActionElement("backlight_dim:60", "1m", settingsActionVisual{Enabled: !backlightState.Pending || backlightState.PendingChoice == "60", Active: state.State.Backlight.DimAfter == 60, Pending: backlightState.Pending && backlightState.PendingChoice == "60"}, 56),
-			settingsActionElement("backlight_dim:300", "5m", settingsActionVisual{Enabled: !backlightState.Pending || backlightState.PendingChoice == "300", Active: state.State.Backlight.DimAfter == 300, Pending: backlightState.Pending && backlightState.PendingChoice == "300"}, 56),
-			settingsActionElement("backlight_dim:600", "10m", settingsActionVisual{Enabled: !backlightState.Pending || backlightState.PendingChoice == "600", Active: state.State.Backlight.DimAfter == 600, Pending: backlightState.Pending && backlightState.PendingChoice == "600"}, 64),
-			settingsActionElement("backlight_dim:1800", "30m", settingsActionVisual{Enabled: !backlightState.Pending || backlightState.PendingChoice == "1800", Active: state.State.Backlight.DimAfter == 1800, Pending: backlightState.Pending && backlightState.PendingChoice == "1800"}, 64),
-			settingsActionElement("backlight_dim:3600", "1h", settingsActionVisual{Enabled: !backlightState.Pending || backlightState.PendingChoice == "3600", Active: state.State.Backlight.DimAfter == 3600, Pending: backlightState.Pending && backlightState.PendingChoice == "3600"}, 56),
-		}, Spacing: 12, LineSpacing: 8}),
-		ui.Fixed(ui.Spacer{H: 18}),
-		ui.Fixed(settingsSectionLabelElement("Turn display off after")),
-		ui.Fixed(ui.Spacer{H: 8}),
-		ui.Fixed(ui.Wrap{Children: []ui.Element{
-			settingsActionElement("backlight_off:0", "Never", settingsActionVisual{Enabled: !backlightState.Pending || backlightState.PendingChoice == "0", Active: state.State.Backlight.OffAfter == 0, Pending: backlightState.Pending && backlightState.PendingChoice == "0"}, 76),
-			settingsActionElement("backlight_off:300", "5m", settingsActionVisual{Enabled: !backlightState.Pending || backlightState.PendingChoice == "300", Active: state.State.Backlight.OffAfter == 300, Pending: backlightState.Pending && backlightState.PendingChoice == "300"}, 56),
-			settingsActionElement("backlight_off:600", "10m", settingsActionVisual{Enabled: !backlightState.Pending || backlightState.PendingChoice == "600", Active: state.State.Backlight.OffAfter == 600, Pending: backlightState.Pending && backlightState.PendingChoice == "600"}, 64),
-			settingsActionElement("backlight_off:1800", "30m", settingsActionVisual{Enabled: !backlightState.Pending || backlightState.PendingChoice == "1800", Active: state.State.Backlight.OffAfter == 1800, Pending: backlightState.Pending && backlightState.PendingChoice == "1800"}, 64),
-			settingsActionElement("backlight_off:3600", "1h", settingsActionVisual{Enabled: !backlightState.Pending || backlightState.PendingChoice == "3600", Active: state.State.Backlight.OffAfter == 3600, Pending: backlightState.Pending && backlightState.PendingChoice == "3600"}, 56),
-		}, Spacing: 12, LineSpacing: 8}),
-	)
+	videoSleepPending := a.settingsActionPending(settingsGroupVideoSleep)
+	usbState := a.settingsAction(settingsGroupUSBEmulation)
+	usbDevicesState := a.settingsAction(settingsGroupUSBDevices)
+
+	displayChildren := []ui.Child{}
+	if state.DisplayRotationLoaded {
+		displayChildren = append(displayChildren,
+			ui.Fixed(settingsKeyValueElement("Rotation", string(state.State.DisplayRotation), 86)),
+			ui.Fixed(ui.Spacer{H: 14}),
+			ui.Fixed(ui.Paragraph{Text: "Rotate the JetKVM device display. This does not rotate the remote host video feed.", Size: 12, Color: a.currentTheme().Muted}),
+			ui.Fixed(ui.Spacer{H: 14}),
+			ui.Fixed(ui.Wrap{Children: []ui.Element{
+				settingsActionElement("rotate_normal", "Normal", settingsActionVisual{Enabled: !rotateState.Pending || rotateState.PendingChoice == "270", Active: state.State.DisplayRotation == session.DisplayRotationNormal, Pending: rotateState.Pending && rotateState.PendingChoice == "270"}, 88),
+				settingsActionElement("rotate_inverted", "Inverted", settingsActionVisual{Enabled: !rotateState.Pending || rotateState.PendingChoice == "90", Active: state.State.DisplayRotation == session.DisplayRotationInverted, Pending: rotateState.Pending && rotateState.PendingChoice == "90"}, 98),
+			}, Spacing: 12, LineSpacing: 8}),
+		)
+	} else {
+		displayChildren = append(displayChildren,
+			ui.Fixed(ui.Paragraph{Text: "Display rotation controls are unavailable on this target.", Size: 12, Color: a.currentTheme().Muted}),
+		)
+	}
+
+	if state.BacklightLoaded {
+		displayChildren = append(displayChildren,
+			ui.Fixed(ui.Spacer{H: 18}),
+			ui.Fixed(settingsSectionLabelElement("Brightness")),
+			ui.Fixed(ui.Spacer{H: 8}),
+			ui.Fixed(ui.Wrap{Children: []ui.Element{
+				settingsActionElement("backlight_brightness:0", "Off", settingsActionVisual{Enabled: !backlightState.Pending || backlightState.PendingChoice == "0", Active: state.State.Backlight.MaxBrightness == 0, Pending: backlightState.Pending && backlightState.PendingChoice == "0"}, 64),
+				settingsActionElement("backlight_brightness:10", "Low", settingsActionVisual{Enabled: !backlightState.Pending || backlightState.PendingChoice == "10", Active: state.State.Backlight.MaxBrightness == 10, Pending: backlightState.Pending && backlightState.PendingChoice == "10"}, 64),
+				settingsActionElement("backlight_brightness:35", "Medium", settingsActionVisual{Enabled: !backlightState.Pending || backlightState.PendingChoice == "35", Active: state.State.Backlight.MaxBrightness == 35, Pending: backlightState.Pending && backlightState.PendingChoice == "35"}, 84),
+				settingsActionElement("backlight_brightness:64", "High", settingsActionVisual{Enabled: !backlightState.Pending || backlightState.PendingChoice == "64", Active: state.State.Backlight.MaxBrightness == 64, Pending: backlightState.Pending && backlightState.PendingChoice == "64"}, 72),
+			}, Spacing: 12, LineSpacing: 8}),
+			ui.Fixed(ui.Spacer{H: 18}),
+			ui.Fixed(settingsSectionLabelElement("Dim display after")),
+			ui.Fixed(ui.Spacer{H: 8}),
+			ui.Fixed(ui.Wrap{Children: []ui.Element{
+				settingsActionElement("backlight_dim:0", "Never", settingsActionVisual{Enabled: !backlightState.Pending || backlightState.PendingChoice == "0", Active: state.State.Backlight.DimAfter == 0, Pending: backlightState.Pending && backlightState.PendingChoice == "0"}, 76),
+				settingsActionElement("backlight_dim:60", "1m", settingsActionVisual{Enabled: !backlightState.Pending || backlightState.PendingChoice == "60", Active: state.State.Backlight.DimAfter == 60, Pending: backlightState.Pending && backlightState.PendingChoice == "60"}, 56),
+				settingsActionElement("backlight_dim:300", "5m", settingsActionVisual{Enabled: !backlightState.Pending || backlightState.PendingChoice == "300", Active: state.State.Backlight.DimAfter == 300, Pending: backlightState.Pending && backlightState.PendingChoice == "300"}, 56),
+				settingsActionElement("backlight_dim:600", "10m", settingsActionVisual{Enabled: !backlightState.Pending || backlightState.PendingChoice == "600", Active: state.State.Backlight.DimAfter == 600, Pending: backlightState.Pending && backlightState.PendingChoice == "600"}, 64),
+				settingsActionElement("backlight_dim:1800", "30m", settingsActionVisual{Enabled: !backlightState.Pending || backlightState.PendingChoice == "1800", Active: state.State.Backlight.DimAfter == 1800, Pending: backlightState.Pending && backlightState.PendingChoice == "1800"}, 64),
+				settingsActionElement("backlight_dim:3600", "1h", settingsActionVisual{Enabled: !backlightState.Pending || backlightState.PendingChoice == "3600", Active: state.State.Backlight.DimAfter == 3600, Pending: backlightState.Pending && backlightState.PendingChoice == "3600"}, 56),
+			}, Spacing: 12, LineSpacing: 8}),
+			ui.Fixed(ui.Spacer{H: 18}),
+			ui.Fixed(settingsSectionLabelElement("Turn display off after")),
+			ui.Fixed(ui.Spacer{H: 8}),
+			ui.Fixed(ui.Wrap{Children: []ui.Element{
+				settingsActionElement("backlight_off:0", "Never", settingsActionVisual{Enabled: !backlightState.Pending || backlightState.PendingChoice == "0", Active: state.State.Backlight.OffAfter == 0, Pending: backlightState.Pending && backlightState.PendingChoice == "0"}, 76),
+				settingsActionElement("backlight_off:300", "5m", settingsActionVisual{Enabled: !backlightState.Pending || backlightState.PendingChoice == "300", Active: state.State.Backlight.OffAfter == 300, Pending: backlightState.Pending && backlightState.PendingChoice == "300"}, 56),
+				settingsActionElement("backlight_off:600", "10m", settingsActionVisual{Enabled: !backlightState.Pending || backlightState.PendingChoice == "600", Active: state.State.Backlight.OffAfter == 600, Pending: backlightState.Pending && backlightState.PendingChoice == "600"}, 64),
+				settingsActionElement("backlight_off:1800", "30m", settingsActionVisual{Enabled: !backlightState.Pending || backlightState.PendingChoice == "1800", Active: state.State.Backlight.OffAfter == 1800, Pending: backlightState.Pending && backlightState.PendingChoice == "1800"}, 64),
+				settingsActionElement("backlight_off:3600", "1h", settingsActionVisual{Enabled: !backlightState.Pending || backlightState.PendingChoice == "3600", Active: state.State.Backlight.OffAfter == 3600, Pending: backlightState.Pending && backlightState.PendingChoice == "3600"}, 56),
+			}, Spacing: 12, LineSpacing: 8}),
+		)
+	}
+
+	if state.VideoSleepLoaded {
+		displayChildren = append(displayChildren,
+			ui.Fixed(ui.Spacer{H: 18}),
+			ui.Fixed(settingsToggleRowElement("hardware_hdmi_sleep_toggle", "HDMI Sleep Power Saving", settingsActionVisual{Enabled: !videoSleepPending, Active: state.State.VideoSleepMode != nil && state.State.VideoSleepMode.Duration >= 0, Pending: videoSleepPending})),
+		)
+	}
+
 	switch {
 	case rotateState.Pending:
 		displayChildren = append(displayChildren, ui.Fixed(ui.Spacer{H: 12}), ui.Fixed(settingsStatusElement("Applying…", a.currentTheme().WarningStroke)))
@@ -1777,61 +1842,65 @@ func (a *App) settingsHardwareBody() ui.Element {
 	case backlightState.Error != "":
 		displayChildren = append(displayChildren, ui.Fixed(ui.Spacer{H: 12}), ui.Fixed(settingsStatusElement(backlightState.Error, a.currentTheme().Error)))
 	}
-	usbState := a.settingsAction(settingsGroupUSBEmulation)
-	usbDevicesState := a.settingsAction(settingsGroupUSBDevices)
+
 	preset := usbDevicePresetLabel(state.State.USBDevices)
-	usbChildren := []ui.Child{
-		ui.Fixed(settingsKeyValueElement("USB Emulation", boolPtrWord(state.State.USBEmulation), 112)),
-		ui.Fixed(ui.Spacer{H: 10}),
-		ui.Fixed(settingsKeyValueElement("USB Config", usbConfigLabel(state.State.USBConfig), 112)),
-		ui.Fixed(ui.Spacer{H: 14}),
-		ui.Fixed(settingsSectionLabelElement("Configured devices")),
-		ui.Fixed(ui.Spacer{H: 8}),
-		ui.Fixed(ui.Paragraph{Text: usbDevicesSummary(state.State.USBDevices), Size: 12, Color: a.currentTheme().Body}),
-	}
+	usbChildren := []ui.Child{}
 	if state.State.USBEmulation != nil {
 		usbChildren = append(usbChildren,
-			ui.Fixed(ui.Spacer{H: 12}),
-			ui.Fixed(settingsToggleRowElement("usb_emulation_toggle", "Enable USB Emulation", settingsActionVisual{
-				Enabled: !usbState.Pending,
-				Active:  *state.State.USBEmulation,
-				Pending: usbState.Pending,
-			})),
+			ui.Fixed(settingsToggleRowElement("usb_emulation_toggle", "Enable USB Emulation", settingsActionVisual{Enabled: !usbState.Pending, Active: *state.State.USBEmulation, Pending: usbState.Pending})),
 		)
-		switch {
-		case usbState.Pending:
-			usbChildren = append(usbChildren, ui.Fixed(ui.Spacer{H: 12}), ui.Fixed(settingsStatusElement("Applying…", a.currentTheme().WarningStroke)))
-		case usbState.Error != "":
-			usbChildren = append(usbChildren, ui.Fixed(ui.Spacer{H: 12}), ui.Fixed(settingsStatusElement(usbState.Error, a.currentTheme().Error)))
-		}
 	}
-	usbChildren = append(usbChildren,
-		ui.Fixed(ui.Spacer{H: 14}),
-		ui.Fixed(settingsToggleRowElement("hardware_hdmi_sleep_toggle", "HDMI Sleep Power Saving", settingsActionVisual{Enabled: !a.settingsActionPending(settingsGroupVideoSleep), Active: state.State.VideoSleepMode != nil && state.State.VideoSleepMode.Duration >= 0, Pending: a.settingsActionPending(settingsGroupVideoSleep)})),
-		ui.Fixed(ui.Spacer{H: 14}),
-		ui.Fixed(settingsSectionLabelElement("Preset")),
-		ui.Fixed(ui.Spacer{H: 8}),
-		ui.Fixed(ui.Wrap{Children: []ui.Element{
-			settingsActionElement("usb_devices_default", "Default", settingsActionVisual{Enabled: !usbDevicesState.Pending || usbDevicesState.PendingChoice == "default", Active: preset == "Default", Pending: usbDevicesState.Pending && usbDevicesState.PendingChoice == "default"}, 86),
-			settingsActionElement("usb_devices_keyboard_only", "Keyboard Only", settingsActionVisual{Enabled: !usbDevicesState.Pending || usbDevicesState.PendingChoice == "keyboard_only", Active: preset == "Keyboard Only", Pending: usbDevicesState.Pending && usbDevicesState.PendingChoice == "keyboard_only"}, 122),
-		}, Spacing: 12, LineSpacing: 8}),
-		ui.Fixed(ui.Spacer{H: 10}),
-		ui.Fixed(settingsSectionLabelElement("Custom")),
-		ui.Fixed(ui.Spacer{H: 8}),
-		ui.Fixed(ui.Column{Children: []ui.Child{
-			ui.Fixed(settingsToggleRowElement("usb_toggle_keyboard", "Keyboard", settingsActionVisual{Enabled: !usbDevicesState.Pending || usbDevicesState.PendingChoice == "custom", Active: state.State.USBDevices.Keyboard, Pending: usbDevicesState.Pending && usbDevicesState.PendingChoice == "custom"})),
+	if state.USBConfigLoaded {
+		if len(usbChildren) > 0 {
+			usbChildren = append(usbChildren, ui.Fixed(ui.Spacer{H: 14}))
+		}
+		usbChildren = append(usbChildren,
+			ui.Fixed(settingsKeyValueElement("Advertises as", usbConfigLabel(state.State.USBConfig), 112)),
+		)
+	}
+	if state.USBDevicesLoaded {
+		if len(usbChildren) > 0 {
+			usbChildren = append(usbChildren, ui.Fixed(ui.Spacer{H: 14}))
+		}
+		usbChildren = append(usbChildren,
+			ui.Fixed(settingsKeyValueElement("USB Profile", preset, 112)),
 			ui.Fixed(ui.Spacer{H: 8}),
-			ui.Fixed(settingsToggleRowElement("usb_toggle_absolute_mouse", "Absolute Mouse", settingsActionVisual{Enabled: !usbDevicesState.Pending || usbDevicesState.PendingChoice == "custom", Active: state.State.USBDevices.AbsoluteMouse, Pending: usbDevicesState.Pending && usbDevicesState.PendingChoice == "custom"})),
+			ui.Fixed(ui.Paragraph{Text: usbDevicesSummary(state.State.USBDevices), Size: 12, Color: a.currentTheme().Body}),
+			ui.Fixed(ui.Spacer{H: 14}),
+			ui.Fixed(settingsSectionLabelElement("Quick profiles")),
 			ui.Fixed(ui.Spacer{H: 8}),
-			ui.Fixed(settingsToggleRowElement("usb_toggle_relative_mouse", "Relative Mouse", settingsActionVisual{Enabled: !usbDevicesState.Pending || usbDevicesState.PendingChoice == "custom", Active: state.State.USBDevices.RelativeMouse, Pending: usbDevicesState.Pending && usbDevicesState.PendingChoice == "custom"})),
+			ui.Fixed(ui.Wrap{Children: []ui.Element{
+				settingsActionElement("usb_devices_default", "Keyboard + Mouse + Storage", settingsActionVisual{Enabled: !usbDevicesState.Pending || usbDevicesState.PendingChoice == "default", Active: preset == "Keyboard + Mouse + Storage", Pending: usbDevicesState.Pending && usbDevicesState.PendingChoice == "default"}, 214),
+				settingsActionElement("usb_devices_keyboard_only", "Keyboard Only", settingsActionVisual{Enabled: !usbDevicesState.Pending || usbDevicesState.PendingChoice == "keyboard_only", Active: preset == "Keyboard Only", Pending: usbDevicesState.Pending && usbDevicesState.PendingChoice == "keyboard_only"}, 122),
+			}, Spacing: 12, LineSpacing: 8}),
+			ui.Fixed(ui.Spacer{H: 10}),
+			ui.Fixed(settingsSectionLabelElement("Custom capabilities")),
 			ui.Fixed(ui.Spacer{H: 8}),
-			ui.Fixed(settingsToggleRowElement("usb_toggle_mass_storage", "Mass Storage", settingsActionVisual{Enabled: !usbDevicesState.Pending || usbDevicesState.PendingChoice == "custom", Active: state.State.USBDevices.MassStorage, Pending: usbDevicesState.Pending && usbDevicesState.PendingChoice == "custom"})),
-			ui.Fixed(ui.Spacer{H: 8}),
-			ui.Fixed(settingsToggleRowElement("usb_toggle_serial_console", "Serial Console", settingsActionVisual{Enabled: !usbDevicesState.Pending || usbDevicesState.PendingChoice == "custom", Active: state.State.USBDevices.SerialConsole, Pending: usbDevicesState.Pending && usbDevicesState.PendingChoice == "custom"})),
-			ui.Fixed(ui.Spacer{H: 8}),
-			ui.Fixed(settingsToggleRowElement("usb_toggle_network", "Network", settingsActionVisual{Enabled: !usbDevicesState.Pending || usbDevicesState.PendingChoice == "custom", Active: state.State.USBDevices.Network, Pending: usbDevicesState.Pending && usbDevicesState.PendingChoice == "custom"})),
-		}}),
-	)
+			ui.Fixed(ui.Column{Children: []ui.Child{
+				ui.Fixed(settingsToggleRowElement("usb_toggle_keyboard", "Keyboard Input", settingsActionVisual{Enabled: !usbDevicesState.Pending || usbDevicesState.PendingChoice == "custom", Active: state.State.USBDevices.Keyboard, Pending: usbDevicesState.Pending && usbDevicesState.PendingChoice == "custom"})),
+				ui.Fixed(ui.Spacer{H: 8}),
+				ui.Fixed(settingsToggleRowElement("usb_toggle_absolute_mouse", "Absolute Mouse", settingsActionVisual{Enabled: !usbDevicesState.Pending || usbDevicesState.PendingChoice == "custom", Active: state.State.USBDevices.AbsoluteMouse, Pending: usbDevicesState.Pending && usbDevicesState.PendingChoice == "custom"})),
+				ui.Fixed(ui.Spacer{H: 8}),
+				ui.Fixed(settingsToggleRowElement("usb_toggle_relative_mouse", "Relative Mouse", settingsActionVisual{Enabled: !usbDevicesState.Pending || usbDevicesState.PendingChoice == "custom", Active: state.State.USBDevices.RelativeMouse, Pending: usbDevicesState.Pending && usbDevicesState.PendingChoice == "custom"})),
+				ui.Fixed(ui.Spacer{H: 8}),
+				ui.Fixed(settingsToggleRowElement("usb_toggle_mass_storage", "Virtual Media", settingsActionVisual{Enabled: !usbDevicesState.Pending || usbDevicesState.PendingChoice == "custom", Active: state.State.USBDevices.MassStorage, Pending: usbDevicesState.Pending && usbDevicesState.PendingChoice == "custom"})),
+				ui.Fixed(ui.Spacer{H: 8}),
+				ui.Fixed(settingsToggleRowElement("usb_toggle_serial_console", "Serial Console", settingsActionVisual{Enabled: !usbDevicesState.Pending || usbDevicesState.PendingChoice == "custom", Active: state.State.USBDevices.SerialConsole, Pending: usbDevicesState.Pending && usbDevicesState.PendingChoice == "custom"})),
+				ui.Fixed(ui.Spacer{H: 8}),
+				ui.Fixed(settingsToggleRowElement("usb_toggle_network", "USB Network Adapter", settingsActionVisual{Enabled: !usbDevicesState.Pending || usbDevicesState.PendingChoice == "custom", Active: state.State.USBDevices.Network, Pending: usbDevicesState.Pending && usbDevicesState.PendingChoice == "custom"})),
+			}}),
+		)
+	} else if len(usbChildren) == 0 {
+		usbChildren = append(usbChildren,
+			ui.Fixed(ui.Paragraph{Text: "USB gadget controls are unavailable on this target.", Size: 12, Color: a.currentTheme().Muted}),
+		)
+	}
+	switch {
+	case usbState.Pending:
+		usbChildren = append(usbChildren, ui.Fixed(ui.Spacer{H: 12}), ui.Fixed(settingsStatusElement("Applying…", a.currentTheme().WarningStroke)))
+	case usbState.Error != "":
+		usbChildren = append(usbChildren, ui.Fixed(ui.Spacer{H: 12}), ui.Fixed(settingsStatusElement(usbState.Error, a.currentTheme().Error)))
+	}
 	switch {
 	case usbDevicesState.Pending:
 		usbChildren = append(usbChildren, ui.Fixed(ui.Spacer{H: 12}), ui.Fixed(settingsStatusElement("Applying…", a.currentTheme().WarningStroke)))
@@ -1841,6 +1910,7 @@ func (a *App) settingsHardwareBody() ui.Element {
 	if state.Error != "" {
 		usbChildren = append(usbChildren, ui.Fixed(ui.Spacer{H: 12}), ui.Fixed(settingsStatusElement(state.Error, a.currentTheme().Error)))
 	}
+
 	children := []ui.Child{ui.Fixed(settingsTwoPane(settingsCardElement("Display", ui.Column{Children: displayChildren}), 48, settingsCardElement("USB", ui.Column{Children: usbChildren}), 52))}
 	if state.State.USBNetwork != nil || a.usbNetworkEditorLoaded {
 		usbNetworkState := a.settingsAction(settingsGroupUSBNetworkSave)
@@ -2926,7 +2996,29 @@ func jigglerPresetLabel(enabled *bool, cfg *session.JigglerConfig) string {
 }
 
 func usbDevicesSummary(devices session.USBDevices) string {
-	return fmt.Sprintf("%d configured classes", usbDeviceCount(devices))
+	labels := make([]string, 0, 6)
+	if devices.Keyboard {
+		labels = append(labels, "keyboard input")
+	}
+	if devices.AbsoluteMouse {
+		labels = append(labels, "absolute mouse")
+	}
+	if devices.RelativeMouse {
+		labels = append(labels, "relative mouse")
+	}
+	if devices.MassStorage {
+		labels = append(labels, "virtual media")
+	}
+	if devices.SerialConsole {
+		labels = append(labels, "serial console")
+	}
+	if devices.Network {
+		labels = append(labels, "USB network adapter")
+	}
+	if len(labels) == 0 {
+		return "No USB gadget capabilities enabled"
+	}
+	return strings.Join(labels, ", ")
 }
 
 func usbDeviceCount(devices session.USBDevices) int {
@@ -2955,7 +3047,7 @@ func usbDeviceCount(devices session.USBDevices) int {
 func usbDevicePresetLabel(devices session.USBDevices) string {
 	switch devices {
 	case defaultUSBDevices():
-		return "Default"
+		return "Keyboard + Mouse + Storage"
 	case keyboardOnlyUSBDevices():
 		return "Keyboard Only"
 	default:

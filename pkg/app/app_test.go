@@ -188,6 +188,37 @@ func TestNormalizeWheelDeltaRespectsInvertScroll(t *testing.T) {
 	}
 }
 
+func TestDefaultPreferencesEnableAbsoluteSideButtonFallback(t *testing.T) {
+	prefs := defaultPreferences()
+	if !prefs.AbsoluteSideButtonsViaRel {
+		t.Fatal("expected absolute side-button fallback to default on")
+	}
+}
+
+func TestShouldRouteSideButtonsToRelative(t *testing.T) {
+	app := &App{}
+	app.prefs.AbsoluteSideButtonsViaRel = true
+	app.hardwareConn.USBDevicesLoaded = true
+	app.hardwareConn.USBDevices = session.USBDevices{
+		AbsoluteMouse: true,
+		RelativeMouse: true,
+	}
+	if !app.shouldRouteSideButtonsToRelative() {
+		t.Fatal("expected side-button fallback to be enabled when both mouse gadgets are active")
+	}
+
+	app.relative = true
+	if app.shouldRouteSideButtonsToRelative() {
+		t.Fatal("expected side-button fallback to be disabled in relative mode")
+	}
+	app.relative = false
+
+	app.hardwareConn.USBDevices.RelativeMouse = false
+	if app.shouldRouteSideButtonsToRelative() {
+		t.Fatal("expected side-button fallback to be disabled without relative mouse support")
+	}
+}
+
 func TestValidateJigglerConfig(t *testing.T) {
 	if err := validateJigglerConfig(standardJigglerConfig()); err != nil {
 		t.Fatalf("standard config rejected: %v", err)
