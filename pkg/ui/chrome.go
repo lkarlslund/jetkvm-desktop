@@ -30,17 +30,18 @@ func (b IconButton) Measure(_ *Context, constraints Constraints) Size {
 }
 
 func (b IconButton) Draw(ctx *Context, bounds Rect) {
-	fill := rgba(20, 30, 42, 220, b.Alpha)
-	stroke := rgba(130, 146, 162, 160, b.Alpha)
-	icon := rgba(236, 241, 245, 255, b.Alpha)
+	fill := withAlpha(ctx.Theme.ButtonFill, b.Alpha)
+	stroke := withAlpha(ctx.Theme.ButtonStroke, b.Alpha)
+	icon := withAlpha(ctx.Theme.ButtonText, b.Alpha)
 	if b.Active {
-		fill = rgba(28, 66, 116, 232, b.Alpha)
-		stroke = rgba(148, 198, 255, 210, b.Alpha)
+		fill = withAlpha(ctx.Theme.ActiveFill, b.Alpha)
+		stroke = withAlpha(ctx.Theme.ActiveStroke, b.Alpha)
+		icon = rgba(244, 248, 252, 255, b.Alpha)
 	}
 	if !b.Enabled {
-		fill = rgba(20, 24, 32, 160, b.Alpha)
-		stroke = rgba(86, 96, 108, 100, b.Alpha)
-		icon = rgba(126, 136, 146, 180, b.Alpha)
+		fill = withAlpha(ctx.Theme.DisabledFill, b.Alpha)
+		stroke = withAlpha(ctx.Theme.ButtonStroke, b.Alpha*0.75)
+		icon = withAlpha(ctx.Theme.DisabledText, b.Alpha)
 	}
 	ctx.FillRect(bounds, fill)
 	ctx.StrokeRect(bounds, 1, stroke)
@@ -57,9 +58,9 @@ func (t Tooltip) Measure(_ *Context, constraints Constraints) Size {
 }
 
 func (t Tooltip) Draw(ctx *Context, bounds Rect) {
-	ctx.FillRect(bounds, rgba(8, 12, 18, 220, t.Alpha))
-	ctx.StrokeRect(bounds, 1, rgba(112, 128, 148, 120, t.Alpha))
-	DrawText(ctx.Screen, t.Text, bounds.X+10, bounds.Y+8, 13, rgba(236, 241, 245, 255, t.Alpha))
+	ctx.FillRect(bounds, withAlpha(ctx.Theme.ModalFill, t.Alpha))
+	ctx.StrokeRect(bounds, 1, withAlpha(ctx.Theme.ModalStroke, t.Alpha))
+	DrawText(ctx.Screen, t.Text, bounds.X+10, bounds.Y+8, 13, withAlpha(ctx.Theme.Body, t.Alpha))
 }
 
 func drawIcon(ctx *Context, kind IconKind, r Rect, clr color.Color, active bool) {
@@ -150,5 +151,21 @@ func rgba(r, g, b, a uint8, alpha float64) color.Color {
 		G: g,
 		B: b,
 		A: uint8(float64(a) * alpha),
+	}
+}
+
+func withAlpha(clr color.Color, alpha float64) color.Color {
+	if alpha <= 0 {
+		return color.RGBA{}
+	}
+	if alpha >= 1 {
+		return clr
+	}
+	r, g, b, a := clr.RGBA()
+	return color.RGBA{
+		R: uint8(r >> 8),
+		G: uint8(g >> 8),
+		B: uint8(b >> 8),
+		A: uint8((float64(a>>8) * alpha)),
 	}
 }
