@@ -6,6 +6,7 @@ import (
 	"image/color"
 	"strings"
 	"sync"
+	"unicode/utf8"
 
 	"github.com/hajimehoshi/ebiten/v2"
 	ebitentext "github.com/hajimehoshi/ebiten/v2/text/v2"
@@ -50,6 +51,36 @@ func MeasureText(value string, size float64) (float64, float64) {
 		return 0, 0
 	}
 	return ebitentext.Measure(value, fontFace, 0)
+}
+
+func PrefixAdvances(value string, size float64) []float64 {
+	runeCount := utf8.RuneCountInString(value)
+	advances := make([]float64, runeCount+1)
+	if runeCount == 0 {
+		return advances
+	}
+	fontFace := face(size)
+	if fontFace == nil {
+		return advances
+	}
+	glyphs := ebitentext.AppendGlyphs(nil, value, fontFace, nil)
+	if len(glyphs) != runeCount {
+		return prefixAdvancesFallback(value, size, advances)
+	}
+	for i, glyph := range glyphs {
+		advances[i] = glyph.OriginX
+	}
+	advances[runeCount] = ebitentext.Advance(value, fontFace)
+	return advances
+}
+
+func prefixAdvancesFallback(value string, size float64, advances []float64) []float64 {
+	runes := []rune(value)
+	for i := range runes {
+		advances[i], _ = MeasureText(string(runes[:i]), size)
+	}
+	advances[len(runes)], _ = MeasureText(value, size)
+	return advances
 }
 
 func LineHeight(size float64) float64 {

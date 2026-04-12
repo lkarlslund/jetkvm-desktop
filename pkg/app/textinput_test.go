@@ -87,4 +87,7 @@ func TestIsTextFieldAction(t *testing.T) {
 	if isTextFieldAction("reconnect") {
 		t.Fatal("non-text action recognized as text field")
 	}
+	if isTextFieldAction("fake_focus_button") {
+		t.Fatal("stringly _focus_ action recognized as text field")
+	}
 }

@@ -2,7 +2,6 @@ package ui
 
 import (
 	"image/color"
-	"strings"
 	"time"
 )
 
@@ -242,8 +241,8 @@ func (t TextField) Draw(ctx *Context, bounds Rect) {
 	if t.TextColor != nil {
 		textColor = t.TextColor
 	}
-	showPlaceholder := strings.TrimSpace(text) == ""
-	if strings.TrimSpace(text) == "" {
+	showPlaceholder := text == ""
+	if text == "" {
 		text = t.Placeholder
 		textColor = ctx.Theme.DisabledText
 		if t.PlaceholderColor != nil {
@@ -255,6 +254,7 @@ func (t TextField) Draw(ctx *Context, bounds Rect) {
 	textWidth := max(0, bounds.W-24)
 	runes := []rune(text)
 	caretIndex := 0
+	var advances []float64
 	if !showPlaceholder {
 		caretIndex = t.CaretIndex
 		if caretIndex < 0 {
@@ -263,11 +263,12 @@ func (t TextField) Draw(ctx *Context, bounds Rect) {
 		if caretIndex > len(runes) {
 			caretIndex = len(runes)
 		}
+		advances = PrefixAdvances(text, textSize)
 	}
 	scrollX := 0.0
 	if !showPlaceholder && textWidth > 0 {
-		caretPixel, _ := ctx.MeasureText(string(runes[:caretIndex]), textSize)
-		textPixel, _ := ctx.MeasureText(text, textSize)
+		caretPixel := advances[caretIndex]
+		textPixel := advances[len(advances)-1]
 		if textPixel > textWidth {
 			scrollX = caretPixel - textWidth + 8
 			if scrollX < 0 {
@@ -283,15 +284,14 @@ func (t TextField) Draw(ctx *Context, bounds Rect) {
 	visibleEnd := len(runes)
 	if !showPlaceholder && textWidth > 0 && len(runes) > 0 {
 		for visibleStart < len(runes) {
-			prefixW, _ := ctx.MeasureText(string(runes[:visibleStart+1]), textSize)
-			if prefixW > scrollX {
+			if advances[visibleStart+1] > scrollX {
 				break
 			}
 			visibleStart++
 		}
 		visibleEnd = len(runes)
 		for visibleEnd > visibleStart {
-			visibleW, _ := ctx.MeasureText(string(runes[visibleStart:visibleEnd]), textSize)
+			visibleW := advances[visibleEnd] - advances[visibleStart]
 			if visibleW <= textWidth {
 				break
 			}
@@ -326,10 +326,8 @@ func (t TextField) Draw(ctx *Context, bounds Rect) {
 		highlightStart := max(float64(startIndex), float64(visibleStart))
 		highlightEnd := min(float64(endIndex), float64(visibleEnd))
 		if highlightEnd > highlightStart {
-			prefix := string(runes[visibleStart:int(highlightStart)])
-			selected := string(runes[int(highlightStart):int(highlightEnd)])
-			prefixW, _ := ctx.MeasureText(prefix, textSize)
-			selectedW, _ := ctx.MeasureText(selected, textSize)
+			prefixW := advances[int(highlightStart)] - advances[visibleStart]
+			selectedW := advances[int(highlightEnd)] - advances[int(highlightStart)]
 			ctx.FillRect(Rect{X: textX + prefixW - 1, Y: textY - 1, W: selectedW + 2, H: LineHeight(textSize) + 2}, ctx.Theme.ActiveFill)
 		}
 	}
@@ -346,7 +344,7 @@ func (t TextField) Draw(ctx *Context, bounds Rect) {
 		if caretBase > visibleEnd {
 			caretBase = visibleEnd
 		}
-		textW, _ := ctx.MeasureText(string(runes[visibleStart:caretBase]), textSize)
+		textW := advances[caretBase] - advances[visibleStart]
 		caretX += textW + 2
 	}
 	caretH := LineHeight(textSize)

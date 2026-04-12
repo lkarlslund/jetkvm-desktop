@@ -285,15 +285,49 @@ func (a *App) markCurrentTextBindingDirty() {
 	}
 }
 
+var textFieldActionIDs = map[string]struct{}{
+	"launcher_focus_input":               {},
+	"launcher_focus_password":            {},
+	"media_focus_url":                    {},
+	"media_focus_upload":                 {},
+	"jiggler_focus_cron":                 {},
+	"jiggler_focus_timezone":             {},
+	"access_focus_password":              {},
+	"access_focus_confirm_password":      {},
+	"access_focus_old_password":          {},
+	"access_focus_new_password":          {},
+	"access_focus_confirm_new_password":  {},
+	"access_focus_disable_password":      {},
+	"advanced_focus_ssh":                 {},
+	"usb_network_focus_uplink_interface": {},
+	"usb_network_focus_subnet":           {},
+	"network_focus_hostname":             {},
+	"network_focus_domain":               {},
+	"network_focus_http_proxy":           {},
+	"network_focus_ipv4_address":         {},
+	"network_focus_ipv4_netmask":         {},
+	"network_focus_ipv4_gateway":         {},
+	"network_focus_ipv4_dns":             {},
+	"network_focus_ipv6_prefix":          {},
+	"network_focus_ipv6_gateway":         {},
+	"network_focus_ipv6_dns":             {},
+	"network_focus_time_sync_ntp":        {},
+	"network_focus_time_sync_http":       {},
+	"macro_focus_name":                   {},
+	"macro_focus_modifiers":              {},
+	"macro_focus_keys":                   {},
+	"macro_focus_delay":                  {},
+	"mqtt_focus_broker":                  {},
+	"mqtt_focus_port":                    {},
+	"mqtt_focus_username":                {},
+	"mqtt_focus_password":                {},
+	"mqtt_focus_base_topic":              {},
+	"mqtt_focus_debounce":                {},
+}
+
 func isTextFieldAction(id string) bool {
-	switch id {
-	case "launcher_focus_input",
-		"launcher_focus_password",
-		"media_focus_url",
-		"media_focus_upload":
-		return true
-	}
-	return strings.Contains(id, "_focus_")
+	_, ok := textFieldActionIDs[id]
+	return ok
 }
 
 func shiftPressed() bool {

@@ -242,14 +242,14 @@ func (s *TextInputState) caretIndexForX(binding TextInputBinding, field Rect, cu
 	if cursorX <= textX {
 		return 0
 	}
-	lastWidth := 0.0
+	advances := PrefixAdvances(display, binding.effectiveTextSize())
 	for i := 1; i <= len(runes); i++ {
-		width, _ := MeasureText(string(runes[:i]), binding.effectiveTextSize())
+		lastWidth := advances[i-1]
+		width := advances[i]
 		threshold := textX + lastWidth + (width-lastWidth)/2
 		if cursorX < threshold {
 			return i - 1
 		}
-		lastWidth = width
 	}
 	return len(runes)
 }
