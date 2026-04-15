@@ -701,13 +701,14 @@ func (a *App) syncMouse() {
 			}
 		}
 	}
-	_, wheelY := ebiten.Wheel()
-	if wheelY != 0 && (a.scrollThrottle == 0 || time.Since(a.lastWheelAt) >= a.scrollThrottle) {
-		delta := normalizeWheelDelta(wheelY, a.invertScroll)
-		if delta != 0 {
+	wheelX, wheelY := ebiten.Wheel()
+	if (wheelX != 0 || wheelY != 0) && (a.scrollThrottle == 0 || time.Since(a.lastWheelAt) >= a.scrollThrottle) {
+		reportY := normalizeWheelDeltaY(wheelY, a.invertScroll)
+		reportX := normalizeWheelDeltaX(wheelX, a.invertScroll)
+		if reportY != 0 || reportX != 0 {
 			a.runAsync(func() {
-				if err := a.ctrl.SendWheel(delta); err != nil {
-					log.Debug().Err(err).Int8("delta", delta).Msg("failed to send mouse wheel report")
+				if err := a.ctrl.SendWheel(reportY, reportX); err != nil {
+					log.Debug().Err(err).Int8("wheel_y", reportY).Int8("wheel_x", reportX).Msg("failed to send mouse wheel report")
 				}
 			})
 		}
@@ -835,7 +836,7 @@ func clamp(value, minValue, maxValue float64) float64 {
 	return value
 }
 
-func normalizeWheelDelta(value float64, invert bool) int8 {
+func normalizeWheelAxis(value float64) int8 {
 	if value == 0 {
 		return 0
 	}
@@ -846,11 +847,19 @@ func normalizeWheelDelta(value float64, invert bool) int8 {
 	default:
 		value = math.Round(value)
 	}
-	sign := -1.0
+	return int8(clamp(value, -127, 127))
+}
+
+func normalizeWheelDeltaY(value float64, invert bool) int8 {
+	delta := normalizeWheelAxis(value)
 	if invert {
-		sign = 1
+		return -delta
 	}
-	return int8(clamp(sign*value, -127, 127))
+	return delta
+}
+
+func normalizeWheelDeltaX(value float64, invert bool) int8 {
+	return normalizeWheelAxis(value)
 }
 
 func min(a, b float64) float64 {

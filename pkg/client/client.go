@@ -441,8 +441,8 @@ func (c *Client) SendRelMouse(dx, dy int8, buttons byte) error {
 	return nil
 }
 
-func (c *Client) SendWheel(delta int8) error {
-	return c.sendWheelReport(context.Background(), delta)
+func (c *Client) SendWheel(wheelY, wheelX int8) error {
+	return c.sendWheelReport(context.Background(), wheelY, wheelX)
 }
 
 func (c *Client) ExecuteKeyboardMacro(isPaste bool, steps []hidrpc.KeyboardMacroStep) error {

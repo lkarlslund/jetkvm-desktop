@@ -1396,12 +1396,12 @@ func (c *Controller) SendRelMouse(dx, dy int8, buttons byte) error {
 	return nil
 }
 
-func (c *Controller) SendWheel(delta int8) error {
+func (c *Controller) SendWheel(wheelY, wheelX int8) error {
 	current := c.clientIfConnected()
 	if current == nil {
 		return errors.New("client not connected")
 	}
-	return current.SendWheel(delta)
+	return current.SendWheel(wheelY, wheelX)
 }
 
 func (c *Controller) ExecutePaste(text string, delay uint16) ([]rune, error) {

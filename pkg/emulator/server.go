@@ -1030,7 +1030,12 @@ func (s *session) handleRPC(data []byte) error {
 		}
 	case "wheelReport":
 		if wheelY, ok := params["wheelY"].(float64); ok {
-			s.serverRef.appendInput("rpc", "rpc.wheelReport", fmt.Sprintf("wheelY=%d", int8(wheelY)))
+			wheelX, ok := params["wheelX"].(float64)
+			if !ok {
+				resp = jsonrpc.NewErrorResponse(req.ID, -32602, "missing wheelX", nil)
+				break
+			}
+			s.serverRef.appendInput("rpc", "rpc.wheelReport", fmt.Sprintf("wheelY=%d wheelX=%d", int8(wheelY), int8(wheelX)))
 			resp = jsonrpc.NewResponse(req.ID, true)
 		} else {
 			resp = jsonrpc.NewErrorResponse(req.ID, -32602, "missing wheelY", nil)

@@ -141,7 +141,7 @@ func TestLiveDeviceConnectsAndStreams(t *testing.T) {
 	if err := c.SendRelMouse(3, -2, 0); err != nil {
 		t.Fatal(err)
 	}
-	if err := c.SendWheel(-1); err != nil {
+	if err := c.SendWheel(-1, 0); err != nil {
 		t.Fatal(err)
 	}
 }

@@ -316,6 +316,6 @@ func (c *Client) GetKeysDownState(ctx context.Context) (KeysDownState, error) {
 	return state, err
 }
 
-func (c *Client) sendWheelReport(ctx context.Context, delta int8) error {
-	return c.Call(ctx, "wheelReport", wheelReportRequest{WheelY: int(delta)}, nil)
+func (c *Client) sendWheelReport(ctx context.Context, wheelY, wheelX int8) error {
+	return c.Call(ctx, "wheelReport", wheelReportRequest{WheelY: int(wheelY), WheelX: int(wheelX)}, nil)
 }

@@ -117,7 +117,7 @@ func TestControllerReceivesVideoAndForwardsInput(t *testing.T) {
 	if err := controller.SendRelMouse(5, -3, 1); err != nil {
 		t.Fatal(err)
 	}
-	if err := controller.SendWheel(-1); err != nil {
+	if err := controller.SendWheel(-1, 0); err != nil {
 		t.Fatal(err)
 	}
 
@@ -140,7 +140,7 @@ func TestControllerReceivesVideoAndForwardsInput(t *testing.T) {
 				foundPointer = true
 			case strings.Contains(input.Type, "Mouse"):
 				foundMouse = true
-			case input.Type == "rpc.wheelReport":
+			case input.Type == "rpc.wheelReport" && strings.Contains(input.Data, "wheelY=-1") && strings.Contains(input.Data, "wheelX=0"):
 				foundWheel = true
 			}
 		}

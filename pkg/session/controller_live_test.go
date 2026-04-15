@@ -58,7 +58,7 @@ func TestLiveControllerConnectsAndForwardsSafeInput(t *testing.T) {
 	if err := controller.SendRelMouse(2, -1, 0); err != nil {
 		t.Fatal(err)
 	}
-	if err := controller.SendWheel(-1); err != nil {
+	if err := controller.SendWheel(-1, 0); err != nil {
 		t.Fatal(err)
 	}
 

@@ -176,15 +176,30 @@ func TestPreferencesNormalizeChromeLayout(t *testing.T) {
 	}
 }
 
-func TestNormalizeWheelDeltaRespectsInvertScroll(t *testing.T) {
-	if got := normalizeWheelDelta(1, false); got != -1 {
-		t.Fatalf("normalizeWheelDelta(1, false) = %d, want -1", got)
+func TestNormalizeWheelDeltaYRespectsInvertScroll(t *testing.T) {
+	if got := normalizeWheelDeltaY(1, false); got != 1 {
+		t.Fatalf("normalizeWheelDeltaY(1, false) = %d, want 1", got)
 	}
-	if got := normalizeWheelDelta(1, true); got != 1 {
-		t.Fatalf("normalizeWheelDelta(1, true) = %d, want 1", got)
+	if got := normalizeWheelDeltaY(1, true); got != -1 {
+		t.Fatalf("normalizeWheelDeltaY(1, true) = %d, want -1", got)
 	}
-	if got := normalizeWheelDelta(-2, false); got != 2 {
-		t.Fatalf("normalizeWheelDelta(-2, false) = %d, want 2", got)
+	if got := normalizeWheelDeltaY(-2, false); got != -2 {
+		t.Fatalf("normalizeWheelDeltaY(-2, false) = %d, want -2", got)
+	}
+}
+
+func TestNormalizeWheelDeltaXRespectsInvertScroll(t *testing.T) {
+	if got := normalizeWheelDeltaX(1, false); got != 1 {
+		t.Fatalf("normalizeWheelDeltaX(1, false) = %d, want 1", got)
+	}
+	if got := normalizeWheelDeltaX(1, true); got != 1 {
+		t.Fatalf("normalizeWheelDeltaX(1, true) = %d, want 1", got)
+	}
+	if got := normalizeWheelDeltaX(-2, false); got != -2 {
+		t.Fatalf("normalizeWheelDeltaX(-2, false) = %d, want -2", got)
+	}
+	if got := normalizeWheelDeltaX(-2, true); got != -2 {
+		t.Fatalf("normalizeWheelDeltaX(-2, true) = %d, want -2", got)
 	}
 }
 

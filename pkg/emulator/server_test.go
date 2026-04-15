@@ -184,7 +184,7 @@ func TestClientConnectsAndRPCWorks(t *testing.T) {
 	if err := c.SendRelMouse(3, -2, 1); err != nil {
 		t.Fatal(err)
 	}
-	if err := c.SendWheel(-1); err != nil {
+	if err := c.SendWheel(-1, 0); err != nil {
 		t.Fatal(err)
 	}
 
@@ -218,7 +218,7 @@ func TestClientConnectsAndRPCWorks(t *testing.T) {
 		if input.Type == "hidrpc.Mouse" {
 			foundRelative = true
 		}
-		if input.Type == "rpc.wheelReport" {
+		if input.Type == "rpc.wheelReport" && input.Data == "wheelY=-1 wheelX=0" {
 			foundWheel = true
 		}
 	}

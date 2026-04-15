@@ -304,6 +304,7 @@ type setSSHKeyStateRequest struct {
 
 type wheelReportRequest struct {
 	WheelY int `json:"wheelY"`
+	WheelX int `json:"wheelX"`
 }
 
 type storageFilesResponse struct {
