@@ -53,6 +53,8 @@ type Snapshot struct {
 	BaseURL               string
 	DeviceID              string
 	Hostname              string
+	ActiveExtension       string
+	ATXState              *ATXState
 	Quality               float64
 	KeyboardLayout        string
 	EDID                  string
@@ -307,6 +309,17 @@ func (c *Controller) SetUSBEmulation(enabled bool) error {
 	})
 }
 
+func (c *Controller) SetATXPowerAction(action ATXPowerAction) error {
+	if action == "" {
+		return errors.New("ATX power action is required")
+	}
+	current := c.clientIfConnected()
+	if current == nil {
+		return errors.New("client not connected")
+	}
+	return current.SetATXPowerAction(withTimeout(context.Background(), c.cfg.MutationTimeout), string(action))
+}
+
 func (c *Controller) SetUSBDevices(devices USBDevices) error {
 	return c.mutateAndConfirm(func(ctx context.Context) error {
 		current := c.clientIfConnected()
@@ -404,6 +417,29 @@ func (c *Controller) GetCloudState(ctx context.Context) (CloudState, error) {
 		Connected: state.Connected,
 		URL:       state.URL,
 		AppURL:    state.AppURL,
+	}, nil
+}
+
+func (c *Controller) GetActiveExtension(ctx context.Context) (string, error) {
+	current := c.clientIfConnected()
+	if current == nil {
+		return "", errors.New("client not connected")
+	}
+	return current.GetActiveExtension(ctx)
+}
+
+func (c *Controller) GetATXState(ctx context.Context) (*ATXState, error) {
+	current := c.clientIfConnected()
+	if current == nil {
+		return nil, errors.New("client not connected")
+	}
+	state, err := current.GetATXState(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return &ATXState{
+		Power: state.Power,
+		HDD:   state.HDD,
 	}, nil
 }
 
@@ -1594,6 +1630,19 @@ func (c *Controller) bootstrap(ctx context.Context, cl *client.Client) error {
 	if deviceID, err := cl.GetDeviceID(ctx); err == nil {
 		c.setState(func(s *Snapshot) { s.DeviceID = deviceID })
 	}
+	if activeExtension, err := cl.GetActiveExtension(ctx); err == nil {
+		c.setState(func(s *Snapshot) { s.ActiveExtension = activeExtension })
+		if activeExtension == "atx-power" {
+			if atxState, stateErr := cl.GetATXState(ctx); stateErr == nil {
+				c.setState(func(s *Snapshot) {
+					s.ATXState = &ATXState{
+						Power: atxState.Power,
+						HDD:   atxState.HDD,
+					}
+				})
+			}
+		}
+	}
 	if quality, err := cl.GetStreamQualityFactor(ctx); err == nil {
 		c.setState(func(s *Snapshot) { s.Quality = quality })
 	}
@@ -1654,6 +1703,13 @@ func (c *Controller) watch(ctx context.Context, cl *client.Client) (reason strin
 				if state != "" {
 					c.setState(func(s *Snapshot) { s.Status = "video: " + state })
 				}
+			case "atxState":
+				c.setState(func(s *Snapshot) {
+					s.ATXState = &ATXState{
+						Power: extractBool(evt.Params, "power"),
+						HDD:   extractBool(evt.Params, "hdd"),
+					}
+				})
 			}
 		case life, ok := <-cl.Lifecycle():
 			if !ok {
@@ -1846,4 +1902,13 @@ func extractString(v any, key string) string {
 		}
 	}
 	return ""
+}
+
+func extractBool(v any, key string) bool {
+	if m, ok := v.(map[string]any); ok {
+		if b, ok := m[key].(bool); ok {
+			return b
+		}
+	}
+	return false
 }

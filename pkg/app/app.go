@@ -127,6 +127,7 @@ type App struct {
 	videoCustomEDIDMessage string
 	videoCustomEDIDSuccess bool
 	h265ConfirmOpen        bool
+	atxConfirmAction       session.ATXPowerAction
 	advancedSSHKey         string
 	advancedSSHLoaded      bool
 	advancedSSHDirty       bool
@@ -187,6 +188,7 @@ const (
 	settingsGroupVideoQuality                              // video_quality
 	settingsGroupVideoCodec                                // video_codec
 	settingsGroupVideoEDID                                 // video_edid
+	settingsGroupATXPower                                  // atx_power
 	settingsGroupTLSMode                                   // tls_mode
 	settingsGroupDisplayRotate                             // display_rotation
 	settingsGroupBacklight                                 // backlight
@@ -480,7 +482,7 @@ func (a *App) syncUIPointer() {
 		return
 	}
 	if a.mediaOpen {
-		if justPressed && !a.mediaPanel.contains(x, y) {
+		if justPressed && !a.mediaPanel.contains(x, y) && shouldDismissOverlayOnOutsidePress("media") {
 			a.closeMediaOverlay()
 			return
 		}
@@ -489,7 +491,7 @@ func (a *App) syncUIPointer() {
 		}
 	}
 	if a.pasteOpen {
-		if justPressed && !a.pastePanel.contains(x, y) {
+		if justPressed && !a.pastePanel.contains(x, y) && shouldDismissOverlayOnOutsidePress("paste") {
 			a.closePasteOverlay()
 			return
 		}
@@ -498,10 +500,6 @@ func (a *App) syncUIPointer() {
 		}
 	}
 	if a.settingsOpen {
-		if justPressed && !a.settingsPanel.contains(x, y) {
-			a.closeSettingsOverlay()
-			return
-		}
 		if a.settingsRuntime.HandlePointer(point, pressed, justPressed, justReleased) {
 			return
 		}
@@ -510,6 +508,17 @@ func (a *App) syncUIPointer() {
 		return
 	}
 	a.chromeRuntime.HandlePointer(point, pressed, justPressed, justReleased)
+}
+
+func shouldDismissOverlayOnOutsidePress(kind string) bool {
+	switch kind {
+	case "media", "paste":
+		return true
+	case "settings":
+		return false
+	default:
+		return false
+	}
 }
 
 func (a *App) syncVideoFrame() {
@@ -2695,6 +2704,49 @@ func (a *App) confirmH265CodecAction() {
 	a.invokeVideoCodecAction("h265", session.VideoCodecH265)
 }
 
+func (a *App) invokeATXShortPress() {
+	a.invokeATXAction(session.ATXPowerActionShortPress)
+}
+
+func (a *App) openATXResetConfirm() {
+	if a.settingsActionPending(settingsGroupATXPower) {
+		return
+	}
+	a.atxConfirmAction = session.ATXPowerActionReset
+}
+
+func (a *App) openATXLongPressConfirm() {
+	if a.settingsActionPending(settingsGroupATXPower) {
+		return
+	}
+	a.atxConfirmAction = session.ATXPowerActionLongPress
+}
+
+func (a *App) confirmATXAction() {
+	action := a.atxConfirmAction
+	a.atxConfirmAction = ""
+	if action == "" {
+		return
+	}
+	a.invokeATXAction(action)
+}
+
+func (a *App) cancelATXAction() {
+	a.atxConfirmAction = ""
+}
+
+func (a *App) invokeATXAction(action session.ATXPowerAction) {
+	if action == "" || a.settingsActionPending(settingsGroupATXPower) {
+		return
+	}
+	a.withSettingsAction(settingsGroupATXPower, string(action), func() error {
+		if err := a.ctrl.SetATXPowerAction(action); err != nil {
+			return err
+		}
+		return a.refreshSettingsSectionSync(sectionATX)
+	})
+}
+
 func (a *App) invokeEDIDAction(choice, edid string) {
 	if a.settingsActionPending(settingsGroupVideoEDID) {
 		return
@@ -3370,6 +3422,7 @@ func (a *App) closeSettingsOverlay() {
 	}
 	a.settingsOpen = false
 	a.h265ConfirmOpen = false
+	a.atxConfirmAction = ""
 	a.settingsInputFocus = settingsInputNone
 	a.closeJigglerEditor()
 	a.clearAccessEditor("", false)

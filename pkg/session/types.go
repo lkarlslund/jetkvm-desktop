@@ -223,6 +223,19 @@ type VideoState struct {
 	EDID  string
 }
 
+type ATXState struct {
+	Power bool
+	HDD   bool
+}
+
+type ATXPowerAction string
+
+const (
+	ATXPowerActionShortPress ATXPowerAction = "power-short"
+	ATXPowerActionLongPress  ATXPowerAction = "power-long"
+	ATXPowerActionReset      ATXPowerAction = "reset"
+)
+
 type MQTTSettings struct {
 	Enabled           bool
 	Broker            string

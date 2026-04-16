@@ -143,11 +143,11 @@ func (i *iconKind) UnmarshalText(text []byte) error {
 	return err
 }
 
-const _settingsSectionName = "generalmousekeyboardvideohardwareaccessappearancemacrosnetworkmqttadvanced"
+const _settingsSectionName = "generalmousekeyboardvideohardwareatxaccessappearancemacrosnetworkmqttadvanced"
 
-var _settingsSectionIndex = [...]uint8{0, 7, 12, 20, 25, 33, 39, 49, 55, 62, 66, 74}
+var _settingsSectionIndex = [...]uint8{0, 7, 12, 20, 25, 33, 36, 42, 52, 58, 65, 69, 77}
 
-const _settingsSectionLowerName = "generalmousekeyboardvideohardwareaccessappearancemacrosnetworkmqttadvanced"
+const _settingsSectionLowerName = "generalmousekeyboardvideohardwareatxaccessappearancemacrosnetworkmqttadvanced"
 
 func (i settingsSection) String() string {
 	if i >= settingsSection(len(_settingsSectionIndex)-1) {
@@ -165,15 +165,16 @@ func _settingsSectionNoOp() {
 	_ = x[sectionKeyboard-(2)]
 	_ = x[sectionVideo-(3)]
 	_ = x[sectionHardware-(4)]
-	_ = x[sectionAccess-(5)]
-	_ = x[sectionAppearance-(6)]
-	_ = x[sectionMacros-(7)]
-	_ = x[sectionNetwork-(8)]
-	_ = x[sectionMQTT-(9)]
-	_ = x[sectionAdvanced-(10)]
+	_ = x[sectionATX-(5)]
+	_ = x[sectionAccess-(6)]
+	_ = x[sectionAppearance-(7)]
+	_ = x[sectionMacros-(8)]
+	_ = x[sectionNetwork-(9)]
+	_ = x[sectionMQTT-(10)]
+	_ = x[sectionAdvanced-(11)]
 }
 
-var _settingsSectionValues = []settingsSection{sectionGeneral, sectionMouse, sectionKeyboard, sectionVideo, sectionHardware, sectionAccess, sectionAppearance, sectionMacros, sectionNetwork, sectionMQTT, sectionAdvanced}
+var _settingsSectionValues = []settingsSection{sectionGeneral, sectionMouse, sectionKeyboard, sectionVideo, sectionHardware, sectionATX, sectionAccess, sectionAppearance, sectionMacros, sectionNetwork, sectionMQTT, sectionAdvanced}
 
 var _settingsSectionNameToValueMap = map[string]settingsSection{
 	_settingsSectionName[0:7]:        sectionGeneral,
@@ -186,18 +187,20 @@ var _settingsSectionNameToValueMap = map[string]settingsSection{
 	_settingsSectionLowerName[20:25]: sectionVideo,
 	_settingsSectionName[25:33]:      sectionHardware,
 	_settingsSectionLowerName[25:33]: sectionHardware,
-	_settingsSectionName[33:39]:      sectionAccess,
-	_settingsSectionLowerName[33:39]: sectionAccess,
-	_settingsSectionName[39:49]:      sectionAppearance,
-	_settingsSectionLowerName[39:49]: sectionAppearance,
-	_settingsSectionName[49:55]:      sectionMacros,
-	_settingsSectionLowerName[49:55]: sectionMacros,
-	_settingsSectionName[55:62]:      sectionNetwork,
-	_settingsSectionLowerName[55:62]: sectionNetwork,
-	_settingsSectionName[62:66]:      sectionMQTT,
-	_settingsSectionLowerName[62:66]: sectionMQTT,
-	_settingsSectionName[66:74]:      sectionAdvanced,
-	_settingsSectionLowerName[66:74]: sectionAdvanced,
+	_settingsSectionName[33:36]:      sectionATX,
+	_settingsSectionLowerName[33:36]: sectionATX,
+	_settingsSectionName[36:42]:      sectionAccess,
+	_settingsSectionLowerName[36:42]: sectionAccess,
+	_settingsSectionName[42:52]:      sectionAppearance,
+	_settingsSectionLowerName[42:52]: sectionAppearance,
+	_settingsSectionName[52:58]:      sectionMacros,
+	_settingsSectionLowerName[52:58]: sectionMacros,
+	_settingsSectionName[58:65]:      sectionNetwork,
+	_settingsSectionLowerName[58:65]: sectionNetwork,
+	_settingsSectionName[65:69]:      sectionMQTT,
+	_settingsSectionLowerName[65:69]: sectionMQTT,
+	_settingsSectionName[69:77]:      sectionAdvanced,
+	_settingsSectionLowerName[69:77]: sectionAdvanced,
 }
 
 var _settingsSectionNames = []string{
@@ -206,12 +209,13 @@ var _settingsSectionNames = []string{
 	_settingsSectionName[12:20],
 	_settingsSectionName[20:25],
 	_settingsSectionName[25:33],
-	_settingsSectionName[33:39],
-	_settingsSectionName[39:49],
-	_settingsSectionName[49:55],
-	_settingsSectionName[55:62],
-	_settingsSectionName[62:66],
-	_settingsSectionName[66:74],
+	_settingsSectionName[33:36],
+	_settingsSectionName[36:42],
+	_settingsSectionName[42:52],
+	_settingsSectionName[52:58],
+	_settingsSectionName[58:65],
+	_settingsSectionName[65:69],
+	_settingsSectionName[69:77],
 }
 
 // settingsSectionString retrieves an enum value from the enum constants string name.

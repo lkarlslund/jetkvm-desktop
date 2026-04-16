@@ -239,6 +239,63 @@ func TestControllerSetUSBDevicesSucceedsWhenWriteAckIsDropped(t *testing.T) {
 	}
 }
 
+func TestControllerATXStateAndActions(t *testing.T) {
+	srv, ctx, cancel := startEmulator(t)
+	defer cancel()
+	srv.SetActiveExtension("atx-power")
+	srv.SetATXState(true, false)
+
+	controller := New(Config{
+		BaseURL:    srv.BaseURL(),
+		Password:   "secret",
+		RPCTimeout: 2 * time.Second,
+		Reconnect:  true,
+	})
+	controller.Start(ctx)
+	defer controller.Stop()
+
+	waitForPhase(t, controller, PhaseConnected, 5*time.Second)
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		snap := controller.Snapshot()
+		if snap.ActiveExtension == "atx-power" && snap.ATXState != nil && snap.ATXState.Power && !snap.ATXState.HDD {
+			break
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+	snap := controller.Snapshot()
+	if snap.ActiveExtension != "atx-power" {
+		t.Fatalf("active extension = %q, want atx-power", snap.ActiveExtension)
+	}
+	if snap.ATXState == nil || !snap.ATXState.Power || snap.ATXState.HDD {
+		t.Fatalf("ATX state = %+v, want power=true hdd=false", snap.ATXState)
+	}
+
+	gotState, err := controller.GetATXState(context.Background())
+	if err != nil {
+		t.Fatalf("GetATXState returned error: %v", err)
+	}
+	if gotState == nil || !gotState.Power || gotState.HDD {
+		t.Fatalf("GetATXState = %+v, want power=true hdd=false", gotState)
+	}
+
+	if err := controller.SetATXPowerAction(ATXPowerActionReset); err != nil {
+		t.Fatalf("SetATXPowerAction returned error: %v", err)
+	}
+
+	deadline = time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		for _, input := range srv.Inputs() {
+			if input.Type == "rpc.setATXPowerAction" && input.Data == "reset" {
+				return
+			}
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+	t.Fatalf("expected reset ATX action in inputs, got %+v", srv.Inputs())
+}
+
 func TestControllerVirtualMediaURLMountAndUnmount(t *testing.T) {
 	srv, ctx, cancel := startEmulator(t)
 	defer cancel()

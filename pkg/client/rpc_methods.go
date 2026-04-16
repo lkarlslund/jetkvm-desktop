@@ -70,6 +70,22 @@ func (c *Client) GetVideoCodecPreference(ctx context.Context) (string, error) {
 	return codec, err
 }
 
+func (c *Client) GetActiveExtension(ctx context.Context) (string, error) {
+	var extension string
+	err := c.Call(ctx, "getActiveExtension", nil, &extension)
+	return extension, err
+}
+
+func (c *Client) GetATXState(ctx context.Context) (ATXState, error) {
+	var state ATXState
+	err := c.Call(ctx, "getATXState", nil, &state)
+	return state, err
+}
+
+func (c *Client) SetATXPowerAction(ctx context.Context, action string) error {
+	return c.Call(ctx, "setATXPowerAction", setATXPowerActionRequest{Action: action}, nil)
+}
+
 func (c *Client) SetVideoCodecPreference(ctx context.Context, codec string) error {
 	return c.Call(ctx, "setVideoCodecPreference", SetCodecPreferenceRequest{Codec: codec}, nil)
 }

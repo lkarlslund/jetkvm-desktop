@@ -191,6 +191,11 @@ type DisplayRotationState struct {
 	Rotation string `json:"rotation"`
 }
 
+type ATXState struct {
+	Power bool `json:"power"`
+	HDD   bool `json:"hdd"`
+}
+
 type DeveloperModeState struct {
 	Enabled bool `json:"enabled"`
 }
@@ -302,6 +307,10 @@ type SetCodecPreferenceRequest struct {
 
 type SetEDIDRequest struct {
 	EDID string `json:"edid"`
+}
+
+type setATXPowerActionRequest struct {
+	Action string `json:"action"`
 }
 
 type SetBacklightSettingsRequest struct {

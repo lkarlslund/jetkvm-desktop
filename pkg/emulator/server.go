@@ -55,6 +55,8 @@ type FaultConfig struct {
 
 type DeviceState struct {
 	DeviceID            string
+	ActiveExtension     string
+	ATXState            map[string]any
 	VideoState          string
 	StreamQualityFactor float64
 	VideoCodec          string
@@ -152,6 +154,8 @@ func NewServer(cfg Config) (*Server, error) {
 		token: "jetkvm-desktop-emulator-token",
 		state: DeviceState{
 			DeviceID:            "emu-jetkvm-001",
+			ActiveExtension:     "",
+			ATXState:            map[string]any{"power": false, "hdd": false},
 			VideoState:          "ready",
 			StreamQualityFactor: 0.75,
 			VideoCodec:          "auto",
@@ -345,6 +349,21 @@ func (s *Server) Inputs() []InputRecord {
 	out := make([]InputRecord, len(s.inputs))
 	copy(out, s.inputs)
 	return out
+}
+
+func (s *Server) SetActiveExtension(name string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.state.ActiveExtension = strings.TrimSpace(name)
+}
+
+func (s *Server) SetATXState(power, hdd bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.state.ATXState = map[string]any{
+		"power": power,
+		"hdd":   hdd,
+	}
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
@@ -755,6 +774,9 @@ func (s *Server) exchangeOffer(encoded string) (string, error) {
 				_ = sess.sendEvent("videoInputState", s.state.VideoState)
 				_ = sess.sendEvent("keyboardLedState", map[string]byte{"mask": s.state.KeyboardLEDMask})
 				_ = sess.sendEvent("networkState", map[string]any{"hostname": s.state.Hostname, "ip": "127.0.0.1"})
+				if s.state.ActiveExtension == "atx-power" {
+					_ = sess.sendEvent("atxState", mapsClone(s.state.ATXState))
+				}
 				_ = sess.sendEvent("usbState", "attached")
 				_ = sess.sendEvent("failsafeMode", map[string]any{"active": false, "reason": ""})
 			})
@@ -1159,6 +1181,23 @@ func (s *session) handleRPC(data []byte) error {
 		}
 		s.serverRef.state.VideoCodec = params.Codec
 		resp = jsonrpc.NewResponse(req.ID, true)
+	case "getActiveExtension":
+		resp = jsonrpc.NewResponse(req.ID, s.serverRef.state.ActiveExtension)
+	case "getATXState":
+		resp = jsonrpc.NewResponse(req.ID, mapsClone(s.serverRef.state.ATXState))
+	case "setATXPowerAction":
+		action, ok := params["action"].(string)
+		if !ok || action == "" {
+			resp = jsonrpc.NewErrorResponse(req.ID, -32602, "missing action", nil)
+			break
+		}
+		switch action {
+		case "power-short", "power-long", "reset":
+			s.serverRef.appendInput("rpc", "rpc.setATXPowerAction", action)
+			resp = jsonrpc.NewResponse(req.ID, true)
+		default:
+			resp = jsonrpc.NewErrorResponse(req.ID, -32602, "invalid action", nil)
+		}
 	case "getUsbEmulationState":
 		resp = jsonrpc.NewResponse(req.ID, s.serverRef.state.USBEmulation)
 	case "setUsbEmulationState":

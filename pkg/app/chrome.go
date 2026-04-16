@@ -53,6 +53,7 @@ const (
 	sectionKeyboard                          // keyboard
 	sectionVideo                             // video
 	sectionHardware                          // hardware
+	sectionATX                               // atx
 	sectionAccess                            // access
 	sectionAppearance                        // appearance
 	sectionMacros                            // macros
@@ -74,6 +75,7 @@ type sectionData struct {
 	Mouse    mouseState
 	Video    videoState
 	Access   accessState
+	ATX      atxState
 	Hardware hardwareState
 	Network  networkState
 	Macros   macrosState
@@ -99,6 +101,13 @@ type accessState struct {
 	Loading bool
 	Error   string
 	State   session.AccessState
+}
+
+type atxState struct {
+	Loading         bool
+	Error           string
+	ActiveExtension string
+	State           *session.ATXState
 }
 
 type videoState struct {
@@ -240,6 +249,17 @@ func settingsSections(snap session.Snapshot) []settingsSectionDef {
 				"Display rotation and backlight behavior",
 				"USB device classes and identifiers",
 				"Power-saving HDMI sleep",
+			},
+		},
+		{
+			id:          sectionATX,
+			label:       "ATX",
+			description: "Host power board controls and LED status",
+			available:   true,
+			items: []string{
+				"Power, reset, and long-press controls for the host machine",
+				"Power LED and HDD LED status",
+				"Available when the ATX extension is active on the JetKVM",
 			},
 		},
 		{
@@ -793,6 +813,9 @@ func (e settingsOverlayElement) Draw(ctx *ui.Context, bounds ui.Rect) {
 	if e.app.h265ConfirmOpen {
 		children = append(children, settingsH265ConfirmElement{app: e.app})
 	}
+	if e.app.atxConfirmAction != "" {
+		children = append(children, settingsATXConfirmElement{app: e.app})
+	}
 	if e.app.accessEditor.Mode != accessEditorModeNone {
 		children = append(children, settingsAccessEditorModalElement{app: e.app})
 	}
@@ -880,6 +903,69 @@ func (e settingsAccessEditorModalElement) Draw(ctx *ui.Context, bounds ui.Rect) 
 							ui.Fixed(ui.Label{Text: title, Size: 20, Color: ctx.Theme.Title}),
 							ui.Fixed(ui.Spacer{H: 14}),
 							ui.Fixed(body),
+						},
+					},
+				},
+			},
+		},
+	}}.Draw(ctx, bounds)
+}
+
+type settingsATXConfirmElement struct {
+	app *App
+}
+
+func (settingsATXConfirmElement) Measure(_ *ui.Context, constraints ui.Constraints) ui.Size {
+	return constraints.Clamp(ui.Size{W: constraints.MaxW, H: constraints.MaxH})
+}
+
+func (e settingsATXConfirmElement) Draw(ctx *ui.Context, bounds ui.Rect) {
+	if e.app.atxConfirmAction == "" {
+		return
+	}
+	if ctx.Runtime != nil {
+		ctx.Runtime.Register(ui.Control{
+			ID:      "atx_modal_backdrop",
+			Rect:    bounds,
+			Enabled: true,
+			OnClick: func(ui.PointerEvent) {},
+		})
+	}
+	title := "Confirm ATX Action"
+	message := "This action will be sent to the attached host machine through the ATX board."
+	confirmLabel := "Continue"
+	switch e.app.atxConfirmAction {
+	case session.ATXPowerActionReset:
+		title = "Reset Host Machine"
+		message = "This sends a reset-button press to the attached host machine. JetKVM itself will stay online."
+		confirmLabel = "Reset Host"
+	case session.ATXPowerActionLongPress:
+		title = "Long Press Power Button"
+		message = "This sends a long power-button press to the attached host machine to force it off. JetKVM itself will stay online."
+		confirmLabel = "Force Off Host"
+	}
+	panelW := min(520, bounds.W-56)
+	ui.Stack{Children: []ui.Element{
+		ui.Backdrop{Color: color.RGBA{A: 80}},
+		ui.Align{
+			Horizontal: ui.AlignCenter,
+			Vertical:   ui.AlignCenter,
+			Child: ui.Constrained{
+				MaxW: panelW,
+				Child: ui.Panel{
+					Fill:   ctx.Theme.ModalFill,
+					Stroke: ctx.Theme.ModalStroke,
+					Insets: ui.UniformInsets(22),
+					Child: ui.Column{
+						Children: []ui.Child{
+							ui.Fixed(ui.Label{Text: title, Size: 20, Color: ctx.Theme.Title}),
+							ui.Fixed(ui.Spacer{H: 12}),
+							ui.Fixed(ui.Paragraph{Text: message, Size: 13, Color: ctx.Theme.Body}),
+							ui.Fixed(ui.Spacer{H: 16}),
+							ui.Fixed(ui.Wrap{Children: []ui.Element{
+								settingsActionButton(confirmLabel, settingsActionVisual{Enabled: !e.app.settingsActionPending(settingsGroupATXPower)}, 132, e.app.confirmATXAction),
+								settingsActionButton("Cancel", settingsActionVisual{Enabled: !e.app.settingsActionPending(settingsGroupATXPower)}, 84, e.app.cancelATXAction),
+							}, Spacing: 12, LineSpacing: 8}),
 						},
 					},
 				},
@@ -1052,6 +1138,9 @@ func (a *App) markSettingsSectionLoading(section settingsSection) uint64 {
 	case sectionAccess:
 		a.sectionData.Access.Loading = true
 		a.sectionData.Access.Error = ""
+	case sectionATX:
+		a.sectionData.ATX.Loading = true
+		a.sectionData.ATX.Error = ""
 	case sectionVideo:
 		a.sectionData.Video.Loading = true
 		a.sectionData.Video.Error = ""
@@ -1152,6 +1241,27 @@ func (a *App) loadSettingsSection(section settingsSection, seq uint64) error {
 		if a.sectionLoadSeq[section] == seq {
 			a.sectionData.Access = state
 			a.syncTLSEditorLocked(state.State.TLS)
+		}
+		a.mu.Unlock()
+	case sectionATX:
+		state := atxState{Loading: false}
+		loaded := false
+		if activeExtension, callErr := a.ctrl.GetActiveExtension(ctx); callErr == nil {
+			state.ActiveExtension = activeExtension
+			loaded = true
+		}
+		if state.ActiveExtension == "atx-power" {
+			if atxCurrent, callErr := a.ctrl.GetATXState(ctx); callErr == nil {
+				state.State = atxCurrent
+			}
+		}
+		if !loaded && state.State == nil {
+			state.Error = "No ATX RPC state available on this target"
+			err = errors.New(state.Error)
+		}
+		a.mu.Lock()
+		if a.sectionLoadSeq[section] == seq {
+			a.sectionData.ATX = state
 		}
 		a.mu.Unlock()
 	case sectionHardware:
@@ -1808,6 +1918,8 @@ func (a *App) settingsSectionBody(section settingsSection, snap session.Snapshot
 		return a.settingsVideoBody(snap)
 	case sectionHardware:
 		return a.settingsHardwareBody()
+	case sectionATX:
+		return a.settingsATXBody(snap)
 	case sectionAccess:
 		return a.settingsAccessBody()
 	case sectionAppearance:
@@ -2385,6 +2497,86 @@ func (a *App) settingsHardwareBody() ui.Element {
 		children = append(children, ui.Fixed(ui.Spacer{H: 14}), ui.Fixed(settingsCardElement("USB Network", ui.Column{Children: usbNetworkChildren})))
 	}
 	return ui.Column{Children: children}
+}
+
+func (a *App) settingsATXBody(snap session.Snapshot) ui.Element {
+	a.mu.RLock()
+	state := a.sectionData.ATX
+	a.mu.RUnlock()
+	actionState := a.settingsAction(settingsGroupATXPower)
+	activeExtension := state.ActiveExtension
+	if activeExtension == "" {
+		activeExtension = snap.ActiveExtension
+	}
+	atxState := state.State
+	if atxState == nil {
+		atxState = snap.ATXState
+	}
+	if state.Loading {
+		return settingsCardElement("ATX Power", ui.Label{Text: "Loading ATX state…", Size: 13, Color: a.currentTheme().Body})
+	}
+
+	statusChildren := []ui.Child{
+		ui.Fixed(ui.Paragraph{Text: "These actions target the attached host machine through the JetKVM ATX power board. They do not reboot or power off the JetKVM itself.", Size: 12, Color: a.currentTheme().Muted}),
+	}
+	if activeExtension != "atx-power" {
+		statusChildren = append(statusChildren,
+			ui.Fixed(ui.Spacer{H: 16}),
+			ui.Fixed(settingsStatusElement("ATX power control is not active on this device. Enable the ATX extension in the JetKVM web UI to use these controls here.", a.currentTheme().Muted)),
+		)
+		if state.Error != "" {
+			statusChildren = append(statusChildren, ui.Fixed(ui.Spacer{H: 12}), ui.Fixed(settingsStatusElement(state.Error, a.currentTheme().Error)))
+		}
+		return settingsCardElement("ATX Power", ui.Column{Children: statusChildren})
+	}
+
+	ledWord := func(on bool) string {
+		if on {
+			return "On"
+		}
+		return "Off"
+	}
+	if atxState != nil {
+		statusChildren = append(statusChildren,
+			ui.Fixed(ui.Spacer{H: 16}),
+			ui.Fixed(ui.Row{
+				Children: []ui.Child{
+					ui.Flex(settingsKeyValueElement("Power LED", ledWord(atxState.Power), 86), 1),
+					ui.Fixed(ui.Spacer{W: 12}),
+					ui.Flex(settingsKeyValueElement("HDD LED", ledWord(atxState.HDD), 86), 1),
+				},
+				Spacing: 0,
+			}),
+		)
+	} else {
+		statusChildren = append(statusChildren,
+			ui.Fixed(ui.Spacer{H: 16}),
+			ui.Fixed(ui.Label{Text: "ATX LED state unavailable", Size: 12, Color: a.currentTheme().Muted}),
+		)
+	}
+
+	statusChildren = append(statusChildren,
+		ui.Fixed(ui.Spacer{H: 18}),
+		ui.Fixed(settingsSectionLabelElement("Actions")),
+		ui.Fixed(ui.Spacer{H: 8}),
+		ui.Fixed(ui.Wrap{Children: []ui.Element{
+			settingsActionButton("Power", settingsActionVisual{Enabled: !actionState.Pending, Pending: actionState.Pending && actionState.PendingChoice == string(session.ATXPowerActionShortPress)}, 84, a.invokeATXShortPress),
+			settingsActionButton("Reset", settingsActionVisual{Enabled: !actionState.Pending, Pending: actionState.Pending && actionState.PendingChoice == string(session.ATXPowerActionReset)}, 84, a.openATXResetConfirm),
+			settingsActionButton("Long Press", settingsActionVisual{Enabled: !actionState.Pending, Pending: actionState.Pending && actionState.PendingChoice == string(session.ATXPowerActionLongPress)}, 112, a.openATXLongPressConfirm),
+		}, Spacing: 12, LineSpacing: 8}),
+		ui.Fixed(ui.Spacer{H: 10}),
+		ui.Fixed(ui.Paragraph{Text: "Long Press mirrors the web UI host-power action. Hold for 3s to force off.", Size: 12, Color: a.currentTheme().Muted}),
+	)
+	switch {
+	case actionState.Pending:
+		statusChildren = append(statusChildren, ui.Fixed(ui.Spacer{H: 12}), ui.Fixed(settingsStatusElement("Sending ATX action…", a.currentTheme().WarningStroke)))
+	case actionState.Error != "":
+		statusChildren = append(statusChildren, ui.Fixed(ui.Spacer{H: 12}), ui.Fixed(settingsStatusElement(actionState.Error, a.currentTheme().Error)))
+	}
+	if state.Error != "" {
+		statusChildren = append(statusChildren, ui.Fixed(ui.Spacer{H: 12}), ui.Fixed(settingsStatusElement(state.Error, a.currentTheme().Error)))
+	}
+	return settingsCardElement("ATX Power", ui.Column{Children: statusChildren})
 }
 
 func (a *App) settingsAccessBody() ui.Element {

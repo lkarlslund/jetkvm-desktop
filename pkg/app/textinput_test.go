@@ -72,22 +72,3 @@ func TestTextInputStateBeginPointer(t *testing.T) {
 		t.Fatalf("unexpected state after BeginPointer: %+v", state)
 	}
 }
-
-func TestIsTextFieldAction(t *testing.T) {
-	for _, id := range []string{
-		"launcher_focus_input",
-		"launcher_focus_password",
-		"network_focus_hostname",
-		"mqtt_focus_broker",
-	} {
-		if !isTextFieldAction(id) {
-			t.Fatalf("expected %q to be recognized as a text field action", id)
-		}
-	}
-	if isTextFieldAction("reconnect") {
-		t.Fatal("non-text action recognized as text field")
-	}
-	if isTextFieldAction("fake_focus_button") {
-		t.Fatal("stringly _focus_ action recognized as text field")
-	}
-}
