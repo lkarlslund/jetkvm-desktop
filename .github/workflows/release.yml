@@ -1,9 +1,11 @@
 name: Release
 
 on:
-  push:
-    tags:
-      - "v*"
+  workflow_run:
+    workflows:
+      - CI
+    types:
+      - completed
   workflow_dispatch:
 
 permissions:
@@ -11,45 +13,90 @@ permissions:
   contents: write
 
 jobs:
-  verify-ci:
-    name: Verify CI Passed
+  resolve-release:
+    name: Resolve Release Tag
     runs-on: ubuntu-latest
     outputs:
-      run_id: ${{ steps.verify.outputs.run_id }}
+      tag: ${{ steps.resolve.outputs.tag }}
+      run_id: ${{ steps.resolve.outputs.run_id || steps.resolve-dispatch.outputs.run_id }}
     steps:
-      - name: Verify successful CI run for this commit
-        id: verify
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
+
+      - name: Resolve tag and CI run
+        id: resolve
+        shell: bash
+        env:
+          WORKFLOW_RUN_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          WORKFLOW_RUN_EVENT: ${{ github.event.workflow_run.event }}
+          WORKFLOW_RUN_ID: ${{ github.event.workflow_run.id }}
+          WORKFLOW_RUN_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          if [[ "${GITHUB_EVENT_NAME}" == "workflow_run" ]]; then
+            if [[ "${WORKFLOW_RUN_EVENT}" != "push" ]]; then
+              echo "Release only publishes from CI runs triggered by pushes"
+              exit 0
+            fi
+            if [[ "${WORKFLOW_RUN_CONCLUSION}" != "success" ]]; then
+              echo "CI did not succeed; skipping release publish"
+              exit 0
+            fi
+            sha="${WORKFLOW_RUN_SHA}"
+            run_id="${WORKFLOW_RUN_ID}"
+          else
+            sha="${GITHUB_SHA}"
+            run_id=""
+          fi
+
+          tag="$(git tag --points-at "${sha}" | grep '^v' | sort -V | tail -n1 || true)"
+          if [[ -z "${tag}" ]]; then
+            echo "No release tag found for ${sha}"
+            exit 0
+          fi
+
+          echo "sha=${sha}" >> "${GITHUB_OUTPUT}"
+          echo "tag=${tag}" >> "${GITHUB_OUTPUT}"
+          if [[ -n "${run_id}" ]]; then
+            echo "run_id=${run_id}" >> "${GITHUB_OUTPUT}"
+          fi
+
+      - name: Resolve CI run for workflow_dispatch
+        id: resolve-dispatch
+        if: github.event_name == 'workflow_dispatch' && steps.resolve.outputs.tag != ''
         uses: actions/github-script@v8
         with:
           script: |
-            const headSha = context.sha;
+            const headSha = '${{ steps.resolve.outputs.sha }}';
             const { owner, repo } = context.repo;
             const runs = await github.paginate(github.rest.actions.listWorkflowRunsForRepo, {
               owner,
               repo,
               head_sha: headSha,
-              per_page: 100
+              event: 'push',
+              status: 'completed',
+              per_page: 100,
             });
 
             const ciRun = runs.find((run) =>
-              run.name === "CI" &&
-              run.status === "completed" &&
-              run.conclusion === "success"
+              run.name === 'CI' &&
+              run.conclusion === 'success'
             );
 
             if (!ciRun) {
-              core.setFailed(`No successful CI run found for commit ${headSha}. Push the commit to main and wait for CI before tagging a release.`);
+              core.setFailed(`No successful CI run found for commit ${headSha}.`);
               return;
             }
 
-            core.info(`Using CI run ${ciRun.html_url}`);
             core.setOutput('run_id', String(ciRun.id));
 
   publish:
     name: Publish Release
-    needs: verify-ci
+    needs: resolve-release
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/')
+    if: needs.resolve-release.outputs.tag != '' && needs.resolve-release.outputs.run_id != ''
 
     steps:
       - name: Checkout
@@ -58,7 +105,7 @@ jobs:
       - name: Download CI artifacts
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh run download "${{ needs.verify-ci.outputs.run_id }}" -D dist
+        run: gh run download "${{ needs.resolve-release.outputs.run_id }}" -D dist
 
       - name: Flatten artifacts
         shell: bash
@@ -70,9 +117,10 @@ jobs:
       - name: Publish GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.resolve-release.outputs.tag }}
         shell: bash
         run: |
-          tag="${GITHUB_REF#refs/tags/}"
+          tag="${RELEASE_TAG}"
           if gh release view "$tag" >/dev/null 2>&1; then
             gh release upload "$tag" release/* --clobber
           else
