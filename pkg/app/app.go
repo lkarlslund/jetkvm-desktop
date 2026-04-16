@@ -184,34 +184,38 @@ const (
 type settingsActionGroup uint8
 
 const (
-	settingsGroupKeyboardLayout settingsActionGroup = iota // keyboard_layout
-	settingsGroupVideoQuality                              // video_quality
-	settingsGroupVideoCodec                                // video_codec
-	settingsGroupVideoEDID                                 // video_edid
-	settingsGroupATXPower                                  // atx_power
-	settingsGroupTLSMode                                   // tls_mode
-	settingsGroupDisplayRotate                             // display_rotation
-	settingsGroupBacklight                                 // backlight
-	settingsGroupVideoSleep                                // video_sleep
-	settingsGroupUSBEmulation                              // usb_emulation
-	settingsGroupUSBDevices                                // usb_devices
-	settingsGroupAutoUpdate                                // auto_update
-	settingsGroupUpdateStatus                              // update_status
-	settingsGroupDeveloperMode                             // developer_mode
-	settingsGroupDevChannel                                // dev_channel
-	settingsGroupLoopbackOnly                              // loopback_only
-	settingsGroupSSHKey                                    // ssh_key
-	settingsGroupNetworkSave                               // network_save
-	settingsGroupMacrosSave                                // macros_save
-	settingsGroupJiggler                                   // jiggler
-	settingsGroupLocalAuth                                 // local_auth
-	settingsGroupMQTTSave                                  // mqtt_save
-	settingsGroupMQTTTest                                  // mqtt_test
-	settingsGroupUpdateInstall                             // update_install
-	settingsGroupFactoryReset                              // factory_reset
-	settingsGroupNetworkRefresh                            // network_refresh
-	settingsGroupNetworkRenew                              // network_renew_dhcp
-	settingsGroupUSBNetworkSave                            // usb_network_save
+	settingsGroupKeyboardLayout  settingsActionGroup = iota // keyboard_layout
+	settingsGroupVideoQuality    settingsActionGroup = iota // video_quality
+	settingsGroupVideoCodec      settingsActionGroup = iota // video_codec
+	settingsGroupVideoEDID       settingsActionGroup = iota // video_edid
+	settingsGroupATXPower        settingsActionGroup = iota // atx_power
+	settingsGroupActiveExtension settingsActionGroup = iota // active_extension
+	settingsGroupDCPower         settingsActionGroup = iota // dc_power
+	settingsGroupSerialSettings  settingsActionGroup = iota // serial_settings
+	settingsGroupSerialCommand   settingsActionGroup = iota // serial_command
+	settingsGroupTLSMode         settingsActionGroup = iota // tls_mode
+	settingsGroupDisplayRotate   settingsActionGroup = iota // display_rotation
+	settingsGroupBacklight       settingsActionGroup = iota // backlight
+	settingsGroupVideoSleep      settingsActionGroup = iota // video_sleep
+	settingsGroupUSBEmulation    settingsActionGroup = iota // usb_emulation
+	settingsGroupUSBDevices      settingsActionGroup = iota // usb_devices
+	settingsGroupAutoUpdate      settingsActionGroup = iota // auto_update
+	settingsGroupUpdateStatus    settingsActionGroup = iota // update_status
+	settingsGroupDeveloperMode   settingsActionGroup = iota // developer_mode
+	settingsGroupDevChannel      settingsActionGroup = iota // dev_channel
+	settingsGroupLoopbackOnly    settingsActionGroup = iota // loopback_only
+	settingsGroupSSHKey          settingsActionGroup = iota // ssh_key
+	settingsGroupNetworkSave     settingsActionGroup = iota // network_save
+	settingsGroupMacrosSave      settingsActionGroup = iota // macros_save
+	settingsGroupJiggler         settingsActionGroup = iota // jiggler
+	settingsGroupLocalAuth       settingsActionGroup = iota // local_auth
+	settingsGroupMQTTSave        settingsActionGroup = iota // mqtt_save
+	settingsGroupMQTTTest        settingsActionGroup = iota // mqtt_test
+	settingsGroupUpdateInstall   settingsActionGroup = iota // update_install
+	settingsGroupFactoryReset    settingsActionGroup = iota // factory_reset
+	settingsGroupNetworkRefresh  settingsActionGroup = iota // network_refresh
+	settingsGroupNetworkRenew    settingsActionGroup = iota // network_renew_dhcp
+	settingsGroupUSBNetworkSave  settingsActionGroup = iota // usb_network_save
 )
 
 type settingsActionState struct {
@@ -2744,6 +2748,95 @@ func (a *App) invokeATXAction(action session.ATXPowerAction) {
 			return err
 		}
 		return a.refreshSettingsSectionSync(sectionATX)
+	})
+}
+
+func (a *App) invokeActiveExtensionAction(extensionID string) {
+	if a.settingsActionPending(settingsGroupActiveExtension) {
+		return
+	}
+	a.withSettingsAction(settingsGroupActiveExtension, extensionID, func() error {
+		if err := a.ctrl.SetActiveExtension(extensionID); err != nil {
+			return err
+		}
+		return a.refreshSettingsSectionSync(sectionATX)
+	})
+}
+
+func (a *App) invokeDCPowerAction(enabled bool) {
+	if a.settingsActionPending(settingsGroupDCPower) {
+		return
+	}
+	choice := "off"
+	if enabled {
+		choice = "on"
+	}
+	a.withSettingsAction(settingsGroupDCPower, choice, func() error {
+		if err := a.ctrl.SetDCPowerState(enabled); err != nil {
+			return err
+		}
+		return a.refreshSettingsSectionSync(sectionATX)
+	})
+}
+
+func (a *App) invokeDCRestoreStateAction(state int) {
+	if a.settingsActionPending(settingsGroupDCPower) {
+		return
+	}
+	a.withSettingsAction(settingsGroupDCPower, fmt.Sprintf("restore:%d", state), func() error {
+		if err := a.ctrl.SetDCRestoreState(state); err != nil {
+			return err
+		}
+		return a.refreshSettingsSectionSync(sectionATX)
+	})
+}
+
+func (a *App) updateSerialSettings(choice string, mutate func(*session.SerialSettings)) {
+	if a.settingsActionPending(settingsGroupSerialSettings) {
+		return
+	}
+	a.mu.RLock()
+	settings := a.sectionData.ATX.SerialSettings
+	a.mu.RUnlock()
+	if settings == nil {
+		return
+	}
+	next := *settings
+	next.Buttons = append([]session.QuickButton(nil), settings.Buttons...)
+	mutate(&next)
+	a.withSettingsAction(settingsGroupSerialSettings, choice, func() error {
+		if err := a.ctrl.SetSerialSettings(next); err != nil {
+			return err
+		}
+		return a.refreshSettingsSectionSync(sectionATX)
+	})
+}
+
+func (a *App) invokeSerialQuickCommand(button session.QuickButton) {
+	if a.settingsActionPending(settingsGroupSerialCommand) {
+		return
+	}
+	command := button.Command + button.Terminator.Value
+	a.withSettingsAction(settingsGroupSerialCommand, button.ID, func() error {
+		if err := a.ctrl.SendCustomCommand(command); err != nil {
+			return err
+		}
+		a.mu.RLock()
+		history := append([]string(nil), a.sectionData.ATX.SerialHistory...)
+		a.mu.RUnlock()
+		trimmed := strings.TrimSpace(button.Command)
+		if trimmed != "" {
+			history = append([]string{trimmed}, history...)
+			if len(history) > 20 {
+				history = history[:20]
+			}
+			if err := a.ctrl.SetSerialCommandHistory(history); err == nil {
+				a.mu.Lock()
+				a.sectionData.ATX.SerialHistory = history
+				a.mu.Unlock()
+			}
+		}
+		return nil
 	})
 }
 

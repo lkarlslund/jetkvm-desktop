@@ -196,6 +196,43 @@ type ATXState struct {
 	HDD   bool `json:"hdd"`
 }
 
+type DCPowerState struct {
+	IsOn         bool    `json:"isOn"`
+	Voltage      float64 `json:"voltage"`
+	Current      float64 `json:"current"`
+	Power        float64 `json:"power"`
+	RestoreState int     `json:"restoreState"`
+}
+
+type Terminator struct {
+	Label string `json:"label"`
+	Value string `json:"value"`
+}
+
+type QuickButton struct {
+	ID         string     `json:"id"`
+	Label      string     `json:"label"`
+	Command    string     `json:"command"`
+	Terminator Terminator `json:"terminator"`
+	Sort       int        `json:"sort"`
+}
+
+type SerialSettings struct {
+	BaudRate           int           `json:"baudRate"`
+	DataBits           int           `json:"dataBits"`
+	Parity             string        `json:"parity"`
+	StopBits           string        `json:"stopBits"`
+	Terminator         Terminator    `json:"terminator"`
+	HideSerialSettings bool          `json:"hideSerialSettings"`
+	EnableEcho         bool          `json:"enableEcho"`
+	NormalizeMode      string        `json:"normalizeMode"`
+	NormalizeLineEnd   string        `json:"normalizeLineEnd"`
+	TabRender          string        `json:"tabRender"`
+	PreserveANSI       bool          `json:"preserveANSI"`
+	ShowNLTag          bool          `json:"showNLTag"`
+	Buttons            []QuickButton `json:"buttons"`
+}
+
 type DeveloperModeState struct {
 	Enabled bool `json:"enabled"`
 }
@@ -311,6 +348,30 @@ type SetEDIDRequest struct {
 
 type setATXPowerActionRequest struct {
 	Action string `json:"action"`
+}
+
+type setActiveExtensionRequest struct {
+	ExtensionID string `json:"extensionId"`
+}
+
+type setDCPowerStateRequest struct {
+	Enabled bool `json:"enabled"`
+}
+
+type setDCRestoreStateRequest struct {
+	State int `json:"state"`
+}
+
+type setSerialSettingsRequest struct {
+	Settings SerialSettings `json:"settings"`
+}
+
+type setSerialCommandHistoryRequest struct {
+	CommandHistory []string `json:"commandHistory"`
+}
+
+type sendCustomCommandRequest struct {
+	Command string `json:"command"`
 }
 
 type SetBacklightSettingsRequest struct {

@@ -228,6 +228,43 @@ type ATXState struct {
 	HDD   bool
 }
 
+type DCPowerState struct {
+	IsOn         bool
+	Voltage      float64
+	Current      float64
+	Power        float64
+	RestoreState int
+}
+
+type Terminator struct {
+	Label string
+	Value string
+}
+
+type QuickButton struct {
+	ID         string
+	Label      string
+	Command    string
+	Terminator Terminator
+	Sort       int
+}
+
+type SerialSettings struct {
+	BaudRate           int
+	DataBits           int
+	Parity             string
+	StopBits           string
+	Terminator         Terminator
+	HideSerialSettings bool
+	EnableEcho         bool
+	NormalizeMode      string
+	NormalizeLineEnd   string
+	TabRender          string
+	PreserveANSI       bool
+	ShowNLTag          bool
+	Buttons            []QuickButton
+}
+
 type ATXPowerAction string
 
 const (

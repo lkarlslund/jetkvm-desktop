@@ -296,6 +296,96 @@ func TestControllerATXStateAndActions(t *testing.T) {
 	t.Fatalf("expected reset ATX action in inputs, got %+v", srv.Inputs())
 }
 
+func TestControllerSetActiveExtension(t *testing.T) {
+	srv, ctx, cancel := startEmulator(t)
+	defer cancel()
+
+	controller := New(Config{
+		BaseURL:    srv.BaseURL(),
+		Password:   "secret",
+		RPCTimeout: 2 * time.Second,
+		Reconnect:  true,
+	})
+	controller.Start(ctx)
+	defer controller.Stop()
+
+	waitForPhase(t, controller, PhaseConnected, 5*time.Second)
+
+	if err := controller.SetActiveExtension("dc-power"); err != nil {
+		t.Fatalf("SetActiveExtension returned error: %v", err)
+	}
+	got, err := controller.GetActiveExtension(context.Background())
+	if err != nil {
+		t.Fatalf("GetActiveExtension returned error: %v", err)
+	}
+	if got != "dc-power" {
+		t.Fatalf("active extension = %q, want dc-power", got)
+	}
+}
+
+func TestControllerDCAndSerialExtensionRPCs(t *testing.T) {
+	srv, ctx, cancel := startEmulator(t)
+	defer cancel()
+
+	controller := New(Config{
+		BaseURL:    srv.BaseURL(),
+		Password:   "secret",
+		RPCTimeout: 2 * time.Second,
+		Reconnect:  true,
+	})
+	controller.Start(ctx)
+	defer controller.Stop()
+
+	waitForPhase(t, controller, PhaseConnected, 5*time.Second)
+
+	dcState, err := controller.GetDCPowerState(context.Background())
+	if err != nil {
+		t.Fatalf("GetDCPowerState returned error: %v", err)
+	}
+	if dcState == nil {
+		t.Fatal("expected DC state")
+	}
+	if err := controller.SetDCPowerState(true); err != nil {
+		t.Fatalf("SetDCPowerState returned error: %v", err)
+	}
+	if err := controller.SetDCRestoreState(1); err != nil {
+		t.Fatalf("SetDCRestoreState returned error: %v", err)
+	}
+
+	serialSettings, err := controller.GetSerialSettings(context.Background())
+	if err != nil {
+		t.Fatalf("GetSerialSettings returned error: %v", err)
+	}
+	if serialSettings == nil || serialSettings.BaudRate == 0 {
+		t.Fatalf("unexpected serial settings: %+v", serialSettings)
+	}
+	if err := controller.SendCustomCommand("help\n"); err != nil {
+		t.Fatalf("SendCustomCommand returned error: %v", err)
+	}
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		foundDC := false
+		foundRestore := false
+		foundSerial := false
+		for _, input := range srv.Inputs() {
+			switch {
+			case input.Type == "rpc.setDCPowerState" && strings.Contains(input.Data, "enabled=true"):
+				foundDC = true
+			case input.Type == "rpc.setDCRestoreState" && strings.Contains(input.Data, "state=1"):
+				foundRestore = true
+			case input.Type == "rpc.sendCustomCommand" && input.Data == "help\n":
+				foundSerial = true
+			}
+		}
+		if foundDC && foundRestore && foundSerial {
+			return
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+	t.Fatalf("expected dc/serial inputs, got %+v", srv.Inputs())
+}
+
 func TestControllerVirtualMediaURLMountAndUnmount(t *testing.T) {
 	srv, ctx, cancel := startEmulator(t)
 	defer cancel()

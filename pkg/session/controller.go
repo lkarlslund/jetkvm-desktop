@@ -320,6 +320,92 @@ func (c *Controller) SetATXPowerAction(action ATXPowerAction) error {
 	return current.SetATXPowerAction(withTimeout(context.Background(), c.cfg.MutationTimeout), string(action))
 }
 
+func (c *Controller) SetActiveExtension(extensionID string) error {
+	return c.mutateAndConfirm(func(ctx context.Context) error {
+		current := c.clientIfConnected()
+		if current == nil {
+			return errors.New("client not connected")
+		}
+		return current.SetActiveExtension(ctx, extensionID)
+	}, func(ctx context.Context) (bool, error) {
+		current, err := c.GetActiveExtension(ctx)
+		if err != nil {
+			return false, err
+		}
+		return current == extensionID, nil
+	})
+}
+
+func (c *Controller) SetDCPowerState(enabled bool) error {
+	current := c.clientIfConnected()
+	if current == nil {
+		return errors.New("client not connected")
+	}
+	return current.SetDCPowerState(withTimeout(context.Background(), c.cfg.MutationTimeout), enabled)
+}
+
+func (c *Controller) SetDCRestoreState(state int) error {
+	current := c.clientIfConnected()
+	if current == nil {
+		return errors.New("client not connected")
+	}
+	return current.SetDCRestoreState(withTimeout(context.Background(), c.cfg.MutationTimeout), state)
+}
+
+func (c *Controller) SetSerialSettings(settings SerialSettings) error {
+	current := c.clientIfConnected()
+	if current == nil {
+		return errors.New("client not connected")
+	}
+	buttons := make([]client.QuickButton, 0, len(settings.Buttons))
+	for _, button := range settings.Buttons {
+		buttons = append(buttons, client.QuickButton{
+			ID:      button.ID,
+			Label:   button.Label,
+			Command: button.Command,
+			Terminator: client.Terminator{
+				Label: button.Terminator.Label,
+				Value: button.Terminator.Value,
+			},
+			Sort: button.Sort,
+		})
+	}
+	return current.SetSerialSettings(withTimeout(context.Background(), c.cfg.MutationTimeout), client.SerialSettings{
+		BaudRate: settings.BaudRate,
+		DataBits: settings.DataBits,
+		Parity:   settings.Parity,
+		StopBits: settings.StopBits,
+		Terminator: client.Terminator{
+			Label: settings.Terminator.Label,
+			Value: settings.Terminator.Value,
+		},
+		HideSerialSettings: settings.HideSerialSettings,
+		EnableEcho:         settings.EnableEcho,
+		NormalizeMode:      settings.NormalizeMode,
+		NormalizeLineEnd:   settings.NormalizeLineEnd,
+		TabRender:          settings.TabRender,
+		PreserveANSI:       settings.PreserveANSI,
+		ShowNLTag:          settings.ShowNLTag,
+		Buttons:            buttons,
+	})
+}
+
+func (c *Controller) SetSerialCommandHistory(history []string) error {
+	current := c.clientIfConnected()
+	if current == nil {
+		return errors.New("client not connected")
+	}
+	return current.SetSerialCommandHistory(withTimeout(context.Background(), c.cfg.MutationTimeout), history)
+}
+
+func (c *Controller) SendCustomCommand(command string) error {
+	current := c.clientIfConnected()
+	if current == nil {
+		return errors.New("client not connected")
+	}
+	return current.SendCustomCommand(withTimeout(context.Background(), c.cfg.MutationTimeout), command)
+}
+
 func (c *Controller) SetUSBDevices(devices USBDevices) error {
 	return c.mutateAndConfirm(func(ctx context.Context) error {
 		current := c.clientIfConnected()
@@ -441,6 +527,74 @@ func (c *Controller) GetATXState(ctx context.Context) (*ATXState, error) {
 		Power: state.Power,
 		HDD:   state.HDD,
 	}, nil
+}
+
+func (c *Controller) GetDCPowerState(ctx context.Context) (*DCPowerState, error) {
+	current := c.clientIfConnected()
+	if current == nil {
+		return nil, errors.New("client not connected")
+	}
+	state, err := current.GetDCPowerState(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return &DCPowerState{
+		IsOn:         state.IsOn,
+		Voltage:      state.Voltage,
+		Current:      state.Current,
+		Power:        state.Power,
+		RestoreState: state.RestoreState,
+	}, nil
+}
+
+func (c *Controller) GetSerialSettings(ctx context.Context) (*SerialSettings, error) {
+	current := c.clientIfConnected()
+	if current == nil {
+		return nil, errors.New("client not connected")
+	}
+	settings, err := current.GetSerialSettings(ctx)
+	if err != nil {
+		return nil, err
+	}
+	buttons := make([]QuickButton, 0, len(settings.Buttons))
+	for _, button := range settings.Buttons {
+		buttons = append(buttons, QuickButton{
+			ID:      button.ID,
+			Label:   button.Label,
+			Command: button.Command,
+			Terminator: Terminator{
+				Label: button.Terminator.Label,
+				Value: button.Terminator.Value,
+			},
+			Sort: button.Sort,
+		})
+	}
+	return &SerialSettings{
+		BaudRate: settings.BaudRate,
+		DataBits: settings.DataBits,
+		Parity:   settings.Parity,
+		StopBits: settings.StopBits,
+		Terminator: Terminator{
+			Label: settings.Terminator.Label,
+			Value: settings.Terminator.Value,
+		},
+		HideSerialSettings: settings.HideSerialSettings,
+		EnableEcho:         settings.EnableEcho,
+		NormalizeMode:      settings.NormalizeMode,
+		NormalizeLineEnd:   settings.NormalizeLineEnd,
+		TabRender:          settings.TabRender,
+		PreserveANSI:       settings.PreserveANSI,
+		ShowNLTag:          settings.ShowNLTag,
+		Buttons:            buttons,
+	}, nil
+}
+
+func (c *Controller) GetSerialCommandHistory(ctx context.Context) ([]string, error) {
+	current := c.clientIfConnected()
+	if current == nil {
+		return nil, errors.New("client not connected")
+	}
+	return current.GetSerialCommandHistory(ctx)
 }
 
 func (c *Controller) GetLocalAccessState(ctx context.Context) (LocalAuthMode, bool, error) {

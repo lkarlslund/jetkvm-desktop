@@ -86,6 +86,48 @@ func (c *Client) SetATXPowerAction(ctx context.Context, action string) error {
 	return c.Call(ctx, "setATXPowerAction", setATXPowerActionRequest{Action: action}, nil)
 }
 
+func (c *Client) SetActiveExtension(ctx context.Context, extensionID string) error {
+	return c.Call(ctx, "setActiveExtension", setActiveExtensionRequest{ExtensionID: extensionID}, nil)
+}
+
+func (c *Client) GetDCPowerState(ctx context.Context) (DCPowerState, error) {
+	var state DCPowerState
+	err := c.Call(ctx, "getDCPowerState", nil, &state)
+	return state, err
+}
+
+func (c *Client) SetDCPowerState(ctx context.Context, enabled bool) error {
+	return c.Call(ctx, "setDCPowerState", setDCPowerStateRequest{Enabled: enabled}, nil)
+}
+
+func (c *Client) SetDCRestoreState(ctx context.Context, state int) error {
+	return c.Call(ctx, "setDCRestoreState", setDCRestoreStateRequest{State: state}, nil)
+}
+
+func (c *Client) GetSerialSettings(ctx context.Context) (SerialSettings, error) {
+	var settings SerialSettings
+	err := c.Call(ctx, "getSerialSettings", nil, &settings)
+	return settings, err
+}
+
+func (c *Client) SetSerialSettings(ctx context.Context, settings SerialSettings) error {
+	return c.Call(ctx, "setSerialSettings", setSerialSettingsRequest{Settings: settings}, nil)
+}
+
+func (c *Client) GetSerialCommandHistory(ctx context.Context) ([]string, error) {
+	var history []string
+	err := c.Call(ctx, "getSerialCommandHistory", nil, &history)
+	return history, err
+}
+
+func (c *Client) SetSerialCommandHistory(ctx context.Context, history []string) error {
+	return c.Call(ctx, "setSerialCommandHistory", setSerialCommandHistoryRequest{CommandHistory: history}, nil)
+}
+
+func (c *Client) SendCustomCommand(ctx context.Context, command string) error {
+	return c.Call(ctx, "sendCustomCommand", sendCustomCommandRequest{Command: command}, nil)
+}
+
 func (c *Client) SetVideoCodecPreference(ctx context.Context, codec string) error {
 	return c.Call(ctx, "setVideoCodecPreference", SetCodecPreferenceRequest{Codec: codec}, nil)
 }

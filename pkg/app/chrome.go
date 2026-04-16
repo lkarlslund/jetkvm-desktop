@@ -108,6 +108,9 @@ type atxState struct {
 	Error           string
 	ActiveExtension string
 	State           *session.ATXState
+	DCState         *session.DCPowerState
+	SerialSettings  *session.SerialSettings
+	SerialHistory   []string
 }
 
 type videoState struct {
@@ -253,13 +256,13 @@ func settingsSections(snap session.Snapshot) []settingsSectionDef {
 		},
 		{
 			id:          sectionATX,
-			label:       "ATX",
-			description: "Host power board controls and LED status",
+			label:       "Extension",
+			description: "Switch between ATX, DC, and serial extensions",
 			available:   true,
 			items: []string{
-				"Power, reset, and long-press controls for the host machine",
-				"Power LED and HDD LED status",
-				"Available when the ATX extension is active on the JetKVM",
+				"Select the active device-side extension",
+				"ATX host power controls, DC power controls, or serial settings",
+				"Only one extension can be active at a time",
 			},
 		},
 		{
@@ -1246,18 +1249,60 @@ func (a *App) loadSettingsSection(section settingsSection, seq uint64) error {
 	case sectionATX:
 		state := atxState{Loading: false}
 		loaded := false
+		var atxErr error
+		var dcErr error
+		var serialErr error
 		if activeExtension, callErr := a.ctrl.GetActiveExtension(ctx); callErr == nil {
 			state.ActiveExtension = activeExtension
 			loaded = true
 		}
-		if state.ActiveExtension == "atx-power" {
+		switch state.ActiveExtension {
+		case "atx-power":
 			if atxCurrent, callErr := a.ctrl.GetATXState(ctx); callErr == nil {
 				state.State = atxCurrent
+			} else {
+				atxErr = callErr
+			}
+		case "dc-power":
+			if dcCurrent, callErr := a.ctrl.GetDCPowerState(ctx); callErr == nil {
+				state.DCState = dcCurrent
+			} else {
+				dcErr = callErr
 			}
 		}
-		if !loaded && state.State == nil {
-			state.Error = "No ATX RPC state available on this target"
+		if serialSettings, callErr := a.ctrl.GetSerialSettings(ctx); callErr == nil {
+			state.SerialSettings = serialSettings
+		} else {
+			serialErr = callErr
+			if state.ActiveExtension == "serial-console" || serialSettingsMissingFile(callErr) {
+				defaults := defaultSerialSettings()
+				state.SerialSettings = &defaults
+			}
+		}
+		if history, callErr := a.ctrl.GetSerialCommandHistory(ctx); callErr == nil {
+			state.SerialHistory = history
+		}
+		if !loaded && state.State == nil && state.DCState == nil && state.SerialSettings == nil {
+			state.Error = "No extension RPC state available on this target"
 			err = errors.New(state.Error)
+		} else {
+			switch state.ActiveExtension {
+			case "atx-power":
+				if state.State == nil && atxErr != nil {
+					state.Error = atxErr.Error()
+					err = atxErr
+				}
+			case "dc-power":
+				if state.DCState == nil && dcErr != nil {
+					state.Error = dcErr.Error()
+					err = dcErr
+				}
+			case "serial-console":
+				if state.SerialSettings == nil && serialErr != nil {
+					state.Error = serialErr.Error()
+					err = serialErr
+				}
+			}
 		}
 		a.mu.Lock()
 		if a.sectionLoadSeq[section] == seq {
@@ -1425,6 +1470,35 @@ func (a *App) loadSettingsSection(section settingsSection, seq uint64) error {
 		a.mu.Unlock()
 	}
 	return err
+}
+
+func serialSettingsMissingFile(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "no such file or directory") || strings.Contains(msg, "doesn't exist")
+}
+
+func defaultSerialSettings() session.SerialSettings {
+	return session.SerialSettings{
+		BaudRate: 9600,
+		DataBits: 8,
+		Parity:   "none",
+		StopBits: "1",
+		Terminator: session.Terminator{
+			Label: "LF (\\n)",
+			Value: "\n",
+		},
+		HideSerialSettings: false,
+		EnableEcho:         false,
+		NormalizeMode:      "names",
+		NormalizeLineEnd:   "keep",
+		TabRender:          "",
+		PreserveANSI:       true,
+		ShowNLTag:          true,
+		Buttons:            []session.QuickButton{},
+	}
 }
 
 func (a *App) currentSection(sections []settingsSectionDef) settingsSectionDef {
@@ -2503,59 +2577,87 @@ func (a *App) settingsATXBody(snap session.Snapshot) ui.Element {
 	a.mu.RLock()
 	state := a.sectionData.ATX
 	a.mu.RUnlock()
-	actionState := a.settingsAction(settingsGroupATXPower)
+	extensionState := a.settingsAction(settingsGroupActiveExtension)
 	activeExtension := state.ActiveExtension
 	if activeExtension == "" {
 		activeExtension = snap.ActiveExtension
 	}
-	atxState := state.State
-	if atxState == nil {
-		atxState = snap.ATXState
-	}
 	if state.Loading {
-		return settingsCardElement("ATX Power", ui.Label{Text: "Loading ATX state…", Size: 13, Color: a.currentTheme().Body})
+		return settingsCardElement("Extensions", ui.Label{Text: "Loading extension state…", Size: 13, Color: a.currentTheme().Body})
 	}
 
-	statusChildren := []ui.Child{
-		ui.Fixed(ui.Paragraph{Text: "These actions target the attached host machine through the JetKVM ATX power board. They do not reboot or power off the JetKVM itself.", Size: 12, Color: a.currentTheme().Muted}),
+	selectorChildren := []ui.Child{
+		ui.Fixed(ui.Paragraph{Text: "Choose which serial-backed JetKVM extension should be active. Only one extension can be active at a time.", Size: 12, Color: a.currentTheme().Muted}),
+		ui.Fixed(ui.Spacer{H: 16}),
+		ui.Fixed(settingsSectionLabelElement("Active extension")),
+		ui.Fixed(ui.Spacer{H: 8}),
+		ui.Fixed(ui.Wrap{Children: []ui.Element{
+			settingsActionButton("None", settingsActionVisual{Enabled: !extensionState.Pending || extensionState.PendingChoice == "", Active: activeExtension == "", Pending: extensionState.Pending && extensionState.PendingChoice == ""}, 72, func() {
+				a.invokeActiveExtensionAction("")
+			}),
+			settingsActionButton("ATX", settingsActionVisual{Enabled: !extensionState.Pending || extensionState.PendingChoice == "atx-power", Active: activeExtension == "atx-power", Pending: extensionState.Pending && extensionState.PendingChoice == "atx-power"}, 72, func() {
+				a.invokeActiveExtensionAction("atx-power")
+			}),
+			settingsActionButton("DC", settingsActionVisual{Enabled: !extensionState.Pending || extensionState.PendingChoice == "dc-power", Active: activeExtension == "dc-power", Pending: extensionState.Pending && extensionState.PendingChoice == "dc-power"}, 72, func() {
+				a.invokeActiveExtensionAction("dc-power")
+			}),
+			settingsActionButton("Serial", settingsActionVisual{Enabled: !extensionState.Pending || extensionState.PendingChoice == "serial-console", Active: activeExtension == "serial-console", Pending: extensionState.Pending && extensionState.PendingChoice == "serial-console"}, 84, func() {
+				a.invokeActiveExtensionAction("serial-console")
+			}),
+		}, Spacing: 12, LineSpacing: 8}),
 	}
-	if activeExtension != "atx-power" {
-		statusChildren = append(statusChildren,
-			ui.Fixed(ui.Spacer{H: 16}),
-			ui.Fixed(settingsStatusElement("ATX power control is not active on this device. Enable the ATX extension in the JetKVM web UI to use these controls here.", a.currentTheme().Muted)),
-		)
-		if state.Error != "" {
-			statusChildren = append(statusChildren, ui.Fixed(ui.Spacer{H: 12}), ui.Fixed(settingsStatusElement(state.Error, a.currentTheme().Error)))
-		}
-		return settingsCardElement("ATX Power", ui.Column{Children: statusChildren})
+	switch {
+	case extensionState.Pending:
+		selectorChildren = append(selectorChildren, ui.Fixed(ui.Spacer{H: 12}), ui.Fixed(settingsStatusElement("Switching active extension…", a.currentTheme().WarningStroke)))
+	case extensionState.Error != "":
+		selectorChildren = append(selectorChildren, ui.Fixed(ui.Spacer{H: 12}), ui.Fixed(settingsStatusElement(extensionState.Error, a.currentTheme().Error)))
 	}
+	children := []ui.Child{ui.Fixed(settingsCardElement("Extension", ui.Column{Children: selectorChildren}))}
+	var detail ui.Element
+	switch activeExtension {
+	case "atx-power":
+		detail = a.settingsATXExtensionCard(state.State, snap.ATXState)
+	case "dc-power":
+		detail = a.settingsDCExtensionCard(state.DCState)
+	case "serial-console":
+		detail = a.settingsSerialExtensionCard(state.SerialSettings, state.SerialHistory)
+	default:
+		detail = settingsCardElement("Extension Details", ui.Paragraph{Text: "No extension is active. Pick one above to load its controls.", Size: 12, Color: a.currentTheme().Muted})
+	}
+	children = append(children, ui.Fixed(ui.Spacer{H: 14}), ui.Fixed(detail))
+	if state.Error != "" {
+		children = append(children, ui.Fixed(ui.Spacer{H: 12}), ui.Fixed(settingsStatusElement(state.Error, a.currentTheme().Error)))
+	}
+	return ui.Column{Children: children}
+}
 
+func (a *App) settingsATXExtensionCard(state *session.ATXState, snapshot *session.ATXState) ui.Element {
+	actionState := a.settingsAction(settingsGroupATXPower)
+	if state == nil {
+		state = snapshot
+	}
 	ledWord := func(on bool) string {
 		if on {
 			return "On"
 		}
 		return "Off"
 	}
-	if atxState != nil {
-		statusChildren = append(statusChildren,
+	children := []ui.Child{
+		ui.Fixed(ui.Paragraph{Text: "These actions target the attached host machine through the JetKVM ATX power board. They do not reboot or power off the JetKVM itself.", Size: 12, Color: a.currentTheme().Muted}),
+	}
+	if state != nil {
+		children = append(children,
 			ui.Fixed(ui.Spacer{H: 16}),
 			ui.Fixed(ui.Row{
 				Children: []ui.Child{
-					ui.Flex(settingsKeyValueElement("Power LED", ledWord(atxState.Power), 86), 1),
+					ui.Flex(settingsKeyValueElement("Power LED", ledWord(state.Power), 86), 1),
 					ui.Fixed(ui.Spacer{W: 12}),
-					ui.Flex(settingsKeyValueElement("HDD LED", ledWord(atxState.HDD), 86), 1),
+					ui.Flex(settingsKeyValueElement("HDD LED", ledWord(state.HDD), 86), 1),
 				},
-				Spacing: 0,
 			}),
 		)
-	} else {
-		statusChildren = append(statusChildren,
-			ui.Fixed(ui.Spacer{H: 16}),
-			ui.Fixed(ui.Label{Text: "ATX LED state unavailable", Size: 12, Color: a.currentTheme().Muted}),
-		)
 	}
-
-	statusChildren = append(statusChildren,
+	children = append(children,
 		ui.Fixed(ui.Spacer{H: 18}),
 		ui.Fixed(settingsSectionLabelElement("Actions")),
 		ui.Fixed(ui.Spacer{H: 8}),
@@ -2569,14 +2671,225 @@ func (a *App) settingsATXBody(snap session.Snapshot) ui.Element {
 	)
 	switch {
 	case actionState.Pending:
-		statusChildren = append(statusChildren, ui.Fixed(ui.Spacer{H: 12}), ui.Fixed(settingsStatusElement("Sending ATX action…", a.currentTheme().WarningStroke)))
+		children = append(children, ui.Fixed(ui.Spacer{H: 12}), ui.Fixed(settingsStatusElement("Sending ATX action…", a.currentTheme().WarningStroke)))
 	case actionState.Error != "":
-		statusChildren = append(statusChildren, ui.Fixed(ui.Spacer{H: 12}), ui.Fixed(settingsStatusElement(actionState.Error, a.currentTheme().Error)))
+		children = append(children, ui.Fixed(ui.Spacer{H: 12}), ui.Fixed(settingsStatusElement(actionState.Error, a.currentTheme().Error)))
 	}
-	if state.Error != "" {
-		statusChildren = append(statusChildren, ui.Fixed(ui.Spacer{H: 12}), ui.Fixed(settingsStatusElement(state.Error, a.currentTheme().Error)))
+	return settingsCardElement("ATX Power", ui.Column{Children: children})
+}
+
+func (a *App) settingsDCExtensionCard(state *session.DCPowerState) ui.Element {
+	actionState := a.settingsAction(settingsGroupDCPower)
+	children := []ui.Child{
+		ui.Fixed(ui.Paragraph{Text: "Control the DC power extension and monitor the current electrical readings reported by the JetKVM.", Size: 12, Color: a.currentTheme().Muted}),
 	}
-	return settingsCardElement("ATX Power", ui.Column{Children: statusChildren})
+	if state == nil {
+		children = append(children, ui.Fixed(ui.Spacer{H: 14}), ui.Fixed(ui.Label{Text: "DC state unavailable", Size: 12, Color: a.currentTheme().Muted}))
+	} else {
+		children = append(children,
+			ui.Fixed(ui.Spacer{H: 16}),
+			ui.Fixed(ui.Wrap{Children: []ui.Element{
+				settingsActionButton("Power On", settingsActionVisual{Enabled: !actionState.Pending && !state.IsOn, Pending: actionState.Pending && actionState.PendingChoice == "on"}, 96, func() {
+					a.invokeDCPowerAction(true)
+				}),
+				settingsActionButton("Power Off", settingsActionVisual{Enabled: !actionState.Pending && state.IsOn, Pending: actionState.Pending && actionState.PendingChoice == "off"}, 104, func() {
+					a.invokeDCPowerAction(false)
+				}),
+			}, Spacing: 12, LineSpacing: 8}),
+			ui.Fixed(ui.Spacer{H: 16}),
+			ui.Fixed(settingsSectionLabelElement("Restore on power loss")),
+			ui.Fixed(ui.Spacer{H: 8}),
+		)
+		restoreButtons := []ui.Element{
+			settingsActionButton("Off", settingsActionVisual{Enabled: !actionState.Pending && state.RestoreState >= 0, Active: state.RestoreState == 0, Pending: actionState.Pending && actionState.PendingChoice == "restore:0"}, 64, func() {
+				a.invokeDCRestoreStateAction(0)
+			}),
+			settingsActionButton("On", settingsActionVisual{Enabled: !actionState.Pending && state.RestoreState >= 0, Active: state.RestoreState == 1, Pending: actionState.Pending && actionState.PendingChoice == "restore:1"}, 64, func() {
+				a.invokeDCRestoreStateAction(1)
+			}),
+			settingsActionButton("Last", settingsActionVisual{Enabled: !actionState.Pending && state.RestoreState >= 0, Active: state.RestoreState == 2, Pending: actionState.Pending && actionState.PendingChoice == "restore:2"}, 72, func() {
+				a.invokeDCRestoreStateAction(2)
+			}),
+		}
+		children = append(children, ui.Fixed(ui.Wrap{Children: restoreButtons, Spacing: 12, LineSpacing: 8}))
+		if state.RestoreState < 0 {
+			children = append(children, ui.Fixed(ui.Spacer{H: 8}), ui.Fixed(ui.Paragraph{Text: "This DC board does not expose restore-state control.", Size: 12, Color: a.currentTheme().Muted}))
+		}
+		children = append(children,
+			ui.Fixed(ui.Spacer{H: 18}),
+			ui.Fixed(ui.Row{
+				Children: []ui.Child{
+					ui.Flex(settingsKeyValueElement("Voltage", fmt.Sprintf("%.1f V", state.Voltage), 86), 1),
+					ui.Fixed(ui.Spacer{W: 12}),
+					ui.Flex(settingsKeyValueElement("Current", fmt.Sprintf("%.1f A", state.Current), 86), 1),
+					ui.Fixed(ui.Spacer{W: 12}),
+					ui.Flex(settingsKeyValueElement("Power", fmt.Sprintf("%.1f W", state.Power), 86), 1),
+				},
+			}),
+		)
+	}
+	switch {
+	case actionState.Pending:
+		children = append(children, ui.Fixed(ui.Spacer{H: 12}), ui.Fixed(settingsStatusElement("Applying DC power change…", a.currentTheme().WarningStroke)))
+	case actionState.Error != "":
+		children = append(children, ui.Fixed(ui.Spacer{H: 12}), ui.Fixed(settingsStatusElement(actionState.Error, a.currentTheme().Error)))
+	}
+	return settingsCardElement("DC Power", ui.Column{Children: children})
+}
+
+func (a *App) settingsSerialExtensionCard(settings *session.SerialSettings, history []string) ui.Element {
+	state := a.settingsAction(settingsGroupSerialSettings)
+	commandState := a.settingsAction(settingsGroupSerialCommand)
+	if settings == nil {
+		return settingsCardElement("Serial Console", ui.Label{Text: "Serial settings unavailable", Size: 12, Color: a.currentTheme().Muted})
+	}
+	termChoices := []struct {
+		label string
+		value session.Terminator
+	}{
+		{label: "None", value: session.Terminator{Label: "None", Value: ""}},
+		{label: "CR", value: session.Terminator{Label: "CR (\\r)", Value: "\r"}},
+		{label: "LF", value: session.Terminator{Label: "LF (\\n)", Value: "\n"}},
+		{label: "CRLF", value: session.Terminator{Label: "CRLF (\\r\\n)", Value: "\r\n"}},
+		{label: "LFCR", value: session.Terminator{Label: "LFCR (\\n\\r)", Value: "\n\r"}},
+	}
+	children := []ui.Child{
+		ui.Fixed(ui.Paragraph{Text: "Configure the serial-console extension and trigger any saved quick commands directly from the desktop client.", Size: 12, Color: a.currentTheme().Muted}),
+		ui.Fixed(ui.Spacer{H: 16}),
+		ui.Fixed(settingsSectionLabelElement("Connection")),
+		ui.Fixed(ui.Spacer{H: 8}),
+		ui.Fixed(ui.Wrap{Children: []ui.Element{
+			settingsActionButton("9600", settingsActionVisual{Enabled: !state.Pending, Active: settings.BaudRate == 9600}, 70, func() {
+				a.updateSerialSettings("baud:9600", func(next *session.SerialSettings) { next.BaudRate = 9600 })
+			}),
+			settingsActionButton("19200", settingsActionVisual{Enabled: !state.Pending, Active: settings.BaudRate == 19200}, 76, func() {
+				a.updateSerialSettings("baud:19200", func(next *session.SerialSettings) { next.BaudRate = 19200 })
+			}),
+			settingsActionButton("38400", settingsActionVisual{Enabled: !state.Pending, Active: settings.BaudRate == 38400}, 76, func() {
+				a.updateSerialSettings("baud:38400", func(next *session.SerialSettings) { next.BaudRate = 38400 })
+			}),
+			settingsActionButton("57600", settingsActionVisual{Enabled: !state.Pending, Active: settings.BaudRate == 57600}, 76, func() {
+				a.updateSerialSettings("baud:57600", func(next *session.SerialSettings) { next.BaudRate = 57600 })
+			}),
+			settingsActionButton("115200", settingsActionVisual{Enabled: !state.Pending, Active: settings.BaudRate == 115200}, 82, func() {
+				a.updateSerialSettings("baud:115200", func(next *session.SerialSettings) { next.BaudRate = 115200 })
+			}),
+		}, Spacing: 10, LineSpacing: 8}),
+		ui.Fixed(ui.Spacer{H: 12}),
+		ui.Fixed(ui.Wrap{Children: []ui.Element{
+			settingsActionButton("7 Data Bits", settingsActionVisual{Enabled: !state.Pending, Active: settings.DataBits == 7}, 106, func() { a.updateSerialSettings("data:7", func(next *session.SerialSettings) { next.DataBits = 7 }) }),
+			settingsActionButton("8 Data Bits", settingsActionVisual{Enabled: !state.Pending, Active: settings.DataBits == 8}, 106, func() { a.updateSerialSettings("data:8", func(next *session.SerialSettings) { next.DataBits = 8 }) }),
+			settingsActionButton("1 Stop", settingsActionVisual{Enabled: !state.Pending, Active: settings.StopBits == "1"}, 78, func() { a.updateSerialSettings("stop:1", func(next *session.SerialSettings) { next.StopBits = "1" }) }),
+			settingsActionButton("1.5 Stop", settingsActionVisual{Enabled: !state.Pending, Active: settings.StopBits == "1.5"}, 86, func() {
+				a.updateSerialSettings("stop:1.5", func(next *session.SerialSettings) { next.StopBits = "1.5" })
+			}),
+			settingsActionButton("2 Stop", settingsActionVisual{Enabled: !state.Pending, Active: settings.StopBits == "2"}, 78, func() { a.updateSerialSettings("stop:2", func(next *session.SerialSettings) { next.StopBits = "2" }) }),
+		}, Spacing: 10, LineSpacing: 8}),
+		ui.Fixed(ui.Spacer{H: 12}),
+		ui.Fixed(settingsSectionLabelElement("Parity")),
+		ui.Fixed(ui.Spacer{H: 8}),
+		ui.Fixed(ui.Wrap{Children: []ui.Element{
+			settingsActionButton("None", settingsActionVisual{Enabled: !state.Pending, Active: settings.Parity == "none"}, 68, func() {
+				a.updateSerialSettings("parity:none", func(next *session.SerialSettings) { next.Parity = "none" })
+			}),
+			settingsActionButton("Even", settingsActionVisual{Enabled: !state.Pending, Active: settings.Parity == "even"}, 68, func() {
+				a.updateSerialSettings("parity:even", func(next *session.SerialSettings) { next.Parity = "even" })
+			}),
+			settingsActionButton("Odd", settingsActionVisual{Enabled: !state.Pending, Active: settings.Parity == "odd"}, 68, func() {
+				a.updateSerialSettings("parity:odd", func(next *session.SerialSettings) { next.Parity = "odd" })
+			}),
+			settingsActionButton("Mark", settingsActionVisual{Enabled: !state.Pending, Active: settings.Parity == "mark"}, 68, func() {
+				a.updateSerialSettings("parity:mark", func(next *session.SerialSettings) { next.Parity = "mark" })
+			}),
+			settingsActionButton("Space", settingsActionVisual{Enabled: !state.Pending, Active: settings.Parity == "space"}, 74, func() {
+				a.updateSerialSettings("parity:space", func(next *session.SerialSettings) { next.Parity = "space" })
+			}),
+		}, Spacing: 10, LineSpacing: 8}),
+		ui.Fixed(ui.Spacer{H: 12}),
+		ui.Fixed(settingsSectionLabelElement("Default terminator")),
+		ui.Fixed(ui.Spacer{H: 8}),
+	}
+	termButtons := make([]ui.Element, 0, len(termChoices))
+	for _, choice := range termChoices {
+		choice := choice
+		termButtons = append(termButtons, settingsActionButton(choice.label, settingsActionVisual{Enabled: !state.Pending, Active: settings.Terminator.Value == choice.value.Value}, 74, func() {
+			a.updateSerialSettings("terminator:"+choice.label, func(next *session.SerialSettings) { next.Terminator = choice.value })
+		}))
+	}
+	children = append(children, ui.Fixed(ui.Wrap{Children: termButtons, Spacing: 10, LineSpacing: 8}))
+	children = append(children,
+		ui.Fixed(ui.Spacer{H: 12}),
+		ui.Fixed(settingsToggleRowControl("Hide Serial Settings", settingsActionVisual{Enabled: !state.Pending, Active: settings.HideSerialSettings}, func() {
+			a.updateSerialSettings("hide", func(next *session.SerialSettings) { next.HideSerialSettings = !next.HideSerialSettings })
+		})),
+		ui.Fixed(ui.Spacer{H: 8}),
+		ui.Fixed(settingsToggleRowControl("Local Echo", settingsActionVisual{Enabled: !state.Pending, Active: settings.EnableEcho}, func() {
+			a.updateSerialSettings("echo", func(next *session.SerialSettings) { next.EnableEcho = !next.EnableEcho })
+		})),
+		ui.Fixed(ui.Spacer{H: 8}),
+		ui.Fixed(settingsToggleRowControl("Preserve ANSI", settingsActionVisual{Enabled: !state.Pending, Active: settings.PreserveANSI}, func() {
+			a.updateSerialSettings("ansi", func(next *session.SerialSettings) { next.PreserveANSI = !next.PreserveANSI })
+		})),
+		ui.Fixed(ui.Spacer{H: 8}),
+		ui.Fixed(settingsToggleRowControl("Show Newline Tag", settingsActionVisual{Enabled: !state.Pending, Active: settings.ShowNLTag}, func() {
+			a.updateSerialSettings("nl-tag", func(next *session.SerialSettings) { next.ShowNLTag = !next.ShowNLTag })
+		})),
+		ui.Fixed(ui.Spacer{H: 12}),
+		ui.Fixed(settingsSectionLabelElement("Normalization")),
+		ui.Fixed(ui.Spacer{H: 8}),
+		ui.Fixed(ui.Wrap{Children: []ui.Element{
+			settingsActionButton("Caret", settingsActionVisual{Enabled: !state.Pending, Active: settings.NormalizeMode == "caret"}, 70, func() {
+				a.updateSerialSettings("norm:caret", func(next *session.SerialSettings) { next.NormalizeMode = "caret" })
+			}),
+			settingsActionButton("Names", settingsActionVisual{Enabled: !state.Pending, Active: settings.NormalizeMode == "names"}, 70, func() {
+				a.updateSerialSettings("norm:names", func(next *session.SerialSettings) { next.NormalizeMode = "names" })
+			}),
+			settingsActionButton("Hex", settingsActionVisual{Enabled: !state.Pending, Active: settings.NormalizeMode == "hex"}, 62, func() {
+				a.updateSerialSettings("norm:hex", func(next *session.SerialSettings) { next.NormalizeMode = "hex" })
+			}),
+		}, Spacing: 10, LineSpacing: 8}),
+		ui.Fixed(ui.Spacer{H: 12}),
+		ui.Fixed(settingsSectionLabelElement("Quick commands")),
+		ui.Fixed(ui.Spacer{H: 8}),
+	)
+	if len(settings.Buttons) == 0 {
+		children = append(children, ui.Fixed(ui.Label{Text: "No quick command buttons configured.", Size: 12, Color: a.currentTheme().Muted}))
+	} else {
+		commandButtons := make([]ui.Element, 0, len(settings.Buttons))
+		for _, button := range settings.Buttons {
+			button := button
+			label := button.Label
+			if label == "" {
+				label = button.Command
+			}
+			commandButtons = append(commandButtons, settingsActionButton(label, settingsActionVisual{Enabled: !commandState.Pending, Pending: commandState.Pending && commandState.PendingChoice == button.ID}, 0, func() {
+				a.invokeSerialQuickCommand(button)
+			}))
+		}
+		children = append(children, ui.Fixed(ui.Wrap{Children: commandButtons, Spacing: 10, LineSpacing: 8}))
+	}
+	if len(history) > 0 {
+		children = append(children, ui.Fixed(ui.Spacer{H: 12}), ui.Fixed(settingsSectionLabelElement("Recent commands")), ui.Fixed(ui.Spacer{H: 8}))
+		for i, entry := range history {
+			if i >= 5 {
+				break
+			}
+			children = append(children, ui.Fixed(ui.Paragraph{Text: entry, Size: 12, Color: a.currentTheme().Body}))
+		}
+	}
+	switch {
+	case state.Pending:
+		children = append(children, ui.Fixed(ui.Spacer{H: 12}), ui.Fixed(settingsStatusElement("Saving serial settings…", a.currentTheme().WarningStroke)))
+	case state.Error != "":
+		children = append(children, ui.Fixed(ui.Spacer{H: 12}), ui.Fixed(settingsStatusElement(state.Error, a.currentTheme().Error)))
+	}
+	switch {
+	case commandState.Pending:
+		children = append(children, ui.Fixed(ui.Spacer{H: 12}), ui.Fixed(settingsStatusElement("Sending serial command…", a.currentTheme().WarningStroke)))
+	case commandState.Error != "":
+		children = append(children, ui.Fixed(ui.Spacer{H: 12}), ui.Fixed(settingsStatusElement(commandState.Error, a.currentTheme().Error)))
+	}
+	return settingsCardElement("Serial Console", ui.Column{Children: children})
 }
 
 func (a *App) settingsAccessBody() ui.Element {

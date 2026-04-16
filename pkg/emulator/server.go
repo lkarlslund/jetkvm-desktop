@@ -54,43 +54,46 @@ type FaultConfig struct {
 }
 
 type DeviceState struct {
-	DeviceID            string
-	ActiveExtension     string
-	ATXState            map[string]any
-	VideoState          string
-	StreamQualityFactor float64
-	VideoCodec          string
-	EDID                string
-	AutoUpdateEnabled   bool
-	KeyboardLEDMask     byte
-	KeyboardModifiers   byte
-	KeysDown            []byte
-	Hostname            string
-	CloudURL            string
-	CloudAppURL         string
-	KeyboardLayout      string
-	DeveloperMode       bool
-	DevChannel          bool
-	LoopbackOnly        bool
-	SSHKey              string
-	JigglerEnabled      bool
-	JigglerConfig       client.JigglerConfig
-	TLSMode             string
-	TLSCertificate      string
-	TLSPrivateKey       string
-	DisplayRotation     string
-	BacklightSettings   client.BacklightSettings
-	VideoSleepDuration  int
-	USBEmulation        bool
-	USBConfig           client.USBConfig
-	USBDevices          client.USBDevices
-	USBNetworkConfig    client.USBNetworkConfig
-	NetworkSettings     client.NetworkSettings
-	NetworkState        client.NetworkState
-	MQTTSettings        client.MQTTSettings
-	MQTTConnected       bool
-	MQTTError           string
-	KeyboardMacros      []client.KeyboardMacro
+	DeviceID             string
+	ActiveExtension      string
+	ATXState             map[string]any
+	DCPowerState         client.DCPowerState
+	SerialSettings       client.SerialSettings
+	SerialCommandHistory []string
+	VideoState           string
+	StreamQualityFactor  float64
+	VideoCodec           string
+	EDID                 string
+	AutoUpdateEnabled    bool
+	KeyboardLEDMask      byte
+	KeyboardModifiers    byte
+	KeysDown             []byte
+	Hostname             string
+	CloudURL             string
+	CloudAppURL          string
+	KeyboardLayout       string
+	DeveloperMode        bool
+	DevChannel           bool
+	LoopbackOnly         bool
+	SSHKey               string
+	JigglerEnabled       bool
+	JigglerConfig        client.JigglerConfig
+	TLSMode              string
+	TLSCertificate       string
+	TLSPrivateKey        string
+	DisplayRotation      string
+	BacklightSettings    client.BacklightSettings
+	VideoSleepDuration   int
+	USBEmulation         bool
+	USBConfig            client.USBConfig
+	USBDevices           client.USBDevices
+	USBNetworkConfig     client.USBNetworkConfig
+	NetworkSettings      client.NetworkSettings
+	NetworkState         client.NetworkState
+	MQTTSettings         client.MQTTSettings
+	MQTTConnected        bool
+	MQTTError            string
+	KeyboardMacros       []client.KeyboardMacro
 }
 
 type InputRecord struct {
@@ -153,24 +156,53 @@ func NewServer(cfg Config) (*Server, error) {
 		cfg:   cfg,
 		token: "jetkvm-desktop-emulator-token",
 		state: DeviceState{
-			DeviceID:            "emu-jetkvm-001",
-			ActiveExtension:     "",
-			ATXState:            map[string]any{"power": false, "hdd": false},
-			VideoState:          "ready",
-			StreamQualityFactor: 0.75,
-			VideoCodec:          "auto",
-			EDID:                "",
-			AutoUpdateEnabled:   true,
-			KeyboardLEDMask:     0,
-			KeyboardModifiers:   0,
-			KeysDown:            []byte{0, 0, 0, 0, 0, 0},
-			Hostname:            "jetkvm-emulator",
-			KeyboardLayout:      "en_US",
-			DeveloperMode:       false,
-			DevChannel:          false,
-			LoopbackOnly:        false,
-			SSHKey:              "",
-			JigglerEnabled:      false,
+			DeviceID:        "emu-jetkvm-001",
+			ActiveExtension: "",
+			ATXState:        map[string]any{"power": false, "hdd": false},
+			DCPowerState: client.DCPowerState{
+				IsOn:         false,
+				Voltage:      12.0,
+				Current:      0.0,
+				Power:        0.0,
+				RestoreState: 2,
+			},
+			SerialSettings: client.SerialSettings{
+				BaudRate: 9600,
+				DataBits: 8,
+				Parity:   "none",
+				StopBits: "1",
+				Terminator: client.Terminator{
+					Label: "LF (\\n)",
+					Value: "\n",
+				},
+				HideSerialSettings: false,
+				EnableEcho:         false,
+				NormalizeMode:      "names",
+				NormalizeLineEnd:   "keep",
+				TabRender:          "",
+				PreserveANSI:       true,
+				ShowNLTag:          true,
+				Buttons: []client.QuickButton{
+					{ID: "emu-btn-1", Label: "Help", Command: "help", Terminator: client.Terminator{Label: "LF (\\n)", Value: "\n"}, Sort: 0},
+					{ID: "emu-btn-2", Label: "Status", Command: "status", Terminator: client.Terminator{Label: "CRLF (\\r\\n)", Value: "\r\n"}, Sort: 1},
+				},
+			},
+			SerialCommandHistory: []string{"help", "status"},
+			VideoState:           "ready",
+			StreamQualityFactor:  0.75,
+			VideoCodec:           "auto",
+			EDID:                 "",
+			AutoUpdateEnabled:    true,
+			KeyboardLEDMask:      0,
+			KeyboardModifiers:    0,
+			KeysDown:             []byte{0, 0, 0, 0, 0, 0},
+			Hostname:             "jetkvm-emulator",
+			KeyboardLayout:       "en_US",
+			DeveloperMode:        false,
+			DevChannel:           false,
+			LoopbackOnly:         false,
+			SSHKey:               "",
+			JigglerEnabled:       false,
 			JigglerConfig: client.JigglerConfig{
 				InactivityLimitSeconds: 60,
 				JitterPercentage:       25,
@@ -954,6 +986,12 @@ func cloneKeyboardMacros(src []client.KeyboardMacro) []client.KeyboardMacro {
 	return out
 }
 
+func cloneSerialSettings(src client.SerialSettings) client.SerialSettings {
+	dst := src
+	dst.Buttons = append([]client.QuickButton(nil), src.Buttons...)
+	return dst
+}
+
 func cloneNetworkSettings(src client.NetworkSettings) client.NetworkSettings {
 	dst := src
 	if src.IPv4Static != nil {
@@ -1183,6 +1221,43 @@ func (s *session) handleRPC(data []byte) error {
 		resp = jsonrpc.NewResponse(req.ID, true)
 	case "getActiveExtension":
 		resp = jsonrpc.NewResponse(req.ID, s.serverRef.state.ActiveExtension)
+	case "setActiveExtension":
+		extensionID, ok := params["extensionId"].(string)
+		if !ok {
+			resp = jsonrpc.NewErrorResponse(req.ID, -32602, "missing extensionId", nil)
+			break
+		}
+		s.serverRef.state.ActiveExtension = extensionID
+		resp = jsonrpc.NewResponse(req.ID, true)
+	case "getDCPowerState":
+		resp = jsonrpc.NewResponse(req.ID, s.serverRef.state.DCPowerState)
+	case "setDCPowerState":
+		params, err := decodeParams[client.EnabledStateRequest](req.Params)
+		if err != nil {
+			resp = jsonrpc.NewErrorResponse(req.ID, -32602, "missing enabled", nil)
+			break
+		}
+		s.serverRef.state.DCPowerState.IsOn = params.Enabled
+		if params.Enabled {
+			s.serverRef.state.DCPowerState.Current = 1.2
+			s.serverRef.state.DCPowerState.Power = 14.4
+		} else {
+			s.serverRef.state.DCPowerState.Current = 0.0
+			s.serverRef.state.DCPowerState.Power = 0.0
+		}
+		s.serverRef.appendInput("rpc", "rpc.setDCPowerState", fmt.Sprintf("enabled=%t", params.Enabled))
+		resp = jsonrpc.NewResponse(req.ID, true)
+	case "setDCRestoreState":
+		params, err := decodeParams[struct {
+			State int `json:"state"`
+		}](req.Params)
+		if err != nil {
+			resp = jsonrpc.NewErrorResponse(req.ID, -32602, "missing state", nil)
+			break
+		}
+		s.serverRef.state.DCPowerState.RestoreState = params.State
+		s.serverRef.appendInput("rpc", "rpc.setDCRestoreState", fmt.Sprintf("state=%d", params.State))
+		resp = jsonrpc.NewResponse(req.ID, true)
 	case "getATXState":
 		resp = jsonrpc.NewResponse(req.ID, mapsClone(s.serverRef.state.ATXState))
 	case "setATXPowerAction":
@@ -1198,6 +1273,44 @@ func (s *session) handleRPC(data []byte) error {
 		default:
 			resp = jsonrpc.NewErrorResponse(req.ID, -32602, "invalid action", nil)
 		}
+	case "getSerialSettings":
+		resp = jsonrpc.NewResponse(req.ID, cloneSerialSettings(s.serverRef.state.SerialSettings))
+	case "setSerialSettings":
+		params, err := decodeParams[struct {
+			Settings client.SerialSettings `json:"settings"`
+		}](req.Params)
+		if err != nil {
+			resp = jsonrpc.NewErrorResponse(req.ID, -32602, "missing settings", nil)
+			break
+		}
+		s.serverRef.state.SerialSettings = cloneSerialSettings(params.Settings)
+		resp = jsonrpc.NewResponse(req.ID, true)
+	case "getSerialCommandHistory":
+		resp = jsonrpc.NewResponse(req.ID, append([]string(nil), s.serverRef.state.SerialCommandHistory...))
+	case "setSerialCommandHistory":
+		rawHistory, ok := params["commandHistory"].([]any)
+		if !ok {
+			resp = jsonrpc.NewErrorResponse(req.ID, -32602, "missing commandHistory", nil)
+			break
+		}
+		history := make([]string, 0, len(rawHistory))
+		for _, item := range rawHistory {
+			text, ok := item.(string)
+			if !ok {
+				continue
+			}
+			history = append(history, text)
+		}
+		s.serverRef.state.SerialCommandHistory = history
+		resp = jsonrpc.NewResponse(req.ID, true)
+	case "sendCustomCommand":
+		command, ok := params["command"].(string)
+		if !ok {
+			resp = jsonrpc.NewErrorResponse(req.ID, -32602, "missing command", nil)
+			break
+		}
+		s.serverRef.appendInput("rpc", "rpc.sendCustomCommand", command)
+		resp = jsonrpc.NewResponse(req.ID, true)
 	case "getUsbEmulationState":
 		resp = jsonrpc.NewResponse(req.ID, s.serverRef.state.USBEmulation)
 	case "setUsbEmulationState":

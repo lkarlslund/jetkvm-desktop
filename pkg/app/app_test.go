@@ -844,6 +844,61 @@ func TestLoadATXSection(t *testing.T) {
 	}
 }
 
+func TestLoadSerialExtensionSection(t *testing.T) {
+	srv, ctx, cancel := startAppEmulator(t)
+	defer cancel()
+	srv.SetActiveExtension("serial-console")
+
+	app, err := New(Config{
+		BaseURL:    srv.BaseURL(),
+		Password:   "secret",
+		RPCTimeout: 2 * time.Second,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	app.Start(ctx)
+	defer func() {
+		if app.ctrl != nil {
+			app.ctrl.Stop()
+		}
+	}()
+
+	waitForAppPhase(t, app, session.PhaseConnected, 5*time.Second)
+	seq := app.markSettingsSectionLoading(sectionATX)
+	if err := app.loadSettingsSection(sectionATX, seq); err != nil {
+		t.Fatalf("loadSettingsSection(sectionATX) returned error: %v", err)
+	}
+
+	state := app.sectionData.ATX
+	if state.ActiveExtension != "serial-console" {
+		t.Fatalf("active extension = %q, want serial-console", state.ActiveExtension)
+	}
+	if state.SerialSettings == nil || state.SerialSettings.BaudRate != 9600 {
+		t.Fatalf("serial settings = %+v, want baud 9600", state.SerialSettings)
+	}
+	if len(state.SerialHistory) == 0 {
+		t.Fatal("expected serial command history")
+	}
+}
+
+func TestDefaultSerialSettingsFallback(t *testing.T) {
+	if !serialSettingsMissingFile(errors.New("open /userdata/serialSettings.json: no such file or directory")) {
+		t.Fatal("expected missing serial settings file error to be recognized")
+	}
+
+	settings := defaultSerialSettings()
+	if settings.BaudRate != 9600 {
+		t.Fatalf("baud rate = %d, want 9600", settings.BaudRate)
+	}
+	if settings.Terminator.Value != "\n" {
+		t.Fatalf("terminator = %q, want newline", settings.Terminator.Value)
+	}
+	if !settings.PreserveANSI {
+		t.Fatal("expected preserve ANSI to default to true")
+	}
+}
+
 func startAppEmulator(t *testing.T) (*emulator.Server, context.Context, context.CancelFunc) {
 	t.Helper()
 	srv, err := emulator.NewServer(emulator.Config{
