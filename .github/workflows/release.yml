@@ -1,6 +1,9 @@
 name: Release
 
 on:
+  push:
+    tags:
+      - "v*"
   workflow_run:
     workflows:
       - CI
@@ -65,10 +68,11 @@ jobs:
 
       - name: Resolve CI run for workflow_dispatch
         id: resolve-dispatch
-        if: github.event_name == 'workflow_dispatch' && steps.resolve.outputs.tag != ''
+        if: github.event_name != 'workflow_run' && steps.resolve.outputs.tag != ''
         uses: actions/github-script@v8
         with:
           script: |
+            const eventName = '${{ github.event_name }}';
             const headSha = '${{ steps.resolve.outputs.sha }}';
             const { owner, repo } = context.repo;
             const runs = await github.paginate(github.rest.actions.listWorkflowRunsForRepo, {
@@ -86,6 +90,10 @@ jobs:
             );
 
             if (!ciRun) {
+              if (eventName === 'push') {
+                core.info(`No successful CI run found for commit ${headSha} yet. A later successful CI workflow_run can publish this tag.`);
+                return;
+              }
               core.setFailed(`No successful CI run found for commit ${headSha}.`);
               return;
             }
