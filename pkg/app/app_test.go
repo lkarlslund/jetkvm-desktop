@@ -176,6 +176,17 @@ func TestPreferencesNormalizeChromeLayout(t *testing.T) {
 	}
 }
 
+func TestPreferencesNormalizeThrottleMs(t *testing.T) {
+	prefs := Preferences{ScrollThrottleMs: 999, PointerMoveThrottleMs: -2}
+	prefs.normalize()
+	if prefs.ScrollThrottleMs != maxScrollThrottleMs {
+		t.Fatalf("scroll throttle ms = %d, want %d", prefs.ScrollThrottleMs, maxScrollThrottleMs)
+	}
+	if prefs.PointerMoveThrottleMs != 0 {
+		t.Fatalf("pointer move throttle ms = %d, want 0", prefs.PointerMoveThrottleMs)
+	}
+}
+
 func TestNormalizeWheelDeltaYRespectsInvertScroll(t *testing.T) {
 	if got := normalizeWheelDeltaY(1, false); got != 1 {
 		t.Fatalf("normalizeWheelDeltaY(1, false) = %d, want 1", got)
@@ -205,26 +216,28 @@ func TestNormalizeWheelDeltaXRespectsInvertScroll(t *testing.T) {
 
 func TestShouldThrottlePointerMovement(t *testing.T) {
 	base := time.Unix(1000, 0)
-	if shouldThrottlePointerMovement(time.Time{}, base, true, false) {
+	throttle := 8 * time.Millisecond
+	if shouldThrottlePointerMovement(throttle, time.Time{}, base, true, false) {
 		t.Fatal("expected first movement send to bypass throttle")
 	}
-	if !shouldThrottlePointerMovement(base, base.Add(pointerMoveThrottle/2), true, false) {
+	if !shouldThrottlePointerMovement(throttle, base, base.Add(throttle/2), true, false) {
 		t.Fatal("expected movement-only send inside throttle window to be throttled")
 	}
-	if shouldThrottlePointerMovement(base, base.Add(pointerMoveThrottle/2), true, true) {
+	if shouldThrottlePointerMovement(throttle, base, base.Add(throttle/2), true, true) {
 		t.Fatal("expected button changes to bypass movement throttle")
 	}
-	if shouldThrottlePointerMovement(base, base.Add(pointerMoveThrottle/2), false, false) {
+	if shouldThrottlePointerMovement(throttle, base, base.Add(throttle/2), false, false) {
 		t.Fatal("expected unchanged pointer state to bypass throttle helper")
 	}
-	if shouldThrottlePointerMovement(base, base.Add(pointerMoveThrottle), true, false) {
+	if shouldThrottlePointerMovement(throttle, base, base.Add(throttle), true, false) {
 		t.Fatal("expected movement send at throttle boundary to proceed")
 	}
 }
 
 func TestShouldSendRelativeMouseFlushesMovementOnButtonChange(t *testing.T) {
 	base := time.Unix(1000, 0)
-	dx, dy, send := shouldSendRelativeMouse(10, 20, 18, 27, 0, mouseButtonLeftMask, base, base.Add(pointerMoveThrottle/2))
+	throttle := 8 * time.Millisecond
+	dx, dy, send := shouldSendRelativeMouse(10, 20, 18, 27, 0, mouseButtonLeftMask, throttle, base, base.Add(throttle/2))
 	if !send {
 		t.Fatal("expected button change to force an immediate relative mouse send")
 	}
@@ -235,12 +248,50 @@ func TestShouldSendRelativeMouseFlushesMovementOnButtonChange(t *testing.T) {
 
 func TestShouldSendRelativeMouseThrottlesMovementOnly(t *testing.T) {
 	base := time.Unix(1000, 0)
-	dx, dy, send := shouldSendRelativeMouse(10, 20, 18, 27, 0, 0, base, base.Add(pointerMoveThrottle/2))
+	throttle := 8 * time.Millisecond
+	dx, dy, send := shouldSendRelativeMouse(10, 20, 18, 27, 0, 0, throttle, base, base.Add(throttle/2))
 	if send {
 		t.Fatal("expected movement-only relative mouse send to be throttled")
 	}
 	if dx != 8 || dy != 7 {
 		t.Fatalf("shouldSendRelativeMouse(...) = (%d, %d), want (8, 7)", dx, dy)
+	}
+}
+
+func TestApplySettingsSliderValueUpdatesThrottlePreferences(t *testing.T) {
+	app, err := New(Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	bounds := rect{x: 20, y: 0, w: 200, h: 28}
+	app.applySettingsSliderValue(settingsScrollThrottleSliderID, bounds, 120)
+	if app.scrollThrottle != 50*time.Millisecond {
+		t.Fatalf("scrollThrottle = %v, want 50ms", app.scrollThrottle)
+	}
+	if app.prefs.ScrollThrottleMs != 50 {
+		t.Fatalf("prefs.ScrollThrottleMs = %d, want 50", app.prefs.ScrollThrottleMs)
+	}
+
+	app.applySettingsSliderValue(settingsPointerThrottleSliderID, bounds, 165)
+	if app.pointerMoveThrottle != 24*time.Millisecond {
+		t.Fatalf("pointerMoveThrottle = %v, want 24ms", app.pointerMoveThrottle)
+	}
+	if app.prefs.PointerMoveThrottleMs != 24 {
+		t.Fatalf("prefs.PointerMoveThrottleMs = %d, want 24", app.prefs.PointerMoveThrottleMs)
+	}
+}
+
+func TestUpdateSettingsSliderDragStopsWhenMouseReleased(t *testing.T) {
+	app, err := New(Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	app.activeSettingsSliderID = settingsScrollThrottleSliderID
+	app.updateSettingsSliderDrag()
+	if app.activeSettingsSliderID != "" {
+		t.Fatal("expected slider drag to clear when mouse button is released")
 	}
 }
 

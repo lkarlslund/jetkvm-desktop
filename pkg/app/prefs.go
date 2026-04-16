@@ -20,6 +20,8 @@ type Preferences struct {
 	ShowPressedKeys           bool           `json:"show_pressed_keys"`
 	AbsoluteSideButtonsViaRel bool           `json:"absolute_side_buttons_via_relative"`
 	ScrollThrottle            ScrollThrottle `json:"scroll_throttle"`
+	ScrollThrottleMs          int            `json:"scroll_throttle_ms,omitempty"`
+	PointerMoveThrottleMs     int            `json:"pointer_move_throttle_ms,omitempty"`
 }
 
 //go:generate go tool github.com/dmarkham/enumer -type=Theme,ChromeAnchor,ChromeLayout,ScrollThrottle -linecomment -json -text -output prefs_enums.go
@@ -79,6 +81,8 @@ func defaultPreferences() Preferences {
 		ShowPressedKeys:           false,
 		AbsoluteSideButtonsViaRel: true,
 		ScrollThrottle:            scrollThrottleOff,
+		ScrollThrottleMs:          0,
+		PointerMoveThrottleMs:     8,
 	}
 }
 
@@ -101,6 +105,12 @@ func loadPreferences() Preferences {
 	}
 	if _, ok := raw["absolute_side_buttons_via_relative"]; !ok {
 		prefs.AbsoluteSideButtonsViaRel = true
+	}
+	if _, ok := raw["scroll_throttle_ms"]; !ok {
+		prefs.ScrollThrottleMs = int(scrollThrottleFromPref(prefs.ScrollThrottle) / time.Millisecond)
+	}
+	if _, ok := raw["pointer_move_throttle_ms"]; !ok {
+		prefs.PointerMoveThrottleMs = defaultPointerMoveThrottleMs
 	}
 	prefs.normalize()
 	return prefs
@@ -142,6 +152,8 @@ func (p *Preferences) normalize() {
 	default:
 		p.ScrollThrottle = scrollThrottleOff
 	}
+	p.ScrollThrottleMs = clampInt(p.ScrollThrottleMs, 0, maxScrollThrottleMs)
+	p.PointerMoveThrottleMs = clampInt(p.PointerMoveThrottleMs, 0, maxPointerMoveThrottleMs)
 	switch p.ChromeAnchor {
 	case chromeAnchorTopLeft, chromeAnchorTopCenter, chromeAnchorTopRight, chromeAnchorLeftCenter, chromeAnchorRightCenter, chromeAnchorBottomLeft, chromeAnchorBottomCenter, chromeAnchorBottomRight:
 	default:
@@ -182,4 +194,18 @@ func scrollThrottlePref(value time.Duration) ScrollThrottle {
 	default:
 		return scrollThrottleOff
 	}
+}
+
+func throttleDurationFromMs(value int) time.Duration {
+	return time.Duration(value) * time.Millisecond
+}
+
+func clampInt(value, minValue, maxValue int) int {
+	if value < minValue {
+		return minValue
+	}
+	if value > maxValue {
+		return maxValue
+	}
+	return value
 }

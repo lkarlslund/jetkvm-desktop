@@ -152,6 +152,11 @@ type settingsActionVisual struct {
 	Pending bool
 }
 
+const (
+	settingsScrollThrottleSliderID  = "scroll_throttle_slider"
+	settingsPointerThrottleSliderID = "pointer_throttle_slider"
+)
+
 func uiIcon(kind iconKind) ui.IconKind {
 	switch kind {
 	case iconReconnect:
@@ -1317,6 +1322,65 @@ func settingsToggleRowElement(id, label string, visual settingsActionVisual) ui.
 	return settingsToggleRow{id: id, label: label, visual: visual}
 }
 
+type settingsSliderRow struct {
+	id      string
+	label   string
+	value   string
+	min     float64
+	max     float64
+	step    float64
+	current float64
+	enabled bool
+}
+
+func (e settingsSliderRow) content(ctx *ui.Context) ui.Element {
+	valueColor := ctx.Theme.Muted
+	if e.enabled {
+		valueColor = ctx.Theme.AccentText
+	}
+	return ui.Column{
+		Spacing: 8,
+		Children: []ui.Child{
+			ui.Fixed(ui.Row{
+				AlignY: ui.AlignCenter,
+				Children: []ui.Child{
+					ui.Flex(ui.Label{Text: e.label, Size: 13, Color: ctx.Theme.Body}, 1),
+					ui.Fixed(ui.Label{Text: e.value, Size: 12, Color: valueColor}),
+				},
+			}),
+			ui.Fixed(ui.Slider{
+				ID:      e.id,
+				Value:   e.current,
+				Min:     e.min,
+				Max:     e.max,
+				Step:    e.step,
+				Enabled: e.enabled,
+			}),
+		},
+	}
+}
+
+func (e settingsSliderRow) Measure(ctx *ui.Context, constraints ui.Constraints) ui.Size {
+	return e.content(ctx).Measure(ctx, constraints)
+}
+
+func (e settingsSliderRow) Draw(ctx *ui.Context, bounds ui.Rect) {
+	e.content(ctx).Draw(ctx, bounds)
+}
+
+func settingsSliderRowElement(id, label, value string, current, minValue, maxValue, step float64, enabled bool) ui.Element {
+	return settingsSliderRow{
+		id:      id,
+		label:   label,
+		value:   value,
+		min:     minValue,
+		max:     maxValue,
+		step:    step,
+		current: current,
+		enabled: enabled,
+	}
+}
+
 func settingsStatusElement(text string, clr color.Color) ui.Element {
 	if text == "" {
 		return nil
@@ -1348,11 +1412,20 @@ func settingsKeyValueElement(label, value string, split float64) ui.Element {
 	}
 }
 
+func throttleLabel(value time.Duration) string {
+	if value <= 0 {
+		return "Off"
+	}
+	return fmt.Sprintf("%d ms", value/time.Millisecond)
+}
+
 func (a *App) settingsMouseBody(snap session.Snapshot) ui.Element {
 	a.mu.RLock()
 	state := a.sectionData.Mouse
 	a.mu.RUnlock()
 	jiggler := a.settingsAction(settingsGroupJiggler)
+	scrollThrottleMs := float64(a.scrollThrottle / time.Millisecond)
+	pointerThrottleMs := float64(a.pointerMoveThrottle / time.Millisecond)
 
 	leftChildren := []ui.Child{
 		ui.Fixed(settingsSectionLabelElement("Remote mode")),
@@ -1377,30 +1450,30 @@ func (a *App) settingsMouseBody(snap session.Snapshot) ui.Element {
 			Size:  12,
 			Color: a.currentTheme().Muted,
 		}),
-		ui.Fixed(ui.Spacer{H: 14}),
-		ui.Fixed(ui.Wrap{
-			Children: []ui.Element{
-				settingsActionElement("scroll_0", "Off", settingsActionVisual{Enabled: true, Active: a.scrollThrottle == 0}, 64),
-				settingsActionElement("scroll_10", "Low", settingsActionVisual{Enabled: true, Active: a.scrollThrottle == 10*time.Millisecond}, 64),
-				settingsActionElement("scroll_25", "Medium", settingsActionVisual{Enabled: true, Active: a.scrollThrottle == 25*time.Millisecond}, 84),
-				settingsActionElement("scroll_50", "High", settingsActionVisual{Enabled: true, Active: a.scrollThrottle == 50*time.Millisecond}, 72),
-				settingsActionElement("scroll_100", "Very High", settingsActionVisual{Enabled: true, Active: a.scrollThrottle == 100*time.Millisecond}, 108),
-			},
-			Spacing:     12,
-			LineSpacing: 8,
+		ui.Fixed(ui.Spacer{H: 12}),
+		ui.Fixed(settingsSliderRowElement(settingsScrollThrottleSliderID, "Wheel Throttle", throttleLabel(a.scrollThrottle), scrollThrottleMs, 0, maxScrollThrottleMs, 5, true)),
+		ui.Fixed(ui.Spacer{H: 18}),
+		ui.Fixed(settingsSectionLabelElement("Pointer")),
+		ui.Fixed(ui.Spacer{H: 8}),
+		ui.Fixed(ui.Paragraph{
+			Text:  "Coalesce movement reports before sending them to the device. Button changes still flush the latest position immediately.",
+			Size:  12,
+			Color: a.currentTheme().Muted,
 		}),
+		ui.Fixed(ui.Spacer{H: 12}),
+		ui.Fixed(settingsSliderRowElement(settingsPointerThrottleSliderID, "Movement Throttle", throttleLabel(a.pointerMoveThrottle), pointerThrottleMs, 0, maxPointerMoveThrottleMs, 1, true)),
 		ui.Fixed(ui.Spacer{H: 14}),
 		ui.Fixed(settingsToggleRowElement("scroll_invert", "Invert Scroll", settingsActionVisual{Enabled: true, Active: a.invertScroll})),
 		ui.Fixed(ui.Spacer{H: 18}),
 		ui.Fixed(settingsSectionLabelElement("Compatibility")),
 		ui.Fixed(ui.Spacer{H: 8}),
 		ui.Fixed(ui.Paragraph{
-			Text:  "Mirror Back and Forward side-button presses through the relative mouse gadget while staying in absolute mode. Use this when the host ignores side buttons from the absolute pointer device.",
+			Text:  "Reroute Back and Forward side-button presses through the relative mouse gadget while staying in absolute mode. Use this when the host ignores side buttons from the absolute pointer device.",
 			Size:  12,
 			Color: a.currentTheme().Muted,
 		}),
 		ui.Fixed(ui.Spacer{H: 12}),
-		ui.Fixed(settingsToggleRowElement("absolute_side_buttons_via_relative_toggle", "Mirror Side Buttons in Absolute Mode", settingsActionVisual{Enabled: true, Active: a.prefs.AbsoluteSideButtonsViaRel})),
+		ui.Fixed(settingsToggleRowElement("absolute_side_buttons_via_relative_toggle", "Reroute Side Buttons in Absolute Mode", settingsActionVisual{Enabled: true, Active: a.prefs.AbsoluteSideButtonsViaRel})),
 	}
 
 	rightChildren := []ui.Child{}

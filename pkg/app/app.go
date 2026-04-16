@@ -75,6 +75,7 @@ type App struct {
 	invertScroll           bool
 	showPressedKeys        bool
 	scrollThrottle         time.Duration
+	pointerMoveThrottle    time.Duration
 	lastPointerAt          time.Time
 	lastWheelAt            time.Time
 	suppressKeysUntilClear bool
@@ -151,6 +152,7 @@ type App struct {
 	factoryResetMessage    string
 	factoryResetSuccess    bool
 	hardwareConn           hardwareConnectionState
+	activeSettingsSliderID string
 }
 
 type hardwareConnectionState struct {
@@ -377,25 +379,26 @@ func New(cfg Config) (*App, error) {
 	prefs := loadPreferences()
 	launcherOpen := strings.TrimSpace(cfg.BaseURL) == ""
 	return &App{
-		cfg:             cfg,
-		keyboard:        input.NewKeyboard(),
-		lastPhase:       session.PhaseIdle,
-		focused:         true,
-		uiVisibleUntil:  time.Now().Add(3 * time.Second),
-		settingsSection: sectionGeneral,
-		prefs:           prefs,
-		hideCursor:      prefs.HideCursor,
-		invertScroll:    prefs.InvertScroll,
-		showPressedKeys: prefs.ShowPressedKeys,
-		scrollThrottle:  scrollThrottleFromPref(prefs.ScrollThrottle),
-		pasteDelay:      100,
-		launcherOpen:    launcherOpen,
-		launcherMode:    launcherModeBrowse,
-		discovery:       discovery.NewScanner(),
-		settingsActions: make(map[settingsActionGroup]settingsActionState),
-		sectionLoadSeq:  make(map[settingsSection]uint64),
-		mediaView:       mediaViewHome,
-		mediaMode:       virtualmedia.ModeCDROM,
+		cfg:                 cfg,
+		keyboard:            input.NewKeyboard(),
+		lastPhase:           session.PhaseIdle,
+		focused:             true,
+		uiVisibleUntil:      time.Now().Add(3 * time.Second),
+		settingsSection:     sectionGeneral,
+		prefs:               prefs,
+		hideCursor:          prefs.HideCursor,
+		invertScroll:        prefs.InvertScroll,
+		showPressedKeys:     prefs.ShowPressedKeys,
+		scrollThrottle:      throttleDurationFromMs(prefs.ScrollThrottleMs),
+		pointerMoveThrottle: throttleDurationFromMs(prefs.PointerMoveThrottleMs),
+		pasteDelay:          100,
+		launcherOpen:        launcherOpen,
+		launcherMode:        launcherModeBrowse,
+		discovery:           discovery.NewScanner(),
+		settingsActions:     make(map[settingsActionGroup]settingsActionState),
+		sectionLoadSeq:      make(map[settingsSection]uint64),
+		mediaView:           mediaViewHome,
+		mediaMode:           virtualmedia.ModeCDROM,
 	}, nil
 }
 
@@ -433,6 +436,7 @@ func (a *App) Update() error {
 		if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) {
 			a.handleClick()
 		}
+		a.updateSettingsSliderDrag()
 		a.updateTextSelectionDrag()
 		return nil
 	}
@@ -456,6 +460,7 @@ func (a *App) Update() error {
 	if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) {
 		a.handleClick()
 	}
+	a.updateSettingsSliderDrag()
 	a.updateTextSelectionDrag()
 
 	a.syncPasteInput()
@@ -464,6 +469,23 @@ func (a *App) Update() error {
 	a.syncKeyboard()
 	a.syncMouse()
 	return nil
+}
+
+func (a *App) updateSettingsSliderDrag() {
+	if a.activeSettingsSliderID == "" {
+		return
+	}
+	if !ebiten.IsMouseButtonPressed(ebiten.MouseButtonLeft) {
+		a.savePreferences()
+		a.activeSettingsSliderID = ""
+		return
+	}
+	sliderRect, ok := a.currentSettingsButtonRect(a.activeSettingsSliderID)
+	if !ok {
+		return
+	}
+	x, _ := ebiten.CursorPosition()
+	a.applySettingsSliderValue(a.activeSettingsSliderID, sliderRect, float64(x))
 }
 
 func (a *App) syncVideoFrame() {
@@ -603,11 +625,8 @@ func (a *App) syncMouse() {
 		a.ensureConnectionUSBDevicesLoaded()
 	}
 	if a.relative {
-		dx, dy, sendRelative := shouldSendRelativeMouse(a.lastX, a.lastY, x, y, a.lastButtons, buttons, a.lastPointerAt, now)
+		dx, dy, sendRelative := shouldSendRelativeMouse(a.lastX, a.lastY, x, y, a.lastButtons, buttons, a.pointerMoveThrottle, a.lastPointerAt, now)
 		if sendRelative {
-			if shouldThrottlePointerMovement(a.lastPointerAt, now, dx != 0 || dy != 0, buttons != a.lastButtons) {
-				goto wheel
-			}
 			if buttons != a.lastButtons {
 				log.Trace().
 					Int8("dx", dx).
@@ -662,7 +681,7 @@ func (a *App) syncMouse() {
 		positionChanged := x != a.lastX || y != a.lastY
 		buttonsChanged := buttons != a.lastButtons
 		if positionChanged || buttonsChanged {
-			if shouldThrottlePointerMovement(a.lastPointerAt, now, positionChanged, buttonsChanged) {
+			if shouldThrottlePointerMovement(a.pointerMoveThrottle, a.lastPointerAt, now, positionChanged, buttonsChanged) {
 				goto wheel
 			}
 			nx, ny := a.renderRect.toHID(x, y)
@@ -735,16 +754,20 @@ wheel:
 	}
 }
 
-const pointerMoveThrottle = 8 * time.Millisecond
+const (
+	defaultPointerMoveThrottleMs = 8
+	maxPointerMoveThrottleMs     = 32
+	maxScrollThrottleMs          = 100
+)
 
-func shouldThrottlePointerMovement(lastSentAt, now time.Time, movementChanged, buttonsChanged bool) bool {
-	if !movementChanged || buttonsChanged || lastSentAt.IsZero() {
+func shouldThrottlePointerMovement(throttle time.Duration, lastSentAt, now time.Time, movementChanged, buttonsChanged bool) bool {
+	if throttle <= 0 || !movementChanged || buttonsChanged || lastSentAt.IsZero() {
 		return false
 	}
-	return now.Sub(lastSentAt) < pointerMoveThrottle
+	return now.Sub(lastSentAt) < throttle
 }
 
-func shouldSendRelativeMouse(lastX, lastY, x, y int, lastButtons, buttons byte, lastSentAt, now time.Time) (dx, dy int8, send bool) {
+func shouldSendRelativeMouse(lastX, lastY, x, y int, lastButtons, buttons byte, throttle time.Duration, lastSentAt, now time.Time) (dx, dy int8, send bool) {
 	dx = int8(clamp(float64(x-lastX), -127, 127))
 	dy = int8(clamp(float64(y-lastY), -127, 127))
 	movementChanged := dx != 0 || dy != 0
@@ -752,7 +775,7 @@ func shouldSendRelativeMouse(lastX, lastY, x, y int, lastButtons, buttons byte, 
 	if !movementChanged && !buttonsChanged {
 		return 0, 0, false
 	}
-	if shouldThrottlePointerMovement(lastSentAt, now, movementChanged, buttonsChanged) {
+	if shouldThrottlePointerMovement(throttle, lastSentAt, now, movementChanged, buttonsChanged) {
 		return dx, dy, false
 	}
 	return dx, dy, true
@@ -1237,7 +1260,41 @@ func (a *App) savePreferences() {
 	a.prefs.InvertScroll = a.invertScroll
 	a.prefs.ShowPressedKeys = a.showPressedKeys
 	a.prefs.ScrollThrottle = scrollThrottlePref(a.scrollThrottle)
+	a.prefs.ScrollThrottleMs = int(a.scrollThrottle / time.Millisecond)
+	a.prefs.PointerMoveThrottleMs = int(a.pointerMoveThrottle / time.Millisecond)
 	_ = savePreferences(a.prefs)
+}
+
+func isSettingsSliderAction(id string) bool {
+	switch id {
+	case settingsScrollThrottleSliderID, settingsPointerThrottleSliderID:
+		return true
+	default:
+		return false
+	}
+}
+
+func (a *App) currentSettingsButtonRect(id string) (rect, bool) {
+	for _, btn := range a.settingsButtons {
+		if btn.id == id {
+			return btn.rect, true
+		}
+	}
+	return rect{}, false
+}
+
+func (a *App) applySettingsSliderValue(id string, bounds rect, x float64) {
+	sliderBounds := ui.Rect{X: bounds.x, Y: bounds.y, W: bounds.w, H: bounds.h}
+	switch id {
+	case settingsScrollThrottleSliderID:
+		value := ui.SliderValueAt(sliderBounds, x, 0, maxScrollThrottleMs, 5)
+		a.scrollThrottle = throttleDurationFromMs(int(value))
+		a.prefs.ScrollThrottleMs = int(a.scrollThrottle / time.Millisecond)
+	case settingsPointerThrottleSliderID:
+		value := ui.SliderValueAt(sliderBounds, x, 0, maxPointerMoveThrottleMs, 1)
+		a.pointerMoveThrottle = throttleDurationFromMs(int(value))
+		a.prefs.PointerMoveThrottleMs = int(a.pointerMoveThrottle / time.Millisecond)
+	}
 }
 
 func (a *App) syncMQTTEditorLocked(settings session.MQTTSettings) {
@@ -1994,6 +2051,11 @@ func (a *App) handleClick() {
 		if !btn.enabled || !btn.rect.contains(x, y) {
 			continue
 		}
+		if isSettingsSliderAction(btn.id) {
+			a.activeSettingsSliderID = btn.id
+			a.applySettingsSliderValue(btn.id, btn.rect, float64(x))
+			return
+		}
 		a.invokeAction(btn.id)
 		if isTextFieldAction(btn.id) {
 			a.beginTextFieldPointer(btn.id, btn.rect, shiftPressed())
@@ -2129,21 +2191,6 @@ func (a *App) invokeAction(id string) {
 	case "mouse_hide_cursor_toggle":
 		a.hideCursor = !a.hideCursor
 		a.applyCursorMode()
-		a.savePreferences()
-	case "scroll_0":
-		a.scrollThrottle = 0
-		a.savePreferences()
-	case "scroll_10":
-		a.scrollThrottle = 10 * time.Millisecond
-		a.savePreferences()
-	case "scroll_25":
-		a.scrollThrottle = 25 * time.Millisecond
-		a.savePreferences()
-	case "scroll_50":
-		a.scrollThrottle = 50 * time.Millisecond
-		a.savePreferences()
-	case "scroll_100":
-		a.scrollThrottle = 100 * time.Millisecond
 		a.savePreferences()
 	case "scroll_invert":
 		a.invertScroll = !a.invertScroll
@@ -3591,6 +3638,7 @@ func (a *App) closeSettingsOverlay() {
 		return
 	}
 	a.settingsOpen = false
+	a.activeSettingsSliderID = ""
 	a.h265ConfirmOpen = false
 	a.settingsInputFocus = settingsInputNone
 	a.closeJigglerEditor()

@@ -2,6 +2,7 @@ package ui
 
 import (
 	"image/color"
+	"math"
 	"time"
 )
 
@@ -81,6 +82,16 @@ type Toggle struct {
 	Pending bool
 }
 
+type Slider struct {
+	ID      string
+	Value   float64
+	Min     float64
+	Max     float64
+	Step    float64
+	Enabled bool
+	MinW    float64
+}
+
 func (t Toggle) Measure(_ *Context, constraints Constraints) Size {
 	return constraints.Clamp(Size{W: 46, H: 24})
 }
@@ -117,6 +128,44 @@ func (t Toggle) Draw(ctx *Context, bounds Rect) {
 	ctx.AddHit(t.ID, bounds, t.Enabled)
 }
 
+func (s Slider) Measure(_ *Context, constraints Constraints) Size {
+	width := s.MinW
+	if width <= 0 {
+		width = 140
+	}
+	return constraints.Clamp(Size{W: width, H: 28})
+}
+
+func (s Slider) Draw(ctx *Context, bounds Rect) {
+	trackFill := ctx.Theme.ProgressTrack
+	trackStroke := ctx.Theme.ButtonStroke
+	knobFill := ctx.Theme.ButtonText
+	knobStroke := ctx.Theme.ButtonStroke
+	if !s.Enabled {
+		knobFill = ctx.Theme.DisabledText
+	}
+
+	minValue, maxValue := s.rangeValues()
+	value := SliderClampValue(s.Value, minValue, maxValue)
+	trackH := 6.0
+	trackY := bounds.Y + (bounds.H-trackH)/2
+	track := Rect{X: bounds.X + 10, Y: trackY, W: max(0, bounds.W-20), H: trackH}
+	fillTrack := track
+	fillTrack.W = sliderValueToTrackWidth(track.W, value, minValue, maxValue)
+
+	ctx.FillStrokedRoundedRect(track, 1, trackH/2, trackStroke, trackFill)
+	if fillTrack.W > 0 {
+		ctx.FillRoundedRect(fillTrack, trackH/2, ctx.Theme.ProgressFill)
+	}
+
+	knobRadius := 8.0
+	knobCx := sliderKnobX(track, value, minValue, maxValue)
+	knobCy := bounds.Y + bounds.H/2
+	ctx.FillCircle(Point{X: knobCx, Y: knobCy}, knobRadius, knobFill)
+	ctx.StrokeLine(Point{X: knobCx, Y: knobCy}, Point{X: knobCx, Y: knobCy}, knobRadius*2, knobStroke)
+	ctx.AddHit(s.ID, bounds, s.Enabled)
+}
+
 func (b Button) Measure(ctx *Context, constraints Constraints) Size {
 	labelW, labelH := 0.0, 0.0
 	if ctx.MeasureText != nil {
@@ -132,6 +181,58 @@ func (b Button) Measure(ctx *Context, constraints Constraints) Size {
 		width = max(minW, labelW+24)
 	}
 	return constraints.Clamp(Size{W: width, H: max(30, labelH+14)})
+}
+
+func SliderClampValue(value, minValue, maxValue float64) float64 {
+	if maxValue <= minValue {
+		return minValue
+	}
+	return clamp(value, minValue, maxValue)
+}
+
+func SliderSnapValue(value, minValue, maxValue, step float64) float64 {
+	value = SliderClampValue(value, minValue, maxValue)
+	if step <= 0 || maxValue <= minValue {
+		return value
+	}
+	steps := (value - minValue) / step
+	snapped := minValue + step*math.Round(steps)
+	return SliderClampValue(snapped, minValue, maxValue)
+}
+
+func SliderValueAt(bounds Rect, x, minValue, maxValue, step float64) float64 {
+	trackX := bounds.X + 10
+	trackW := max(0, bounds.W-20)
+	if trackW <= 0 {
+		return SliderClampValue(minValue, minValue, maxValue)
+	}
+	ratio := clamp((x-trackX)/trackW, 0, 1)
+	value := minValue + (maxValue-minValue)*ratio
+	return SliderSnapValue(value, minValue, maxValue, step)
+}
+
+func (s Slider) rangeValues() (float64, float64) {
+	minValue := s.Min
+	maxValue := s.Max
+	if maxValue <= minValue {
+		return 0, 1
+	}
+	return minValue, maxValue
+}
+
+func sliderValueToTrackWidth(trackW, value, minValue, maxValue float64) float64 {
+	return clamp(trackW*sliderNormalizedValue(value, minValue, maxValue), 0, trackW)
+}
+
+func sliderKnobX(track Rect, value, minValue, maxValue float64) float64 {
+	return track.X + sliderValueToTrackWidth(track.W, value, minValue, maxValue)
+}
+
+func sliderNormalizedValue(value, minValue, maxValue float64) float64 {
+	if maxValue <= minValue {
+		return 0
+	}
+	return (SliderClampValue(value, minValue, maxValue) - minValue) / (maxValue - minValue)
 }
 
 func (b Button) Draw(ctx *Context, bounds Rect) {
