@@ -195,11 +195,11 @@ type DeveloperModeState struct {
 	Enabled bool `json:"enabled"`
 }
 
-type keyboardMacrosRequest struct {
-	Params keyboardMacrosParams `json:"params"`
+type KeyboardMacrosRequest struct {
+	Params KeyboardMacrosParams `json:"params"`
 }
 
-type keyboardMacrosParams struct {
+type KeyboardMacrosParams struct {
 	Macros []KeyboardMacro `json:"macros"`
 }
 
@@ -237,76 +237,90 @@ type offerSignalData struct {
 	SD string `json:"sd"`
 }
 
-type storageUploadRequest struct {
+type StorageUploadRequest struct {
 	Filename string `json:"filename"`
 	Size     int64  `json:"size"`
 }
 
-type networkSettingsRequest struct {
+type MountWithHTTPRequest struct {
+	URL  string            `json:"url"`
+	Mode virtualmedia.Mode `json:"mode"`
+}
+
+type DeleteStorageFileRequest struct {
+	Filename string `json:"filename"`
+}
+
+type MountWithStorageRequest struct {
+	Filename string            `json:"filename"`
+	Mode     virtualmedia.Mode `json:"mode"`
+}
+
+type NetworkSettingsRequest struct {
 	Settings NetworkSettings `json:"settings"`
 }
 
-type usbNetworkConfigRequest struct {
+type USBNetworkConfigRequest struct {
 	Config USBNetworkConfig `json:"config"`
 }
 
-type mqttSettingsRequest struct {
+type MQTTSettingsRequest struct {
 	Settings MQTTSettings `json:"settings"`
 }
 
-type setTLSStateRequest struct {
+type SetTLSStateRequest struct {
 	State TLSState `json:"state"`
 }
 
-type setDisplayRotationRequest struct {
+type SetDisplayRotationRequest struct {
 	Params DisplayRotationState `json:"params"`
 }
 
-type usbDevicesRequest struct {
+type USBDevicesRequest struct {
 	Devices USBDevices `json:"devices"`
 }
 
-type setQualityRequest struct {
+type SetQualityRequest struct {
 	Factor float64 `json:"factor"`
 }
 
-type rebootRequest struct {
+type RebootRequest struct {
 	Force bool `json:"force"`
 }
 
-type enabledStateRequest struct {
+type EnabledStateRequest struct {
 	Enabled bool `json:"enabled"`
 }
 
-type jigglerConfigRequest struct {
+type JigglerConfigRequest struct {
 	JigglerConfig JigglerConfig `json:"jigglerConfig"`
 }
 
-type setCodecPreferenceRequest struct {
+type SetCodecPreferenceRequest struct {
 	Codec string `json:"codec"`
 }
 
-type setEDIDRequest struct {
+type SetEDIDRequest struct {
 	EDID string `json:"edid"`
 }
 
-type setBacklightSettingsRequest struct {
+type SetBacklightSettingsRequest struct {
 	Params BacklightSettings `json:"params"`
 }
 
-type setVideoSleepModeRequest struct {
+type SetVideoSleepModeRequest struct {
 	Duration int `json:"duration"`
 }
 
-type setSSHKeyStateRequest struct {
+type SetSSHKeyStateRequest struct {
 	SSHKey string `json:"sshKey"`
 }
 
-type wheelReportRequest struct {
+type WheelReportRequest struct {
 	WheelY int `json:"wheelY"`
 	WheelX int `json:"wheelX"`
 }
 
-type storageFilesResponse struct {
+type StorageFilesResponse struct {
 	Files []virtualmedia.StorageFile `json:"files"`
 }

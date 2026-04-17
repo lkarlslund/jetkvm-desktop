@@ -21,7 +21,7 @@ func (c *Client) ForceDisconnect(ctx context.Context) error {
 }
 
 func (c *Client) Reboot(ctx context.Context) error {
-	return c.Call(ctx, "reboot", rebootRequest{Force: false}, nil)
+	return c.Call(ctx, "reboot", RebootRequest{Force: false}, nil)
 }
 
 func (c *Client) TryUpdate(ctx context.Context) error {
@@ -39,7 +39,7 @@ func (c *Client) GetStreamQualityFactor(ctx context.Context) (float64, error) {
 }
 
 func (c *Client) SetStreamQualityFactor(ctx context.Context, factor float64) error {
-	return c.Call(ctx, "setStreamQualityFactor", setQualityRequest{Factor: factor}, nil)
+	return c.Call(ctx, "setStreamQualityFactor", SetQualityRequest{Factor: factor}, nil)
 }
 
 func (c *Client) GetKeyboardLayout(ctx context.Context) (string, error) {
@@ -61,7 +61,7 @@ func (c *Client) GetEDID(ctx context.Context) (string, error) {
 }
 
 func (c *Client) SetEDID(ctx context.Context, edid string) error {
-	return c.Call(ctx, "setEDID", setEDIDRequest{EDID: edid}, nil)
+	return c.Call(ctx, "setEDID", SetEDIDRequest{EDID: edid}, nil)
 }
 
 func (c *Client) GetVideoCodecPreference(ctx context.Context) (string, error) {
@@ -71,7 +71,7 @@ func (c *Client) GetVideoCodecPreference(ctx context.Context) (string, error) {
 }
 
 func (c *Client) SetVideoCodecPreference(ctx context.Context, codec string) error {
-	return c.Call(ctx, "setVideoCodecPreference", setCodecPreferenceRequest{Codec: codec}, nil)
+	return c.Call(ctx, "setVideoCodecPreference", SetCodecPreferenceRequest{Codec: codec}, nil)
 }
 
 func (c *Client) GetLocalVersion(ctx context.Context) (LocalVersion, error) {
@@ -107,7 +107,7 @@ func (c *Client) GetBacklightSettings(ctx context.Context) (BacklightSettings, e
 }
 
 func (c *Client) SetBacklightSettings(ctx context.Context, settings BacklightSettings) error {
-	return c.Call(ctx, "setBacklightSettings", setBacklightSettingsRequest{Params: settings}, nil)
+	return c.Call(ctx, "setBacklightSettings", SetBacklightSettingsRequest{Params: settings}, nil)
 }
 
 func (c *Client) GetVideoSleepMode(ctx context.Context) (VideoSleepMode, error) {
@@ -117,7 +117,7 @@ func (c *Client) GetVideoSleepMode(ctx context.Context) (VideoSleepMode, error) 
 }
 
 func (c *Client) SetVideoSleepMode(ctx context.Context, duration int) error {
-	return c.Call(ctx, "setVideoSleepMode", setVideoSleepModeRequest{Duration: duration}, nil)
+	return c.Call(ctx, "setVideoSleepMode", SetVideoSleepModeRequest{Duration: duration}, nil)
 }
 
 func (c *Client) GetMQTTSettings(ctx context.Context) (MQTTSettings, error) {
@@ -127,7 +127,7 @@ func (c *Client) GetMQTTSettings(ctx context.Context) (MQTTSettings, error) {
 }
 
 func (c *Client) SetMQTTSettings(ctx context.Context, settings MQTTSettings) error {
-	return c.Call(ctx, "setMqttSettings", mqttSettingsRequest{Settings: settings}, nil)
+	return c.Call(ctx, "setMqttSettings", MQTTSettingsRequest{Settings: settings}, nil)
 }
 
 func (c *Client) GetMQTTStatus(ctx context.Context) (MQTTStatus, error) {
@@ -138,7 +138,7 @@ func (c *Client) GetMQTTStatus(ctx context.Context) (MQTTStatus, error) {
 
 func (c *Client) TestMQTTConnection(ctx context.Context, settings MQTTSettings) (MQTTTestResult, error) {
 	var result MQTTTestResult
-	err := c.Call(ctx, "testMqttConnection", mqttSettingsRequest{Settings: settings}, &result)
+	err := c.Call(ctx, "testMqttConnection", MQTTSettingsRequest{Settings: settings}, &result)
 	return result, err
 }
 
@@ -149,7 +149,7 @@ func (c *Client) GetAutoUpdateState(ctx context.Context) (bool, error) {
 }
 
 func (c *Client) SetAutoUpdateState(ctx context.Context, enabled bool) error {
-	return c.Call(ctx, "setAutoUpdateState", enabledStateRequest{Enabled: enabled}, nil)
+	return c.Call(ctx, "setAutoUpdateState", EnabledStateRequest{Enabled: enabled}, nil)
 }
 
 func (c *Client) GetNetworkSettings(ctx context.Context) (NetworkSettings, error) {
@@ -159,7 +159,7 @@ func (c *Client) GetNetworkSettings(ctx context.Context) (NetworkSettings, error
 }
 
 func (c *Client) SetNetworkSettings(ctx context.Context, settings NetworkSettings) error {
-	return c.Call(ctx, "setNetworkSettings", networkSettingsRequest{Settings: settings}, nil)
+	return c.Call(ctx, "setNetworkSettings", NetworkSettingsRequest{Settings: settings}, nil)
 }
 
 func (c *Client) GetNetworkState(ctx context.Context) (NetworkState, error) {
@@ -185,7 +185,7 @@ func (c *Client) GetTLSState(ctx context.Context) (TLSState, error) {
 }
 
 func (c *Client) SetTLSState(ctx context.Context, state TLSState) error {
-	return c.Call(ctx, "setTLSState", setTLSStateRequest{State: state}, nil)
+	return c.Call(ctx, "setTLSState", SetTLSStateRequest{State: state}, nil)
 }
 
 func (c *Client) GetUSBEmulationState(ctx context.Context) (bool, error) {
@@ -213,7 +213,7 @@ func (c *Client) GetUSBDevices(ctx context.Context) (USBDevices, error) {
 }
 
 func (c *Client) SetUSBDevices(ctx context.Context, devices USBDevices) error {
-	return c.Call(ctx, "setUsbDevices", usbDevicesRequest{Devices: devices}, nil)
+	return c.Call(ctx, "setUsbDevices", USBDevicesRequest{Devices: devices}, nil)
 }
 
 func (c *Client) GetUSBNetworkConfig(ctx context.Context) (USBNetworkConfig, error) {
@@ -223,7 +223,7 @@ func (c *Client) GetUSBNetworkConfig(ctx context.Context) (USBNetworkConfig, err
 }
 
 func (c *Client) SetUSBNetworkConfig(ctx context.Context, cfg USBNetworkConfig) error {
-	return c.Call(ctx, "setUsbNetworkConfig", usbNetworkConfigRequest{Config: cfg}, nil)
+	return c.Call(ctx, "setUsbNetworkConfig", USBNetworkConfigRequest{Config: cfg}, nil)
 }
 
 func (c *Client) GetDisplayRotation(ctx context.Context) (DisplayRotationState, error) {
@@ -233,7 +233,7 @@ func (c *Client) GetDisplayRotation(ctx context.Context) (DisplayRotationState, 
 }
 
 func (c *Client) SetDisplayRotation(ctx context.Context, rotation string) error {
-	return c.Call(ctx, "setDisplayRotation", setDisplayRotationRequest{
+	return c.Call(ctx, "setDisplayRotation", SetDisplayRotationRequest{
 		Params: DisplayRotationState{Rotation: rotation},
 	}, nil)
 }
@@ -251,7 +251,7 @@ func (c *Client) GetDevChannelState(ctx context.Context) (bool, error) {
 }
 
 func (c *Client) SetDevChannelState(ctx context.Context, enabled bool) error {
-	return c.Call(ctx, "setDevChannelState", enabledStateRequest{Enabled: enabled}, nil)
+	return c.Call(ctx, "setDevChannelState", EnabledStateRequest{Enabled: enabled}, nil)
 }
 
 func (c *Client) GetLocalLoopbackOnly(ctx context.Context) (bool, error) {
@@ -261,7 +261,7 @@ func (c *Client) GetLocalLoopbackOnly(ctx context.Context) (bool, error) {
 }
 
 func (c *Client) SetLocalLoopbackOnly(ctx context.Context, enabled bool) error {
-	return c.Call(ctx, "setLocalLoopbackOnly", enabledStateRequest{Enabled: enabled}, nil)
+	return c.Call(ctx, "setLocalLoopbackOnly", EnabledStateRequest{Enabled: enabled}, nil)
 }
 
 func (c *Client) GetSSHKeyState(ctx context.Context) (string, error) {
@@ -271,7 +271,7 @@ func (c *Client) GetSSHKeyState(ctx context.Context) (string, error) {
 }
 
 func (c *Client) SetSSHKeyState(ctx context.Context, sshKey string) error {
-	return c.Call(ctx, "setSSHKeyState", setSSHKeyStateRequest{SSHKey: sshKey}, nil)
+	return c.Call(ctx, "setSSHKeyState", SetSSHKeyStateRequest{SSHKey: sshKey}, nil)
 }
 
 func (c *Client) GetKeyboardMacros(ctx context.Context) ([]KeyboardMacro, error) {
@@ -281,13 +281,13 @@ func (c *Client) GetKeyboardMacros(ctx context.Context) ([]KeyboardMacro, error)
 }
 
 func (c *Client) SetKeyboardMacros(ctx context.Context, macros []KeyboardMacro) error {
-	return c.Call(ctx, "setKeyboardMacros", keyboardMacrosRequest{
-		Params: keyboardMacrosParams{Macros: macros},
+	return c.Call(ctx, "setKeyboardMacros", KeyboardMacrosRequest{
+		Params: KeyboardMacrosParams{Macros: macros},
 	}, nil)
 }
 
 func (c *Client) SetDeveloperModeState(ctx context.Context, enabled bool) error {
-	return c.Call(ctx, "setDevModeState", enabledStateRequest{Enabled: enabled}, nil)
+	return c.Call(ctx, "setDevModeState", EnabledStateRequest{Enabled: enabled}, nil)
 }
 
 func (c *Client) GetJigglerState(ctx context.Context) (bool, error) {
@@ -297,7 +297,7 @@ func (c *Client) GetJigglerState(ctx context.Context) (bool, error) {
 }
 
 func (c *Client) SetJigglerState(ctx context.Context, enabled bool) error {
-	return c.Call(ctx, "setJigglerState", enabledStateRequest{Enabled: enabled}, nil)
+	return c.Call(ctx, "setJigglerState", EnabledStateRequest{Enabled: enabled}, nil)
 }
 
 func (c *Client) GetJigglerConfig(ctx context.Context) (JigglerConfig, error) {
@@ -307,7 +307,7 @@ func (c *Client) GetJigglerConfig(ctx context.Context) (JigglerConfig, error) {
 }
 
 func (c *Client) SetJigglerConfig(ctx context.Context, cfg JigglerConfig) error {
-	return c.Call(ctx, "setJigglerConfig", jigglerConfigRequest{JigglerConfig: cfg}, nil)
+	return c.Call(ctx, "setJigglerConfig", JigglerConfigRequest{JigglerConfig: cfg}, nil)
 }
 
 func (c *Client) GetKeysDownState(ctx context.Context) (KeysDownState, error) {
@@ -317,5 +317,5 @@ func (c *Client) GetKeysDownState(ctx context.Context) (KeysDownState, error) {
 }
 
 func (c *Client) sendWheelReport(ctx context.Context, wheelY, wheelX int8) error {
-	return c.Call(ctx, "wheelReport", wheelReportRequest{WheelY: int(wheelY), WheelX: int(wheelX)}, nil)
+	return c.Call(ctx, "wheelReport", WheelReportRequest{WheelY: int(wheelY), WheelX: int(wheelX)}, nil)
 }

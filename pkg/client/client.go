@@ -86,6 +86,8 @@ type Client struct {
 	signalMu       sync.Mutex
 	signalMode     SignalingMode
 	statsMu        sync.Mutex
+	videoMu        sync.RWMutex
+	closeMu        sync.Mutex
 	statsHistory   []statsSample
 	disconnectOnce sync.Once
 	lastError      atomic.Value
@@ -195,7 +197,9 @@ func (c *Client) Connect(ctx context.Context) error {
 			c.emitLifecycle(LifecycleEvent{Type: "video_error", Err: err.Error()})
 			return
 		}
+		c.videoMu.Lock()
 		c.videoStream = stream
+		c.videoMu.Unlock()
 		c.emitLifecycle(LifecycleEvent{Type: "video_ready"})
 	})
 	videoTransceiver, err := pc.AddTransceiverFromKind(webrtc.RTPCodecTypeVideo, webrtc.RTPTransceiverInit{
@@ -315,6 +319,9 @@ func (c *Client) handleTransportDisconnect(state webrtc.PeerConnectionState, sou
 }
 
 func (c *Client) Close() error {
+	c.closeMu.Lock()
+	defer c.closeMu.Unlock()
+
 	var err error
 	select {
 	case <-c.closeCh:
@@ -322,10 +329,12 @@ func (c *Client) Close() error {
 		close(c.closeCh)
 	}
 	c.noteTransportDebug("client_close")
+	c.videoMu.Lock()
 	if c.videoStream != nil {
 		c.videoStream.Close()
 		c.videoStream = nil
 	}
+	c.videoMu.Unlock()
 	if c.signalConn != nil {
 		_ = c.signalConn.Close()
 		c.signalConn = nil
@@ -488,6 +497,8 @@ func (c *Client) CancelKeyboardMacro() error {
 }
 
 func (c *Client) VideoStream() *video.Stream {
+	c.videoMu.RLock()
+	defer c.videoMu.RUnlock()
 	return c.videoStream
 }
 
@@ -587,17 +598,19 @@ func (c *Client) HTTPClient() *http.Client {
 }
 
 func (c *Client) LatestFrame() image.Image {
-	if c.videoStream == nil || c.videoStream.Latest() == nil {
+	stream := c.VideoStream()
+	if stream == nil || stream.Latest() == nil {
 		return nil
 	}
-	return c.videoStream.Latest().Image
+	return stream.Latest().Image
 }
 
 func (c *Client) LatestFrameInfo() (image.Image, time.Time) {
-	if c.videoStream == nil {
+	stream := c.VideoStream()
+	if stream == nil {
 		return nil, time.Time{}
 	}
-	frame := c.videoStream.Latest()
+	frame := stream.Latest()
 	if frame == nil {
 		return nil, time.Time{}
 	}

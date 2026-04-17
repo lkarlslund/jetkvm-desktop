@@ -95,13 +95,13 @@ func TestLiveDeviceConnectsAndStreams(t *testing.T) {
 		if testQuality != quality {
 			mutationCtx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 			defer cancel()
-			if err := c.Call(mutationCtx, "setStreamQualityFactor", map[string]any{"factor": testQuality}, nil); err != nil {
+			if err := c.SetStreamQualityFactor(mutationCtx, testQuality); err != nil {
 				t.Fatal(err)
 			}
 			defer func() {
 				restoreCtx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 				defer cancel()
-				_ = c.Call(restoreCtx, "setStreamQualityFactor", map[string]any{"factor": restoreQuality}, nil)
+				_ = c.SetStreamQualityFactor(restoreCtx, restoreQuality)
 			}()
 			var updatedQuality float64
 			if err := c.Call(ctx, "getStreamQualityFactor", nil, &updatedQuality); err != nil {

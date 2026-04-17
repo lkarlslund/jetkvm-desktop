@@ -26,9 +26,10 @@ import (
 )
 
 type Config struct {
-	BaseURL    string
-	Password   string
-	RPCTimeout time.Duration
+	BaseURL                string
+	Password               string
+	RPCTimeout             time.Duration
+	ExperimentalUSBNetwork bool
 }
 
 type App struct {
@@ -2929,6 +2930,9 @@ func (a *App) invokeRenewDHCPLease() {
 }
 
 func (a *App) invokeUSBNetworkSave() {
+	if !a.cfg.ExperimentalUSBNetwork {
+		return
+	}
 	if a.settingsActionPending(settingsGroupUSBNetworkSave) {
 		return
 	}

@@ -32,6 +32,8 @@ jetkvm-desktop http://192.168.1.50
 
 If the device requires a password, the app will ask for it.
 
+The experimental USB-network settings UI is disabled by default because current KVM targets do not support it yet. To expose it at runtime, set `JETKVM_DESKTOP_ENABLE_EXPERIMENTAL_USB_NETWORK=1`.
+
 ## Inside the App
 
 ![jetkvm-desktop settings](docs/settings.png)

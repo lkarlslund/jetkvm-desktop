@@ -12,6 +12,17 @@ import (
 	"github.com/lkarlslund/jetkvm-desktop/pkg/virtualmedia"
 )
 
+func (c *Client) UnmountMedia(ctx context.Context) error {
+	return c.Call(ctx, "unmountImage", nil, nil)
+}
+
+func (c *Client) MountMediaURL(ctx context.Context, url string, mode virtualmedia.Mode) error {
+	return c.Call(ctx, "mountWithHTTP", MountWithHTTPRequest{
+		URL:  url,
+		Mode: mode,
+	}, nil)
+}
+
 func (c *Client) GetVirtualMediaState(ctx context.Context) (*virtualmedia.State, error) {
 	var state *virtualmedia.State
 	if err := c.Call(ctx, "getVirtualMediaState", nil, &state); err != nil {
@@ -27,16 +38,27 @@ func (c *Client) GetStorageSpace(ctx context.Context) (virtualmedia.StorageSpace
 }
 
 func (c *Client) ListStorageFiles(ctx context.Context) ([]virtualmedia.StorageFile, error) {
-	var payload storageFilesResponse
+	var payload StorageFilesResponse
 	if err := c.Call(ctx, "listStorageFiles", nil, &payload); err != nil {
 		return nil, err
 	}
 	return payload.Files, nil
 }
 
+func (c *Client) DeleteStorageFile(ctx context.Context, filename string) error {
+	return c.Call(ctx, "deleteStorageFile", DeleteStorageFileRequest{Filename: filename}, nil)
+}
+
+func (c *Client) MountStorageFile(ctx context.Context, filename string, mode virtualmedia.Mode) error {
+	return c.Call(ctx, "mountWithStorage", MountWithStorageRequest{
+		Filename: filename,
+		Mode:     mode,
+	}, nil)
+}
+
 func (c *Client) StartStorageFileUpload(ctx context.Context, filename string, size int64) (virtualmedia.UploadStart, error) {
 	var start virtualmedia.UploadStart
-	err := c.Call(ctx, "startStorageFileUpload", storageUploadRequest{
+	err := c.Call(ctx, "startStorageFileUpload", StorageUploadRequest{
 		Filename: filename,
 		Size:     size,
 	}, &start)

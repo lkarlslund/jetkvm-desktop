@@ -65,3 +65,32 @@ func TestResolvePasswordRejectsConflictingSources(t *testing.T) {
 		t.Fatal("expected conflict error")
 	}
 }
+
+func TestEnvEnabled(t *testing.T) {
+	tests := []struct {
+		name  string
+		value string
+		want  bool
+	}{
+		{name: "empty", value: "", want: false},
+		{name: "numeric true", value: "1", want: true},
+		{name: "text true", value: "true", want: true},
+		{name: "mixed case true", value: "TrUe", want: true},
+		{name: "false", value: "false", want: false},
+		{name: "other", value: "yes", want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := envEnabled(experimentalUSBNetworkEnv, func(name string) string {
+				if name != experimentalUSBNetworkEnv {
+					t.Fatalf("env name = %q, want %q", name, experimentalUSBNetworkEnv)
+				}
+				return tt.value
+			})
+			if got != tt.want {
+				t.Fatalf("envEnabled(%q) = %t, want %t", tt.value, got, tt.want)
+			}
+		})
+	}
+}

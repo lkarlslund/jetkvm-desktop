@@ -165,7 +165,7 @@ func TestClientConnectsAndRPCWorks(t *testing.T) {
 	if quality != 0.75 {
 		t.Fatalf("expected default quality 0.75, got %v", quality)
 	}
-	if err := c.Call(waitCtx, "setStreamQualityFactor", map[string]any{"factor": 0.5}, nil); err != nil {
+	if err := c.SetStreamQualityFactor(waitCtx, 0.5); err != nil {
 		t.Fatal(err)
 	}
 	if err := c.Call(waitCtx, "getStreamQualityFactor", nil, &quality); err != nil {
@@ -232,7 +232,7 @@ func TestClientConnectsAndRPCWorks(t *testing.T) {
 		t.Fatal("expected wheel input via rpc wheelReport")
 	}
 
-	if err := c.Call(waitCtx, "reboot", map[string]any{"force": false}, nil); err != nil {
+	if err := c.Reboot(waitCtx); err != nil {
 		t.Fatal(err)
 	}
 

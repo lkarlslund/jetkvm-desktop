@@ -213,6 +213,26 @@ func TestSectionLoadSeqMonotonic(t *testing.T) {
 	}
 }
 
+func TestNewDefaultsExperimentalUSBNetworkDisabled(t *testing.T) {
+	app, err := New(Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if app.cfg.ExperimentalUSBNetwork {
+		t.Fatal("expected experimental USB network to default to disabled")
+	}
+}
+
+func TestNewPreservesExperimentalUSBNetworkFlag(t *testing.T) {
+	app, err := New(Config{ExperimentalUSBNetwork: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !app.cfg.ExperimentalUSBNetwork {
+		t.Fatal("expected experimental USB network flag to be preserved")
+	}
+}
+
 func TestPreferencesNormalizeChromeAnchor(t *testing.T) {
 	prefs := Preferences{ChromeAnchor: ChromeAnchor(255)}
 	prefs.normalize()

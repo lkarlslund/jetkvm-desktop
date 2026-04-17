@@ -77,7 +77,6 @@ func (s *Stream) Close() {
 		if s.onClose != nil {
 			_ = s.onClose()
 		}
-		close(s.frameCh)
 	})
 }
 

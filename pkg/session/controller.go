@@ -184,7 +184,9 @@ func (c *Controller) Reboot() error {
 	if current == nil {
 		return errors.New("client not connected")
 	}
-	return current.Reboot(withTimeout(context.Background(), c.cfg.MutationTimeout))
+	ctx, cancel := context.WithTimeout(context.Background(), c.cfg.MutationTimeout)
+	defer cancel()
+	return current.Reboot(ctx)
 }
 
 func (c *Controller) TryUpdate() error {
@@ -192,7 +194,9 @@ func (c *Controller) TryUpdate() error {
 	if current == nil {
 		return errors.New("client not connected")
 	}
-	return current.TryUpdate(withTimeout(context.Background(), c.cfg.MutationTimeout))
+	ctx, cancel := context.WithTimeout(context.Background(), c.cfg.MutationTimeout)
+	defer cancel()
+	return current.TryUpdate(ctx)
 }
 
 func (c *Controller) FactoryReset() error {
@@ -200,7 +204,9 @@ func (c *Controller) FactoryReset() error {
 	if current == nil {
 		return errors.New("client not connected")
 	}
-	return current.FactoryReset(withTimeout(context.Background(), c.cfg.MutationTimeout))
+	ctx, cancel := context.WithTimeout(context.Background(), c.cfg.MutationTimeout)
+	defer cancel()
+	return current.FactoryReset(ctx)
 }
 
 func (c *Controller) SetQuality(value float64) error {
@@ -471,7 +477,9 @@ func (c *Controller) CreateLocalPassword(password string) error {
 	if current == nil {
 		return errors.New("client not connected")
 	}
-	return current.CreateLocalPassword(withTimeout(context.Background(), c.cfg.MutationTimeout), password)
+	ctx, cancel := context.WithTimeout(context.Background(), c.cfg.MutationTimeout)
+	defer cancel()
+	return current.CreateLocalPassword(ctx, password)
 }
 
 func (c *Controller) UpdateLocalPassword(oldPassword, newPassword string) error {
@@ -479,7 +487,9 @@ func (c *Controller) UpdateLocalPassword(oldPassword, newPassword string) error 
 	if current == nil {
 		return errors.New("client not connected")
 	}
-	return current.UpdateLocalPassword(withTimeout(context.Background(), c.cfg.MutationTimeout), oldPassword, newPassword)
+	ctx, cancel := context.WithTimeout(context.Background(), c.cfg.MutationTimeout)
+	defer cancel()
+	return current.UpdateLocalPassword(ctx, oldPassword, newPassword)
 }
 
 func (c *Controller) DeleteLocalPassword(password string) error {
@@ -487,7 +497,9 @@ func (c *Controller) DeleteLocalPassword(password string) error {
 	if current == nil {
 		return errors.New("client not connected")
 	}
-	return current.DeleteLocalPassword(withTimeout(context.Background(), c.cfg.MutationTimeout), password)
+	ctx, cancel := context.WithTimeout(context.Background(), c.cfg.MutationTimeout)
+	defer cancel()
+	return current.DeleteLocalPassword(ctx, password)
 }
 
 func (c *Controller) GetUSBEmulationState(ctx context.Context) (bool, error) {
@@ -634,7 +646,9 @@ func (c *Controller) RenewDHCPLease() error {
 	if current == nil {
 		return errors.New("client not connected")
 	}
-	return current.RenewDHCPLease(withTimeout(context.Background(), c.cfg.MutationTimeout))
+	ctx, cancel := context.WithTimeout(context.Background(), c.cfg.MutationTimeout)
+	defer cancel()
+	return current.RenewDHCPLease(ctx)
 }
 
 func (c *Controller) GetDeveloperModeState(ctx context.Context) (*bool, error) {
@@ -955,7 +969,9 @@ func (c *Controller) SetMQTTSettings(settings MQTTSettings) error {
 	if current == nil {
 		return errors.New("client not connected")
 	}
-	return current.SetMQTTSettings(withTimeout(context.Background(), c.cfg.MutationTimeout), client.MQTTSettings{
+	ctx, cancel := context.WithTimeout(context.Background(), c.cfg.MutationTimeout)
+	defer cancel()
+	return current.SetMQTTSettings(ctx, client.MQTTSettings{
 		Enabled:           settings.Enabled,
 		Broker:            settings.Broker,
 		Port:              settings.Port,
@@ -990,7 +1006,9 @@ func (c *Controller) TestMQTTConnection(settings MQTTSettings) (MQTTTestResult, 
 	if current == nil {
 		return MQTTTestResult{}, errors.New("client not connected")
 	}
-	result, err := current.TestMQTTConnection(withTimeout(context.Background(), c.cfg.MutationTimeout), client.MQTTSettings{
+	ctx, cancel := context.WithTimeout(context.Background(), c.cfg.MutationTimeout)
+	defer cancel()
+	result, err := current.TestMQTTConnection(ctx, client.MQTTSettings{
 		Enabled:           settings.Enabled,
 		Broker:            settings.Broker,
 		Port:              settings.Port,
@@ -1164,7 +1182,9 @@ func (c *Controller) SetSSHKeyState(sshKey string) error {
 	if current == nil {
 		return errors.New("client not connected")
 	}
-	return current.SetSSHKeyState(withTimeout(context.Background(), c.cfg.MutationTimeout), sshKey)
+	ctx, cancel := context.WithTimeout(context.Background(), c.cfg.MutationTimeout)
+	defer cancel()
+	return current.SetSSHKeyState(ctx, sshKey)
 }
 
 func (c *Controller) SetKeyboardMacros(macros []KeyboardMacro) error {
@@ -1189,7 +1209,9 @@ func (c *Controller) SetKeyboardMacros(macros []KeyboardMacro) error {
 			SortOrder: macro.SortOrder,
 		})
 	}
-	return current.SetKeyboardMacros(withTimeout(context.Background(), c.cfg.MutationTimeout), items)
+	ctx, cancel := context.WithTimeout(context.Background(), c.cfg.MutationTimeout)
+	defer cancel()
+	return current.SetKeyboardMacros(ctx, items)
 }
 
 func (c *Controller) GetJigglerState(ctx context.Context) (bool, error) {
@@ -1263,7 +1285,13 @@ func (c *Controller) GetVirtualMediaState(ctx context.Context) (*virtualmedia.St
 }
 
 func (c *Controller) UnmountMedia() error {
-	return c.mutate("unmountImage", nil, nil)
+	current := c.clientIfConnected()
+	if current == nil {
+		return errors.New("client not connected")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), c.cfg.MutationTimeout)
+	defer cancel()
+	return current.UnmountMedia(ctx)
 }
 
 func (c *Controller) MountMediaURL(url string, mode virtualmedia.Mode) error {
@@ -1273,10 +1301,13 @@ func (c *Controller) MountMediaURL(url string, mode virtualmedia.Mode) error {
 	if mode == "" {
 		return errors.New("mode is required")
 	}
-	return c.mutate("mountWithHTTP", map[string]any{
-		"url":  strings.TrimSpace(url),
-		"mode": mode,
-	}, nil)
+	current := c.clientIfConnected()
+	if current == nil {
+		return errors.New("client not connected")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), c.cfg.MutationTimeout)
+	defer cancel()
+	return current.MountMediaURL(ctx, strings.TrimSpace(url), mode)
 }
 
 func (c *Controller) GetStorageSpace(ctx context.Context) (virtualmedia.StorageSpace, error) {
@@ -1299,7 +1330,13 @@ func (c *Controller) DeleteStorageFile(filename string) error {
 	if strings.TrimSpace(filename) == "" {
 		return errors.New("filename is required")
 	}
-	return c.mutate("deleteStorageFile", map[string]any{"filename": filename}, nil)
+	current := c.clientIfConnected()
+	if current == nil {
+		return errors.New("client not connected")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), c.cfg.MutationTimeout)
+	defer cancel()
+	return current.DeleteStorageFile(ctx, filename)
 }
 
 func (c *Controller) MountStorageFile(filename string, mode virtualmedia.Mode) error {
@@ -1309,10 +1346,13 @@ func (c *Controller) MountStorageFile(filename string, mode virtualmedia.Mode) e
 	if mode == "" {
 		return errors.New("mode is required")
 	}
-	return c.mutate("mountWithStorage", map[string]any{
-		"filename": filename,
-		"mode":     mode,
-	}, nil)
+	current := c.clientIfConnected()
+	if current == nil {
+		return errors.New("client not connected")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), c.cfg.MutationTimeout)
+	defer cancel()
+	return current.MountStorageFile(ctx, filename, mode)
 }
 
 func (c *Controller) UploadStorageFile(path string, progress func(virtualmedia.UploadProgress)) error {
@@ -1337,7 +1377,8 @@ func (c *Controller) UploadStorageFile(path string, progress func(virtualmedia.U
 	}
 	defer file.Close()
 
-	uploadCtx := withTimeout(context.Background(), 30*time.Minute)
+	uploadCtx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+	defer cancel()
 	start, err := current.StartStorageFileUpload(uploadCtx, filepath.Base(path), info.Size())
 	if err != nil {
 		return err
@@ -1499,7 +1540,10 @@ func (c *Controller) run(ctx context.Context) {
 			continue
 		}
 
-		if err := cl.WaitForHID(withTimeout(ctx, 5*time.Second)); err != nil {
+		waitCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		err = cl.WaitForHID(waitCtx)
+		cancel()
+		if err != nil {
 			c.setConnectError(err)
 			if !c.cfg.Reconnect || ctx.Err() != nil {
 				return
@@ -1700,18 +1744,6 @@ func (c *Controller) forceDisconnect(ctx context.Context) error {
 	return current.ForceDisconnect(ctx)
 }
 
-func (c *Controller) call(ctx context.Context, method string, params map[string]any, out any) error {
-	current := c.clientIfConnected()
-	if current == nil {
-		return errors.New("client not connected")
-	}
-	return current.Call(ctx, method, params, out)
-}
-
-func (c *Controller) mutate(method string, params map[string]any, out any) error {
-	return c.call(withTimeout(context.Background(), c.cfg.MutationTimeout), method, params, out)
-}
-
 func (c *Controller) mutateAndConfirm(mutate func(context.Context) error, confirm func(context.Context) (bool, error)) error {
 	ctx, cancel := context.WithTimeout(context.Background(), c.cfg.MutationTimeout)
 	defer cancel()
@@ -1730,18 +1762,24 @@ func (c *Controller) mutateAndConfirm(mutate func(context.Context) error, confir
 			if err == nil {
 				return nil
 			}
-			confirmed, confirmErr := confirm(withTimeout(context.Background(), c.cfg.RPCTimeout))
+			confirmCtx, confirmCancel := context.WithTimeout(context.Background(), c.cfg.RPCTimeout)
+			confirmed, confirmErr := confirm(confirmCtx)
+			confirmCancel()
 			if confirmErr == nil && confirmed {
 				return nil
 			}
 			return err
 		case <-ticker.C:
-			confirmed, err := confirm(withTimeout(context.Background(), c.cfg.RPCTimeout))
+			confirmCtx, confirmCancel := context.WithTimeout(context.Background(), c.cfg.RPCTimeout)
+			confirmed, err := confirm(confirmCtx)
+			confirmCancel()
 			if err == nil && confirmed {
 				return nil
 			}
 		case <-ctx.Done():
-			confirmed, err := confirm(withTimeout(context.Background(), c.cfg.RPCTimeout))
+			confirmCtx, confirmCancel := context.WithTimeout(context.Background(), c.cfg.RPCTimeout)
+			confirmed, err := confirm(confirmCtx)
+			confirmCancel()
 			if err == nil && confirmed {
 				return nil
 			}
@@ -1767,15 +1805,6 @@ func sleepWithContext(ctx context.Context, d time.Duration) bool {
 	case <-timer.C:
 		return true
 	}
-}
-
-func withTimeout(ctx context.Context, d time.Duration) context.Context {
-	timeoutCtx, cancel := context.WithTimeout(ctx, d)
-	go func() {
-		<-timeoutCtx.Done()
-		cancel()
-	}()
-	return timeoutCtx
 }
 
 func sessionLocalAuthMode(mode auth.LocalAuthMode) LocalAuthMode {

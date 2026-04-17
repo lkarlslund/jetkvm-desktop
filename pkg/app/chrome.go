@@ -1180,15 +1180,17 @@ func (a *App) loadSettingsSection(section settingsSection, seq uint64) error {
 		} else {
 			log.Debug().Err(callErr).Str("section", string(section)).Msg("failed to load USB device set")
 		}
-		if usbNetwork, callErr := a.ctrl.GetUSBNetworkConfig(ctx); callErr == nil {
-			state.State.USBNetwork = &usbNetwork
-			a.mu.Lock()
-			if a.sectionLoadSeq[section] == seq {
-				a.syncUSBNetworkEditorLocked(usbNetwork)
+		if a.cfg.ExperimentalUSBNetwork {
+			if usbNetwork, callErr := a.ctrl.GetUSBNetworkConfig(ctx); callErr == nil {
+				state.State.USBNetwork = &usbNetwork
+				a.mu.Lock()
+				if a.sectionLoadSeq[section] == seq {
+					a.syncUSBNetworkEditorLocked(usbNetwork)
+				}
+				a.mu.Unlock()
+			} else {
+				log.Debug().Err(callErr).Str("section", string(section)).Msg("failed to load USB network config")
 			}
-			a.mu.Unlock()
-		} else {
-			log.Debug().Err(callErr).Str("section", string(section)).Msg("failed to load USB network config")
 		}
 		if rotation, callErr := a.ctrl.GetDisplayRotation(ctx); callErr == nil {
 			state.State.DisplayRotation = rotation
@@ -1211,7 +1213,6 @@ func (a *App) loadSettingsSection(section settingsSection, seq uint64) error {
 		if state.State.USBEmulation == nil &&
 			!state.USBConfigLoaded &&
 			!state.USBDevicesLoaded &&
-			state.State.USBNetwork == nil &&
 			!state.DisplayRotationLoaded &&
 			!state.BacklightLoaded &&
 			!state.VideoSleepLoaded {
@@ -2318,7 +2319,7 @@ func (a *App) settingsHardwareBody() ui.Element {
 	}
 
 	children := []ui.Child{ui.Fixed(settingsTwoPane(settingsCardElement("Display", ui.Column{Children: displayChildren}), 48, settingsCardElement("USB", ui.Column{Children: usbChildren}), 52))}
-	if state.State.USBNetwork != nil || a.usbNetworkEditorLoaded {
+	if a.cfg.ExperimentalUSBNetwork && (state.State.USBNetwork != nil || a.usbNetworkEditorLoaded) {
 		usbNetworkState := a.settingsAction(settingsGroupUSBNetworkSave)
 		protocolEditable := a.usbNetworkEditor.HostPreset == "custom"
 		usbNetworkChildren := []ui.Child{

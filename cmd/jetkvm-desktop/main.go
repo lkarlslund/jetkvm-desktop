@@ -18,6 +18,7 @@ import (
 )
 
 const defaultPasswordEnv = "JETKVM_PASSWORD"
+const experimentalUSBNetworkEnv = "JETKVM_DESKTOP_ENABLE_EXPERIMENTAL_USB_NETWORK"
 
 func readPassword(r io.Reader) (string, error) {
 	data, err := io.ReadAll(r)
@@ -37,6 +38,15 @@ func resolvePassword(passwordFromStdin bool, passwordEnv string, stdin io.Reader
 		return getenv(passwordEnv), nil
 	default:
 		return getenv(defaultPasswordEnv), nil
+	}
+}
+
+func envEnabled(name string, getenv func(string) string) bool {
+	switch strings.ToLower(strings.TrimSpace(getenv(name))) {
+	case "1", "true":
+		return true
+	default:
+		return false
 	}
 }
 
@@ -63,6 +73,7 @@ func main() {
 			if err := logging.Configure(logLevel); err != nil {
 				return err
 			}
+			cfg.ExperimentalUSBNetwork = envEnabled(experimentalUSBNetworkEnv, os.Getenv)
 
 			clientApp, err := app.New(cfg)
 			if err != nil {
@@ -83,7 +94,7 @@ func main() {
 	}
 	rootCmd.Flags().BoolVar(&passwordFromStdin, "password-stdin", false, "Read password for local auth mode from stdin")
 	rootCmd.Flags().StringVar(&passwordEnv, "password-env", "", fmt.Sprintf("Read password for local auth mode from the named environment variable (default fallback: %s)", defaultPasswordEnv))
-	rootCmd.Flags().StringVar(&logLevel, "log-level", "", "Log level: error, warn, info, debug, trace (default: error; env: JETKVM_DESKTOP_LOG_LEVEL)")
+	rootCmd.Flags().StringVar(&logLevel, "log-level", "", fmt.Sprintf("Log level: error, warn, info, debug, trace (default: error; env: JETKVM_DESKTOP_LOG_LEVEL; experimental USB network UI env: %s)", experimentalUSBNetworkEnv))
 	rootCmd.Flags().DurationVar(&cfg.RPCTimeout, "rpc-timeout", 5*time.Second, "Timeout for JSON-RPC requests")
 
 	if err := rootCmd.Execute(); err != nil {

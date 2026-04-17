@@ -17,6 +17,7 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/pion/webrtc/v4"
 
+	"github.com/lkarlslund/jetkvm-desktop/pkg/client"
 	"github.com/lkarlslund/jetkvm-desktop/pkg/logging"
 	"github.com/lkarlslund/jetkvm-desktop/pkg/protocol/hidrpc"
 	"github.com/lkarlslund/jetkvm-desktop/pkg/protocol/jsonrpc"
@@ -71,23 +72,23 @@ type DeviceState struct {
 	LoopbackOnly        bool
 	SSHKey              string
 	JigglerEnabled      bool
-	JigglerConfig       map[string]any
+	JigglerConfig       client.JigglerConfig
 	TLSMode             string
 	TLSCertificate      string
 	TLSPrivateKey       string
 	DisplayRotation     string
-	BacklightSettings   map[string]any
+	BacklightSettings   client.BacklightSettings
 	VideoSleepDuration  int
 	USBEmulation        bool
-	USBConfig           map[string]any
-	USBDevices          map[string]any
-	USBNetworkConfig    map[string]any
-	NetworkSettings     map[string]any
-	NetworkState        map[string]any
-	MQTTSettings        map[string]any
+	USBConfig           client.USBConfig
+	USBDevices          client.USBDevices
+	USBNetworkConfig    client.USBNetworkConfig
+	NetworkSettings     client.NetworkSettings
+	NetworkState        client.NetworkState
+	MQTTSettings        client.MQTTSettings
 	MQTTConnected       bool
 	MQTTError           string
-	KeyboardMacros      []map[string]any
+	KeyboardMacros      []client.KeyboardMacro
 }
 
 type InputRecord struct {
@@ -166,106 +167,106 @@ func NewServer(cfg Config) (*Server, error) {
 			LoopbackOnly:        false,
 			SSHKey:              "",
 			JigglerEnabled:      false,
-			JigglerConfig: map[string]any{
-				"inactivity_limit_seconds": 60,
-				"jitter_percentage":        25,
-				"schedule_cron_tab":        "0 * * * * *",
+			JigglerConfig: client.JigglerConfig{
+				InactivityLimitSeconds: 60,
+				JitterPercentage:       25,
+				ScheduleCronTab:        "0 * * * * *",
 			},
 			TLSMode:         "disabled",
 			TLSCertificate:  "",
 			TLSPrivateKey:   "",
 			DisplayRotation: "270",
-			BacklightSettings: map[string]any{
-				"max_brightness": 64,
-				"dim_after":      300,
-				"off_after":      600,
+			BacklightSettings: client.BacklightSettings{
+				MaxBrightness: 64,
+				DimAfter:      300,
+				OffAfter:      600,
 			},
 			VideoSleepDuration: -1,
 			USBEmulation:       true,
-			USBConfig: map[string]any{
-				"vendor_id":     "0xCafe",
-				"product_id":    "0x4000",
-				"serial_number": "JETKVM-DESKTOP",
-				"manufacturer":  "JetKVM",
-				"product":       "JetKVM Default",
+			USBConfig: client.USBConfig{
+				VendorID:     "0xCafe",
+				ProductID:    "0x4000",
+				SerialNumber: "JETKVM-DESKTOP",
+				Manufacturer: "JetKVM",
+				Product:      "JetKVM Default",
 			},
-			USBDevices: map[string]any{
-				"keyboard":       true,
-				"absolute_mouse": true,
-				"relative_mouse": true,
-				"mass_storage":   true,
-				"serial_console": false,
-				"network":        false,
+			USBDevices: client.USBDevices{
+				Keyboard:      true,
+				AbsoluteMouse: true,
+				RelativeMouse: true,
+				MassStorage:   true,
+				SerialConsole: false,
+				Network:       false,
 			},
-			USBNetworkConfig: map[string]any{
-				"enabled":           false,
-				"host_preset":       "auto",
-				"protocol":          "ncm",
-				"sharing_mode":      "nat",
-				"uplink_mode":       "auto",
-				"uplink_interface":  "",
-				"ipv4_subnet_cidr":  "10.55.0.0/24",
-				"dhcp_enabled":      true,
-				"dns_proxy_enabled": true,
+			USBNetworkConfig: client.USBNetworkConfig{
+				Enabled:         false,
+				HostPreset:      "auto",
+				Protocol:        "ncm",
+				SharingMode:     "nat",
+				UplinkMode:      "auto",
+				UplinkInterface: "",
+				IPv4SubnetCIDR:  "10.55.0.0/24",
+				DHCPEnabled:     true,
+				DNSProxyEnabled: true,
 			},
-			NetworkSettings: map[string]any{
-				"dhcp_client":    "dhcpcd",
-				"hostname":       "jetkvm-emulator",
-				"domain":         "lab.example",
-				"http_proxy":     "",
-				"ipv4_mode":      "dhcp",
-				"mdns_mode":      "auto",
-				"ipv6_mode":      "slaac",
-				"time_sync_mode": "ntp_only",
-				"ipv4_static": map[string]any{
-					"address": "192.168.1.50",
-					"netmask": "255.255.255.0",
-					"gateway": "192.168.1.1",
-					"dns":     []string{"1.1.1.1", "8.8.8.8"},
+			NetworkSettings: client.NetworkSettings{
+				DHCPClient:   "dhcpcd",
+				Hostname:     "jetkvm-emulator",
+				Domain:       "lab.example",
+				HTTPProxy:    "",
+				IPv4Mode:     "dhcp",
+				MDNSMode:     "auto",
+				IPv6Mode:     "slaac",
+				TimeSyncMode: "ntp_only",
+				IPv4Static: &client.IPv4StaticConfig{
+					Address: "192.168.1.50",
+					Netmask: "255.255.255.0",
+					Gateway: "192.168.1.1",
+					DNS:     []string{"1.1.1.1", "8.8.8.8"},
 				},
-				"ipv6_static": map[string]any{
-					"prefix":  "2001:db8::50/64",
-					"gateway": "2001:db8::1",
-					"dns":     []string{"2606:4700:4700::1111"},
+				IPv6Static: &client.IPv6StaticConfig{
+					Prefix:  "2001:db8::50/64",
+					Gateway: "2001:db8::1",
+					DNS:     []string{"2606:4700:4700::1111"},
 				},
-				"time_sync_ntp_servers": []string{"0.pool.ntp.org", "1.pool.ntp.org"},
-				"time_sync_http_urls":   []string{"https://time.cloudflare.com"},
+				TimeSyncNTPServers: []string{"0.pool.ntp.org", "1.pool.ntp.org"},
+				TimeSyncHTTPUrls:   []string{"https://time.cloudflare.com"},
 			},
-			NetworkState: map[string]any{
-				"interface_name":  "eth0",
-				"mac_address":     "02:42:ac:11:00:02",
-				"ipv4":            "192.168.1.50",
-				"ipv4_addresses":  []string{"192.168.1.50/24"},
-				"ipv6":            "2001:db8::50",
-				"ipv6_addresses":  []map[string]any{{"address": "2001:db8::50", "prefix": "64"}},
-				"ipv6_link_local": "fe80::1",
-				"ipv6_gateway":    "2001:db8::1",
-				"hostname":        "jetkvm-emulator",
-				"dhcp_lease": map[string]any{
-					"ip":           "192.168.1.50",
-					"netmask":      "255.255.255.0",
-					"dns_servers":  []string{"1.1.1.1", "8.8.8.8"},
-					"domain":       "lab.example",
-					"routers":      []string{"192.168.1.1"},
-					"server_id":    "192.168.1.1",
-					"lease_expiry": time.Now().Add(8 * time.Hour),
-					"dhcp_client":  "dhcpcd",
+			NetworkState: client.NetworkState{
+				InterfaceName: "eth0",
+				MACAddress:    "02:42:ac:11:00:02",
+				IPv4:          "192.168.1.50",
+				IPv4Addresses: []string{"192.168.1.50/24"},
+				IPv6:          "2001:db8::50",
+				IPv6Addresses: []client.IPv6Address{{Address: "2001:db8::50", Prefix: "64"}},
+				IPv6LinkLocal: "fe80::1",
+				IPv6Gateway:   "2001:db8::1",
+				Hostname:      "jetkvm-emulator",
+				DHCPLease: &client.DHCPLease{
+					IP:          "192.168.1.50",
+					Netmask:     "255.255.255.0",
+					DNSServers:  []string{"1.1.1.1", "8.8.8.8"},
+					Domain:      "lab.example",
+					Routers:     []string{"192.168.1.1"},
+					ServerID:    "192.168.1.1",
+					LeaseExpiry: time.Now().Add(8 * time.Hour),
+					DHCPClient:  "dhcpcd",
 				},
 			},
-			MQTTSettings: map[string]any{
-				"enabled":             false,
-				"broker":              "mqtt.local",
-				"port":                1883,
-				"username":            "",
-				"password":            "",
-				"base_topic":          "jetkvm",
-				"use_tls":             false,
-				"tls_insecure":        false,
-				"enable_ha_discovery": false,
-				"enable_actions":      false,
-				"debounce_ms":         0,
+			MQTTSettings: client.MQTTSettings{
+				Enabled:           false,
+				Broker:            "mqtt.local",
+				Port:              1883,
+				Username:          "",
+				Password:          "",
+				BaseTopic:         "jetkvm",
+				UseTLS:            false,
+				TLSInsecure:       false,
+				EnableHADiscovery: false,
+				EnableActions:     false,
+				DebounceMs:        0,
 			},
-			KeyboardMacros: []map[string]any{},
+			KeyboardMacros: []client.KeyboardMacro{},
 		},
 		inputs: make([]InputRecord, 0, 32),
 		storage: map[string]storedFile{
@@ -301,7 +302,9 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	s.mu.Lock()
 	s.listener = ln
+	s.mu.Unlock()
 
 	errCh := make(chan error, 1)
 	go func() {
@@ -328,6 +331,8 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 }
 
 func (s *Server) BaseURL() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	if s.listener == nil {
 		return ""
 	}
@@ -876,37 +881,97 @@ func (s *session) sendEvent(method string, params any) error {
 }
 
 func (s *session) closeTransport() {
-	if s.rpc != nil {
-		_ = s.rpc.Close()
-	}
-	if s.hid != nil {
-		_ = s.hid.Close()
-	}
-	if s.hidOrdered != nil {
-		_ = s.hidOrdered.Close()
-	}
-	if s.hidLoose != nil {
-		_ = s.hidLoose.Close()
-	}
 	if s.pc != nil {
 		_ = s.pc.Close()
 	}
 }
 
-func requestParams(raw any) map[string]any {
-	params, _ := raw.(map[string]any)
-	if params == nil {
-		return map[string]any{}
+func decodeParams[T any](raw any) (T, error) {
+	var out T
+	if raw == nil {
+		return out, nil
 	}
-	return params
+	data, err := json.Marshal(raw)
+	if err != nil {
+		return out, err
+	}
+	if err := json.Unmarshal(data, &out); err != nil {
+		return out, err
+	}
+	return out, nil
 }
 
-func mapsClone(src map[string]any) map[string]any {
-	dst := make(map[string]any, len(src))
-	for key, value := range src {
-		dst[key] = value
+func cloneStrings(src []string) []string {
+	if src == nil {
+		return nil
+	}
+	return append([]string(nil), src...)
+}
+
+func cloneKeyboardMacros(src []client.KeyboardMacro) []client.KeyboardMacro {
+	if src == nil {
+		return nil
+	}
+	out := make([]client.KeyboardMacro, 0, len(src))
+	for _, macro := range src {
+		steps := make([]client.KeyboardMacroStep, 0, len(macro.Steps))
+		for _, step := range macro.Steps {
+			steps = append(steps, client.KeyboardMacroStep{
+				Keys:      cloneStrings(step.Keys),
+				Modifiers: cloneStrings(step.Modifiers),
+				Delay:     step.Delay,
+			})
+		}
+		out = append(out, client.KeyboardMacro{
+			ID:        macro.ID,
+			Name:      macro.Name,
+			Steps:     steps,
+			SortOrder: macro.SortOrder,
+		})
+	}
+	return out
+}
+
+func cloneNetworkSettings(src client.NetworkSettings) client.NetworkSettings {
+	dst := src
+	if src.IPv4Static != nil {
+		ipv4 := *src.IPv4Static
+		ipv4.DNS = cloneStrings(src.IPv4Static.DNS)
+		dst.IPv4Static = &ipv4
+	}
+	if src.IPv6Static != nil {
+		ipv6 := *src.IPv6Static
+		ipv6.DNS = cloneStrings(src.IPv6Static.DNS)
+		dst.IPv6Static = &ipv6
+	}
+	dst.LLDPTxTLVs = cloneStrings(src.LLDPTxTLVs)
+	dst.TimeSyncOrdering = cloneStrings(src.TimeSyncOrdering)
+	dst.TimeSyncNTPServers = cloneStrings(src.TimeSyncNTPServers)
+	dst.TimeSyncHTTPUrls = cloneStrings(src.TimeSyncHTTPUrls)
+	return dst
+}
+
+func cloneNetworkState(src client.NetworkState) client.NetworkState {
+	dst := src
+	dst.IPv4Addresses = cloneStrings(src.IPv4Addresses)
+	if src.DHCPLease != nil {
+		lease := *src.DHCPLease
+		lease.DNSServers = cloneStrings(src.DHCPLease.DNSServers)
+		lease.NTPServers = cloneStrings(src.DHCPLease.NTPServers)
+		lease.Routers = cloneStrings(src.DHCPLease.Routers)
+		dst.DHCPLease = &lease
+	}
+	if src.IPv6Addresses != nil {
+		dst.IPv6Addresses = append([]client.IPv6Address(nil), src.IPv6Addresses...)
 	}
 	return dst
+}
+
+func keysDownState(modifier byte, keys []byte) client.KeysDownState {
+	return client.KeysDownState{
+		Modifier: modifier,
+		Keys:     append([]byte(nil), keys...),
+	}
 }
 
 func (s *session) handleRPC(data []byte) error {
@@ -925,7 +990,6 @@ func (s *session) handleRPC(data []byte) error {
 		return nil
 	}
 	applyButDrop := s.serverRef.cfg.Faults.ApplyButDropRPCMethod
-	params := requestParams(req.Params)
 	const mqttPasswordMask = "********"
 
 	var resp jsonrpc.Response
@@ -937,110 +1001,106 @@ func (s *session) handleRPC(data []byte) error {
 	case "getVideoState":
 		resp = jsonrpc.NewResponse(req.ID, s.serverRef.state.VideoState)
 	case "getNetworkSettings":
-		resp = jsonrpc.NewResponse(req.ID, mapsClone(s.serverRef.state.NetworkSettings))
+		resp = jsonrpc.NewResponse(req.ID, cloneNetworkSettings(s.serverRef.state.NetworkSettings))
 	case "getNetworkState":
-		resp = jsonrpc.NewResponse(req.ID, mapsClone(s.serverRef.state.NetworkState))
+		resp = jsonrpc.NewResponse(req.ID, cloneNetworkState(s.serverRef.state.NetworkState))
 	case "renewDHCPLease":
-		if lease, ok := s.serverRef.state.NetworkState["dhcp_lease"].(map[string]any); ok {
-			next := mapsClone(lease)
-			next["lease_expiry"] = time.Now().Add(8 * time.Hour)
-			s.serverRef.state.NetworkState["dhcp_lease"] = next
+		if s.serverRef.state.NetworkState.DHCPLease != nil {
+			lease := *s.serverRef.state.NetworkState.DHCPLease
+			lease.LeaseExpiry = time.Now().Add(8 * time.Hour)
+			s.serverRef.state.NetworkState.DHCPLease = &lease
 		}
 		resp = jsonrpc.NewResponse(req.ID, true)
 	case "getPublicIPAddresses":
-		resp = jsonrpc.NewResponse(req.ID, []map[string]any{
-			{"ip": "198.51.100.10", "last_updated": time.Now().Add(-4 * time.Minute)},
-			{"ip": "2001:db8::10", "last_updated": time.Now().Add(-4 * time.Minute)},
+		resp = jsonrpc.NewResponse(req.ID, []client.PublicIP{
+			{IPAddress: "198.51.100.10", LastUpdated: time.Now().Add(-4 * time.Minute)},
+			{IPAddress: "2001:db8::10", LastUpdated: time.Now().Add(-4 * time.Minute)},
 		})
 	case "getTailscaleStatus":
-		resp = jsonrpc.NewResponse(req.ID, map[string]any{
-			"installed":    true,
-			"running":      true,
-			"backendState": "Running",
-			"controlURL":   "https://controlplane.tailscale.com",
-			"self": map[string]any{
-				"hostName":     "jetkvm-emulator",
-				"dnsName":      "jetkvm-emulator.tailnet.example.",
-				"tailscaleIPs": []string{"100.64.0.10", "fd7a:115c:a1e0::10"},
-				"online":       true,
-				"os":           "linux",
+		resp = jsonrpc.NewResponse(req.ID, client.TailscaleStatus{
+			Installed:    true,
+			Running:      true,
+			BackendState: "Running",
+			ControlURL:   "https://controlplane.tailscale.com",
+			Self: &client.TailscalePeer{
+				HostName:     "jetkvm-emulator",
+				DNSName:      "jetkvm-emulator.tailnet.example.",
+				TailscaleIPs: []string{"100.64.0.10", "fd7a:115c:a1e0::10"},
+				Online:       true,
+				OS:           "linux",
 			},
 		})
 	case "setNetworkSettings":
-		if settings, ok := params["settings"].(map[string]any); ok {
-			next := mapsClone(s.serverRef.state.NetworkSettings)
-			for key, value := range settings {
-				next[key] = value
-			}
-			s.serverRef.state.NetworkSettings = next
-			if hostname, ok := next["hostname"].(string); ok {
-				s.serverRef.state.Hostname = hostname
-				networkState := mapsClone(s.serverRef.state.NetworkState)
-				networkState["hostname"] = hostname
-				s.serverRef.state.NetworkState = networkState
-			}
-			if applyButDrop == req.Method {
-				return nil
-			}
+		params, err := decodeParams[client.NetworkSettingsRequest](req.Params)
+		if err != nil {
+			resp = jsonrpc.NewErrorResponse(req.ID, -32602, "invalid settings", nil)
+			break
+		}
+		s.serverRef.state.NetworkSettings = cloneNetworkSettings(params.Settings)
+		if hostname := strings.TrimSpace(params.Settings.Hostname); hostname != "" {
+			s.serverRef.state.Hostname = hostname
+			networkState := cloneNetworkState(s.serverRef.state.NetworkState)
+			networkState.Hostname = hostname
+			s.serverRef.state.NetworkState = networkState
+		}
+		if applyButDrop == req.Method {
+			return nil
 		}
 		resp = jsonrpc.NewResponse(req.ID, true)
 	case "getUsbNetworkConfig":
-		resp = jsonrpc.NewResponse(req.ID, mapsClone(s.serverRef.state.USBNetworkConfig))
+		resp = jsonrpc.NewResponse(req.ID, s.serverRef.state.USBNetworkConfig)
 	case "setUsbNetworkConfig":
-		if cfg, ok := params["config"].(map[string]any); ok {
-			next := mapsClone(s.serverRef.state.USBNetworkConfig)
-			for key, value := range cfg {
-				next[key] = value
-			}
-			s.serverRef.state.USBNetworkConfig = next
-			if enabled, ok := next["enabled"].(bool); ok {
-				devices := mapsClone(s.serverRef.state.USBDevices)
-				devices["network"] = enabled
-				s.serverRef.state.USBDevices = devices
-			}
-			if applyButDrop == req.Method {
-				return nil
-			}
+		params, err := decodeParams[client.USBNetworkConfigRequest](req.Params)
+		if err != nil {
+			resp = jsonrpc.NewErrorResponse(req.ID, -32602, "invalid config", nil)
+			break
+		}
+		s.serverRef.state.USBNetworkConfig = params.Config
+		s.serverRef.state.USBDevices.Network = params.Config.Enabled
+		if applyButDrop == req.Method {
+			return nil
 		}
 		resp = jsonrpc.NewResponse(req.ID, true)
 	case "getKeyboardLedState":
 		resp = jsonrpc.NewResponse(req.ID, map[string]byte{"mask": s.serverRef.state.KeyboardLEDMask})
 	case "getKeyDownState", "getKeysDownState":
-		resp = jsonrpc.NewResponse(req.ID, map[string]any{"modifier": s.serverRef.state.KeyboardModifiers, "keys": s.serverRef.state.KeysDown})
+		resp = jsonrpc.NewResponse(req.ID, keysDownState(s.serverRef.state.KeyboardModifiers, s.serverRef.state.KeysDown))
 	case "getStreamQualityFactor":
 		resp = jsonrpc.NewResponse(req.ID, s.serverRef.state.StreamQualityFactor)
 	case "getAutoUpdateState":
 		resp = jsonrpc.NewResponse(req.ID, s.serverRef.state.AutoUpdateEnabled)
 	case "setAutoUpdateState":
-		if enabled, ok := params["enabled"].(bool); ok {
-			s.serverRef.state.AutoUpdateEnabled = enabled
-			resp = jsonrpc.NewResponse(req.ID, enabled)
-		} else {
-			resp = jsonrpc.NewErrorResponse(req.ID, -32602, "missing enabled", nil)
+		params, err := decodeParams[client.EnabledStateRequest](req.Params)
+		if err != nil {
+			resp = jsonrpc.NewErrorResponse(req.ID, -32602, "invalid enabled", nil)
+			break
 		}
+		s.serverRef.state.AutoUpdateEnabled = params.Enabled
+		resp = jsonrpc.NewResponse(req.ID, params.Enabled)
 	case "setStreamQualityFactor":
-		if factor, ok := params["factor"].(float64); ok {
-			s.serverRef.state.StreamQualityFactor = factor
-			if applyButDrop == req.Method {
-				return nil
-			}
-			resp = jsonrpc.NewResponse(req.ID, true)
-		} else {
-			resp = jsonrpc.NewErrorResponse(req.ID, -32602, "missing factor", nil)
+		params, err := decodeParams[client.SetQualityRequest](req.Params)
+		if err != nil {
+			resp = jsonrpc.NewErrorResponse(req.ID, -32602, "invalid factor", nil)
+			break
 		}
+		s.serverRef.state.StreamQualityFactor = params.Factor
+		if applyButDrop == req.Method {
+			return nil
+		}
+		resp = jsonrpc.NewResponse(req.ID, true)
 	case "wheelReport":
-		if wheelY, ok := params["wheelY"].(float64); ok {
-			wheelX, ok := params["wheelX"].(float64)
-			if !ok {
-				resp = jsonrpc.NewErrorResponse(req.ID, -32602, "missing wheelX", nil)
-				break
-			}
-			s.serverRef.appendInput("rpc", "rpc.wheelReport", fmt.Sprintf("wheelY=%d wheelX=%d", int8(wheelY), int8(wheelX)))
-			resp = jsonrpc.NewResponse(req.ID, true)
-		} else {
-			resp = jsonrpc.NewErrorResponse(req.ID, -32602, "missing wheelY", nil)
+		params, err := decodeParams[client.WheelReportRequest](req.Params)
+		if err != nil {
+			resp = jsonrpc.NewErrorResponse(req.ID, -32602, "invalid wheel report", nil)
+			break
 		}
+		s.serverRef.appendInput("rpc", "rpc.wheelReport", fmt.Sprintf("wheelY=%d wheelX=%d", int8(params.WheelY), int8(params.WheelX)))
+		resp = jsonrpc.NewResponse(req.ID, true)
 	case "reboot":
+		if _, err := decodeParams[client.RebootRequest](req.Params); err != nil {
+			resp = jsonrpc.NewErrorResponse(req.ID, -32602, "invalid reboot params", nil)
+			break
+		}
 		resp = jsonrpc.NewResponse(req.ID, true)
 		go func() {
 			s.serverRef.mu.Lock()
@@ -1067,233 +1127,232 @@ func (s *session) handleRPC(data []byte) error {
 	case "getKeyboardLayout":
 		resp = jsonrpc.NewResponse(req.ID, s.serverRef.state.KeyboardLayout)
 	case "setKeyboardLayout":
-		if layout, ok := params["layout"].(string); ok && layout != "" {
-			s.serverRef.state.KeyboardLayout = layout
-			if applyButDrop == req.Method {
-				return nil
-			}
+		params, err := decodeParams[struct {
+			Layout string `json:"layout"`
+		}](req.Params)
+		if err != nil || strings.TrimSpace(params.Layout) == "" {
+			resp = jsonrpc.NewErrorResponse(req.ID, -32602, "missing layout", nil)
+			break
+		}
+		s.serverRef.state.KeyboardLayout = params.Layout
+		if applyButDrop == req.Method {
+			return nil
 		}
 		resp = jsonrpc.NewResponse(req.ID, true)
 	case "getEDID":
 		resp = jsonrpc.NewResponse(req.ID, s.serverRef.state.EDID)
 	case "setEDID":
-		if edid, ok := params["edid"].(string); ok {
-			s.serverRef.state.EDID = edid
-			resp = jsonrpc.NewResponse(req.ID, true)
-		} else {
+		params, err := decodeParams[client.SetEDIDRequest](req.Params)
+		if err != nil {
 			resp = jsonrpc.NewErrorResponse(req.ID, -32602, "missing edid", nil)
+			break
 		}
+		s.serverRef.state.EDID = params.EDID
+		resp = jsonrpc.NewResponse(req.ID, true)
 	case "getVideoCodecPreference":
 		resp = jsonrpc.NewResponse(req.ID, s.serverRef.state.VideoCodec)
 	case "setVideoCodecPreference":
-		if codec, ok := params["codec"].(string); ok && codec != "" {
-			s.serverRef.state.VideoCodec = codec
-			resp = jsonrpc.NewResponse(req.ID, true)
-		} else {
+		params, err := decodeParams[client.SetCodecPreferenceRequest](req.Params)
+		if err != nil || strings.TrimSpace(params.Codec) == "" {
 			resp = jsonrpc.NewErrorResponse(req.ID, -32602, "missing codec", nil)
+			break
 		}
+		s.serverRef.state.VideoCodec = params.Codec
+		resp = jsonrpc.NewResponse(req.ID, true)
 	case "getUsbEmulationState":
 		resp = jsonrpc.NewResponse(req.ID, s.serverRef.state.USBEmulation)
 	case "setUsbEmulationState":
-		if enabled, ok := params["enabled"].(bool); ok {
-			s.serverRef.state.USBEmulation = enabled
-			if applyButDrop == req.Method {
-				return nil
-			}
-			resp = jsonrpc.NewResponse(req.ID, enabled)
-		} else {
+		params, err := decodeParams[struct {
+			Enabled bool `json:"enabled"`
+		}](req.Params)
+		if err != nil {
 			resp = jsonrpc.NewErrorResponse(req.ID, -32602, "missing enabled", nil)
+			break
 		}
+		s.serverRef.state.USBEmulation = params.Enabled
+		if applyButDrop == req.Method {
+			return nil
+		}
+		resp = jsonrpc.NewResponse(req.ID, params.Enabled)
 	case "getCloudState":
-		resp = jsonrpc.NewResponse(req.ID, map[string]any{"connected": s.serverRef.state.CloudURL != "", "url": s.serverRef.state.CloudURL, "appUrl": s.serverRef.state.CloudAppURL})
+		resp = jsonrpc.NewResponse(req.ID, client.CloudState{
+			Connected: s.serverRef.state.CloudURL != "",
+			URL:       s.serverRef.state.CloudURL,
+			AppURL:    s.serverRef.state.CloudAppURL,
+		})
 	case "getTLSState":
-		resp = jsonrpc.NewResponse(req.ID, map[string]any{
-			"mode":        s.serverRef.state.TLSMode,
-			"certificate": s.serverRef.state.TLSCertificate,
-			"privateKey":  s.serverRef.state.TLSPrivateKey,
+		resp = jsonrpc.NewResponse(req.ID, client.TLSState{
+			Mode:        s.serverRef.state.TLSMode,
+			Certificate: s.serverRef.state.TLSCertificate,
+			PrivateKey:  s.serverRef.state.TLSPrivateKey,
 		})
 	case "setTLSState":
-		if state, ok := params["state"].(map[string]any); ok {
-			if mode, ok := state["mode"].(string); ok && mode != "" {
-				s.serverRef.state.TLSMode = mode
-				if certificate, ok := state["certificate"].(string); ok {
-					s.serverRef.state.TLSCertificate = certificate
-				}
-				if privateKey, ok := state["privateKey"].(string); ok {
-					s.serverRef.state.TLSPrivateKey = privateKey
-				}
-				if applyButDrop == req.Method {
-					return nil
-				}
-				resp = jsonrpc.NewResponse(req.ID, true)
-			} else {
-				resp = jsonrpc.NewErrorResponse(req.ID, -32602, "missing mode", nil)
-			}
-		} else {
-			resp = jsonrpc.NewErrorResponse(req.ID, -32602, "missing state", nil)
+		params, err := decodeParams[client.SetTLSStateRequest](req.Params)
+		if err != nil || strings.TrimSpace(params.State.Mode) == "" {
+			resp = jsonrpc.NewErrorResponse(req.ID, -32602, "missing mode", nil)
+			break
 		}
+		s.serverRef.state.TLSMode = params.State.Mode
+		s.serverRef.state.TLSCertificate = params.State.Certificate
+		s.serverRef.state.TLSPrivateKey = params.State.PrivateKey
+		if applyButDrop == req.Method {
+			return nil
+		}
+		resp = jsonrpc.NewResponse(req.ID, true)
 	case "getUsbConfig":
 		resp = jsonrpc.NewResponse(req.ID, s.serverRef.state.USBConfig)
 	case "getUsbDevices":
 		resp = jsonrpc.NewResponse(req.ID, s.serverRef.state.USBDevices)
 	case "setUsbDevices":
-		if devices, ok := params["devices"].(map[string]any); ok {
-			s.serverRef.state.USBDevices = devices
-			if applyButDrop == req.Method {
-				return nil
-			}
-			resp = jsonrpc.NewResponse(req.ID, true)
-		} else {
+		params, err := decodeParams[client.USBDevicesRequest](req.Params)
+		if err != nil {
 			resp = jsonrpc.NewErrorResponse(req.ID, -32602, "missing devices", nil)
+			break
 		}
+		s.serverRef.state.USBDevices = params.Devices
+		if applyButDrop == req.Method {
+			return nil
+		}
+		resp = jsonrpc.NewResponse(req.ID, true)
 	case "getDisplayRotation":
-		resp = jsonrpc.NewResponse(req.ID, map[string]any{"rotation": s.serverRef.state.DisplayRotation})
+		resp = jsonrpc.NewResponse(req.ID, client.DisplayRotationState{Rotation: s.serverRef.state.DisplayRotation})
 	case "setDisplayRotation":
-		if rotationParams, ok := params["params"].(map[string]any); ok {
-			if rotation, ok := rotationParams["rotation"].(string); ok && rotation != "" {
-				s.serverRef.state.DisplayRotation = rotation
-				if applyButDrop == req.Method {
-					return nil
-				}
-				resp = jsonrpc.NewResponse(req.ID, true)
-			} else {
-				resp = jsonrpc.NewErrorResponse(req.ID, -32602, "missing rotation", nil)
-			}
-		} else {
-			resp = jsonrpc.NewErrorResponse(req.ID, -32602, "missing params", nil)
+		params, err := decodeParams[client.SetDisplayRotationRequest](req.Params)
+		if err != nil || strings.TrimSpace(params.Params.Rotation) == "" {
+			resp = jsonrpc.NewErrorResponse(req.ID, -32602, "missing rotation", nil)
+			break
 		}
+		s.serverRef.state.DisplayRotation = params.Params.Rotation
+		if applyButDrop == req.Method {
+			return nil
+		}
+		resp = jsonrpc.NewResponse(req.ID, true)
 	case "getBacklightSettings":
 		resp = jsonrpc.NewResponse(req.ID, s.serverRef.state.BacklightSettings)
 	case "setBacklightSettings":
-		if settings, ok := params["params"].(map[string]any); ok {
-			s.serverRef.state.BacklightSettings = mapsClone(settings)
-			resp = jsonrpc.NewResponse(req.ID, true)
-		} else {
+		params, err := decodeParams[client.SetBacklightSettingsRequest](req.Params)
+		if err != nil {
 			resp = jsonrpc.NewErrorResponse(req.ID, -32602, "missing params", nil)
+			break
 		}
+		s.serverRef.state.BacklightSettings = params.Params
+		resp = jsonrpc.NewResponse(req.ID, true)
 	case "getVideoSleepMode":
-		resp = jsonrpc.NewResponse(req.ID, map[string]any{
-			"enabled":  s.serverRef.state.VideoSleepDuration >= 0,
-			"duration": s.serverRef.state.VideoSleepDuration,
+		resp = jsonrpc.NewResponse(req.ID, client.VideoSleepMode{
+			Enabled:  s.serverRef.state.VideoSleepDuration >= 0,
+			Duration: s.serverRef.state.VideoSleepDuration,
 		})
 	case "setVideoSleepMode":
-		if duration, ok := params["duration"].(float64); ok {
-			s.serverRef.state.VideoSleepDuration = int(duration)
-			resp = jsonrpc.NewResponse(req.ID, true)
-		} else {
+		params, err := decodeParams[client.SetVideoSleepModeRequest](req.Params)
+		if err != nil {
 			resp = jsonrpc.NewErrorResponse(req.ID, -32602, "missing duration", nil)
+			break
 		}
+		s.serverRef.state.VideoSleepDuration = params.Duration
+		resp = jsonrpc.NewResponse(req.ID, true)
 	case "getMqttSettings":
-		settings := mapsClone(s.serverRef.state.MQTTSettings)
-		if password, ok := settings["password"].(string); ok && password != "" {
-			settings["password"] = mqttPasswordMask
+		settings := s.serverRef.state.MQTTSettings
+		if settings.Password != "" {
+			settings.Password = mqttPasswordMask
 		}
 		resp = jsonrpc.NewResponse(req.ID, settings)
 	case "setMqttSettings":
-		if settings, ok := params["settings"].(map[string]any); ok {
-			next := mapsClone(settings)
-			if password, ok := next["password"].(string); ok && password == mqttPasswordMask {
-				if currentPassword, ok := s.serverRef.state.MQTTSettings["password"].(string); ok {
-					next["password"] = currentPassword
-				}
-			}
-			s.serverRef.state.MQTTSettings = next
-			if enabled, ok := next["enabled"].(bool); ok {
-				s.serverRef.state.MQTTConnected = enabled
-			}
-			s.serverRef.state.MQTTError = ""
-			resp = jsonrpc.NewResponse(req.ID, true)
-		} else {
+		params, err := decodeParams[client.MQTTSettingsRequest](req.Params)
+		if err != nil {
 			resp = jsonrpc.NewErrorResponse(req.ID, -32602, "missing settings", nil)
+			break
 		}
+		next := params.Settings
+		if next.Password == mqttPasswordMask {
+			next.Password = s.serverRef.state.MQTTSettings.Password
+		}
+		s.serverRef.state.MQTTSettings = next
+		s.serverRef.state.MQTTConnected = next.Enabled
+		s.serverRef.state.MQTTError = ""
+		resp = jsonrpc.NewResponse(req.ID, true)
 	case "getMqttStatus":
-		resp = jsonrpc.NewResponse(req.ID, map[string]any{"connected": s.serverRef.state.MQTTConnected, "error": s.serverRef.state.MQTTError})
+		resp = jsonrpc.NewResponse(req.ID, client.MQTTStatus{Connected: s.serverRef.state.MQTTConnected, Error: s.serverRef.state.MQTTError})
 	case "testMqttConnection":
-		if settings, ok := params["settings"].(map[string]any); ok {
-			broker, _ := settings["broker"].(string)
-			if strings.TrimSpace(broker) == "" {
-				resp = jsonrpc.NewResponse(req.ID, map[string]any{"success": false, "error": "broker address is required"})
-			} else {
-				resp = jsonrpc.NewResponse(req.ID, map[string]any{"success": true})
-			}
-		} else {
+		params, err := decodeParams[client.MQTTSettingsRequest](req.Params)
+		if err != nil {
 			resp = jsonrpc.NewErrorResponse(req.ID, -32602, "missing settings", nil)
+			break
+		}
+		if strings.TrimSpace(params.Settings.Broker) == "" {
+			resp = jsonrpc.NewResponse(req.ID, client.MQTTTestResult{Success: false, Error: "broker address is required"})
+		} else {
+			resp = jsonrpc.NewResponse(req.ID, client.MQTTTestResult{Success: true})
 		}
 	case "getKeyboardMacros":
-		resp = jsonrpc.NewResponse(req.ID, s.serverRef.state.KeyboardMacros)
+		resp = jsonrpc.NewResponse(req.ID, cloneKeyboardMacros(s.serverRef.state.KeyboardMacros))
 	case "setKeyboardMacros":
-		if wrapper, ok := params["params"].(map[string]any); ok {
-			if macros, ok := wrapper["macros"].([]any); ok {
-				out := make([]map[string]any, 0, len(macros))
-				for _, item := range macros {
-					macro, ok := item.(map[string]any)
-					if !ok {
-						continue
-					}
-					out = append(out, mapsClone(macro))
-				}
-				s.serverRef.state.KeyboardMacros = out
-				resp = jsonrpc.NewResponse(req.ID, true)
-			} else {
-				resp = jsonrpc.NewErrorResponse(req.ID, -32602, "missing macros", nil)
-			}
-		} else {
-			resp = jsonrpc.NewErrorResponse(req.ID, -32602, "missing params", nil)
+		params, err := decodeParams[client.KeyboardMacrosRequest](req.Params)
+		if err != nil {
+			resp = jsonrpc.NewErrorResponse(req.ID, -32602, "missing macros", nil)
+			break
 		}
+		s.serverRef.state.KeyboardMacros = cloneKeyboardMacros(params.Params.Macros)
+		resp = jsonrpc.NewResponse(req.ID, true)
 	case "getDevModeState":
-		resp = jsonrpc.NewResponse(req.ID, map[string]any{"enabled": s.serverRef.state.DeveloperMode})
+		resp = jsonrpc.NewResponse(req.ID, client.DeveloperModeState{Enabled: s.serverRef.state.DeveloperMode})
 	case "setDevModeState":
-		if enabled, ok := params["enabled"].(bool); ok {
-			s.serverRef.state.DeveloperMode = enabled
-			resp = jsonrpc.NewResponse(req.ID, true)
-		} else {
+		params, err := decodeParams[client.EnabledStateRequest](req.Params)
+		if err != nil {
 			resp = jsonrpc.NewErrorResponse(req.ID, -32602, "missing enabled", nil)
+			break
 		}
+		s.serverRef.state.DeveloperMode = params.Enabled
+		resp = jsonrpc.NewResponse(req.ID, true)
 	case "getDevChannelState":
 		resp = jsonrpc.NewResponse(req.ID, s.serverRef.state.DevChannel)
 	case "setDevChannelState":
-		if enabled, ok := params["enabled"].(bool); ok {
-			s.serverRef.state.DevChannel = enabled
-			resp = jsonrpc.NewResponse(req.ID, true)
-		} else {
+		params, err := decodeParams[client.EnabledStateRequest](req.Params)
+		if err != nil {
 			resp = jsonrpc.NewErrorResponse(req.ID, -32602, "missing enabled", nil)
+			break
 		}
+		s.serverRef.state.DevChannel = params.Enabled
+		resp = jsonrpc.NewResponse(req.ID, true)
 	case "getLocalLoopbackOnly":
 		resp = jsonrpc.NewResponse(req.ID, s.serverRef.state.LoopbackOnly)
 	case "setLocalLoopbackOnly":
-		if enabled, ok := params["enabled"].(bool); ok {
-			s.serverRef.state.LoopbackOnly = enabled
-			resp = jsonrpc.NewResponse(req.ID, true)
-		} else {
+		params, err := decodeParams[client.EnabledStateRequest](req.Params)
+		if err != nil {
 			resp = jsonrpc.NewErrorResponse(req.ID, -32602, "missing enabled", nil)
+			break
 		}
+		s.serverRef.state.LoopbackOnly = params.Enabled
+		resp = jsonrpc.NewResponse(req.ID, true)
 	case "getSSHKeyState":
 		resp = jsonrpc.NewResponse(req.ID, s.serverRef.state.SSHKey)
 	case "setSSHKeyState":
-		if sshKey, ok := params["sshKey"].(string); ok {
-			s.serverRef.state.SSHKey = sshKey
-			resp = jsonrpc.NewResponse(req.ID, true)
-		} else {
+		params, err := decodeParams[client.SetSSHKeyStateRequest](req.Params)
+		if err != nil {
 			resp = jsonrpc.NewErrorResponse(req.ID, -32602, "missing sshKey", nil)
+			break
 		}
+		s.serverRef.state.SSHKey = params.SSHKey
+		resp = jsonrpc.NewResponse(req.ID, true)
 	case "getJigglerState":
 		resp = jsonrpc.NewResponse(req.ID, s.serverRef.state.JigglerEnabled)
 	case "setJigglerState":
-		if enabled, ok := params["enabled"].(bool); ok {
-			s.serverRef.state.JigglerEnabled = enabled
-			resp = jsonrpc.NewResponse(req.ID, true)
-		} else {
+		params, err := decodeParams[client.EnabledStateRequest](req.Params)
+		if err != nil {
 			resp = jsonrpc.NewErrorResponse(req.ID, -32602, "missing enabled", nil)
+			break
 		}
+		s.serverRef.state.JigglerEnabled = params.Enabled
+		resp = jsonrpc.NewResponse(req.ID, true)
 	case "getJigglerConfig":
 		resp = jsonrpc.NewResponse(req.ID, s.serverRef.state.JigglerConfig)
 	case "setJigglerConfig":
-		if cfg, ok := params["jigglerConfig"].(map[string]any); ok {
-			s.serverRef.state.JigglerConfig = cfg
-			resp = jsonrpc.NewResponse(req.ID, true)
-		} else {
+		params, err := decodeParams[client.JigglerConfigRequest](req.Params)
+		if err != nil {
 			resp = jsonrpc.NewErrorResponse(req.ID, -32602, "missing jigglerConfig", nil)
+			break
 		}
+		s.serverRef.state.JigglerConfig = params.JigglerConfig
+		resp = jsonrpc.NewResponse(req.ID, true)
 	case "getVirtualMediaState":
 		s.serverRef.mu.Lock()
 		state := s.serverRef.media
@@ -1305,9 +1364,8 @@ func (s *session) handleRPC(data []byte) error {
 		s.serverRef.mu.Unlock()
 		resp = jsonrpc.NewResponse(req.ID, true)
 	case "mountWithHTTP":
-		rawURL, _ := params["url"].(string)
-		rawMode, _ := params["mode"].(string)
-		if strings.TrimSpace(rawURL) == "" || strings.TrimSpace(rawMode) == "" {
+		params, err := decodeParams[client.MountWithHTTPRequest](req.Params)
+		if err != nil || strings.TrimSpace(params.URL) == "" || params.Mode == "" {
 			resp = jsonrpc.NewErrorResponse(req.ID, -32602, "missing mount params", nil)
 			break
 		}
@@ -1319,17 +1377,16 @@ func (s *session) handleRPC(data []byte) error {
 		}
 		s.serverRef.media = &virtualmedia.State{
 			Source: virtualmedia.SourceHTTP,
-			Mode:   virtualmedia.Mode(rawMode),
-			URL:    rawURL,
+			Mode:   params.Mode,
+			URL:    params.URL,
 			Size:   2 * 1024 * 1024,
 		}
 		s.serverRef.mu.Unlock()
 		resp = jsonrpc.NewResponse(req.ID, true)
 	case "mountWithStorage":
-		filename, _ := params["filename"].(string)
-		rawMode, _ := params["mode"].(string)
-		filename = filepath.Base(strings.TrimSpace(filename))
-		if filename == "" || strings.TrimSpace(rawMode) == "" {
+		params, err := decodeParams[client.MountWithStorageRequest](req.Params)
+		filename := filepath.Base(strings.TrimSpace(params.Filename))
+		if err != nil || filename == "" || params.Mode == "" {
 			resp = jsonrpc.NewErrorResponse(req.ID, -32602, "missing mount params", nil)
 			break
 		}
@@ -1347,7 +1404,7 @@ func (s *session) handleRPC(data []byte) error {
 		}
 		s.serverRef.media = &virtualmedia.State{
 			Source:   virtualmedia.SourceStorage,
-			Mode:     virtualmedia.Mode(rawMode),
+			Mode:     params.Mode,
 			Filename: filename,
 			Size:     int64(len(file.data)),
 		}
@@ -1367,7 +1424,7 @@ func (s *session) handleRPC(data []byte) error {
 		sort.Slice(files, func(i, j int) bool {
 			return files[i].CreatedAt.After(files[j].CreatedAt)
 		})
-		resp = jsonrpc.NewResponse(req.ID, map[string]any{"files": files})
+		resp = jsonrpc.NewResponse(req.ID, client.StorageFilesResponse{Files: files})
 	case "getStorageSpace":
 		s.serverRef.mu.Lock()
 		var used int64
@@ -1381,9 +1438,9 @@ func (s *session) handleRPC(data []byte) error {
 			BytesFree: total - used,
 		})
 	case "deleteStorageFile":
-		filename, _ := params["filename"].(string)
-		filename = filepath.Base(strings.TrimSpace(filename))
-		if filename == "" {
+		params, err := decodeParams[client.DeleteStorageFileRequest](req.Params)
+		filename := filepath.Base(strings.TrimSpace(params.Filename))
+		if err != nil || filename == "" {
 			resp = jsonrpc.NewErrorResponse(req.ID, -32602, "missing filename", nil)
 			break
 		}
@@ -1397,10 +1454,9 @@ func (s *session) handleRPC(data []byte) error {
 		s.serverRef.mu.Unlock()
 		resp = jsonrpc.NewResponse(req.ID, true)
 	case "startStorageFileUpload":
-		filename, _ := params["filename"].(string)
-		filename = filepath.Base(strings.TrimSpace(filename))
-		size, _ := params["size"].(float64)
-		if filename == "" || size <= 0 {
+		params, err := decodeParams[client.StorageUploadRequest](req.Params)
+		filename := filepath.Base(strings.TrimSpace(params.Filename))
+		if err != nil || filename == "" || params.Size <= 0 {
 			resp = jsonrpc.NewErrorResponse(req.ID, -32602, "invalid upload params", nil)
 			break
 		}
@@ -1415,7 +1471,7 @@ func (s *session) handleRPC(data []byte) error {
 		uploadID := fmt.Sprintf("upload_%d", time.Now().UnixNano())
 		s.serverRef.uploads[uploadID] = &pendingUpload{
 			filename: filename,
-			size:     int64(size),
+			size:     params.Size,
 		}
 		s.serverRef.mu.Unlock()
 		resp = jsonrpc.NewResponse(req.ID, virtualmedia.UploadStart{
@@ -1423,19 +1479,13 @@ func (s *session) handleRPC(data []byte) error {
 			DataChannel:          uploadID,
 		})
 	case "getLocalVersion":
-		resp = jsonrpc.NewResponse(req.ID, map[string]any{"appVersion": "emulator-dev", "systemVersion": "emulator-dev"})
+		resp = jsonrpc.NewResponse(req.ID, client.LocalVersion{AppVersion: "emulator-dev", SystemVersion: "emulator-dev"})
 	case "getUpdateStatus":
-		resp = jsonrpc.NewResponse(req.ID, map[string]any{
-			"local": map[string]any{
-				"appVersion":    "emulator-dev",
-				"systemVersion": "emulator-dev",
-			},
-			"remote": map[string]any{
-				"appVersion":    "emulator-dev",
-				"systemVersion": "emulator-dev",
-			},
-			"systemUpdateAvailable": false,
-			"appUpdateAvailable":    false,
+		resp = jsonrpc.NewResponse(req.ID, client.UpdateStatus{
+			Local:                 client.LocalVersion{AppVersion: "emulator-dev", SystemVersion: "emulator-dev"},
+			Remote:                client.LocalVersion{AppVersion: "emulator-dev", SystemVersion: "emulator-dev"},
+			SystemUpdateAvailable: false,
+			AppUpdateAvailable:    false,
 		})
 	default:
 		resp = jsonrpc.NewErrorResponse(req.ID, -32601, "method not found", req.Method)
@@ -1467,7 +1517,10 @@ func (s *session) handleHID(channel string, data []byte) error {
 		return s.hid.Send(reply)
 	case hidrpc.Keypress:
 		s.serverRef.applyKeypress(v.Key, v.Press)
-		return s.sendEvent("keysDownState", map[string]any{"modifier": s.serverRef.state.KeyboardModifiers, "keys": s.serverRef.state.KeysDown})
+		s.serverRef.mu.Lock()
+		state := keysDownState(s.serverRef.state.KeyboardModifiers, s.serverRef.state.KeysDown)
+		s.serverRef.mu.Unlock()
+		return s.sendEvent("keysDownState", state)
 	case hidrpc.KeypressKeepAlive:
 		return nil
 	case hidrpc.Pointer:
@@ -1497,8 +1550,9 @@ func (s *session) handleHID(channel string, data []byte) error {
 				keys = append(keys, key)
 			}
 			s.serverRef.state.KeysDown = keys
+			state := keysDownState(s.serverRef.state.KeyboardModifiers, s.serverRef.state.KeysDown)
 			s.serverRef.mu.Unlock()
-			_ = s.sendEvent("keysDownState", map[string]any{"modifier": s.serverRef.state.KeyboardModifiers, "keys": s.serverRef.state.KeysDown})
+			_ = s.sendEvent("keysDownState", state)
 		}
 		if v.IsPaste {
 			stateMsg, err := hidrpc.KeyboardMacroState{State: false, IsPaste: true}.MarshalBinary()
