@@ -43,6 +43,7 @@ type App struct {
 	lastFrameAt            time.Time
 	keyboard               *input.Keyboard
 	hotkeys                hotkeys.Manager
+	allowDiscovery         bool
 	lastX                  int
 	lastY                  int
 	lastButtons            byte
@@ -397,6 +398,7 @@ func New(cfg Config) (*App, error) {
 		cfg:                 cfg,
 		keyboard:            input.NewKeyboard(),
 		hotkeys:             manager,
+		allowDiscovery:      launcherOpen,
 		lastPhase:           session.PhaseIdle,
 		focused:             true,
 		uiVisibleUntil:      time.Now().Add(3 * time.Second),
@@ -420,15 +422,29 @@ func New(cfg Config) (*App, error) {
 
 func (a *App) Start(ctx context.Context) {
 	a.ctx = ctx
-	if a.discovery != nil {
-		a.discovery.Start(ctx)
-	}
+	a.syncDiscoveryLifecycle()
 	if strings.TrimSpace(a.cfg.BaseURL) != "" {
 		a.connectTo(a.cfg.BaseURL)
 	}
 }
 
+func (a *App) syncDiscoveryLifecycle() {
+	if a.discovery == nil || a.ctx == nil {
+		return
+	}
+	if a.shouldRunDiscovery() {
+		a.discovery.Start(a.ctx)
+		return
+	}
+	a.discovery.Stop()
+}
+
+func (a *App) shouldRunDiscovery() bool {
+	return a.allowDiscovery && a.launcherOpen && a.launcherMode == launcherModeBrowse
+}
+
 func (a *App) Update() error {
+	a.syncDiscoveryLifecycle()
 	if inpututil.IsKeyJustPressed(ebiten.KeyEscape) {
 		if a.serialConsoleOpen {
 			a.closeSerialConsoleOverlay()

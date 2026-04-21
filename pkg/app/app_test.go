@@ -285,6 +285,57 @@ func TestNewPreservesExperimentalUSBNetworkFlag(t *testing.T) {
 	}
 }
 
+func TestShouldRunDiscoveryOnlyOnBrowseLauncher(t *testing.T) {
+	app, err := New(Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !app.shouldRunDiscovery() {
+		t.Fatal("expected discovery to run while browse launcher is open")
+	}
+
+	app.showPasswordPrompt("http://jetkvm.local", "Authentication failed")
+	if app.shouldRunDiscovery() {
+		t.Fatal("expected discovery to stop on password prompt")
+	}
+
+	app.launcherMode = launcherModeBrowse
+	app.launcherOpen = false
+	if app.shouldRunDiscovery() {
+		t.Fatal("expected discovery to stop after leaving the launcher")
+	}
+}
+
+func TestNewDisablesDiscoveryForDirectConnect(t *testing.T) {
+	app, err := New(Config{BaseURL: "http://jetkvm.local"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if app.allowDiscovery {
+		t.Fatal("expected direct connect config to disable discovery")
+	}
+	if app.shouldRunDiscovery() {
+		t.Fatal("expected discovery to stay disabled for direct connect config")
+	}
+}
+
+func TestStartDoesNotRunDiscoveryForDirectConnect(t *testing.T) {
+	app, err := New(Config{BaseURL: "http://jetkvm.local"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	app.Start(ctx)
+	if app.discovery.Running() {
+		t.Fatal("expected discovery scanner to remain stopped for direct connect startup")
+	}
+}
+
 func TestPreferencesNormalizeChromeAnchor(t *testing.T) {
 	prefs := Preferences{ChromeAnchor: ChromeAnchor(255)}
 	prefs.normalize()

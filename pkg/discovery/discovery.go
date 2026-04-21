@@ -27,8 +27,11 @@ type Device struct {
 type Scanner struct {
 	updates chan Device
 
-	mu    sync.Mutex
-	known map[string]Device
+	mu        sync.Mutex
+	known     map[string]Device
+	running   bool
+	cancelRun context.CancelFunc
+	runDone   chan struct{}
 }
 
 func NewScanner() *Scanner {
@@ -43,7 +46,46 @@ func (s *Scanner) Updates() <-chan Device {
 }
 
 func (s *Scanner) Start(ctx context.Context) {
-	go s.run(ctx)
+	s.mu.Lock()
+	if s.running {
+		s.mu.Unlock()
+		return
+	}
+	runCtx, cancel := context.WithCancel(ctx)
+	done := make(chan struct{})
+	s.running = true
+	s.cancelRun = cancel
+	s.runDone = done
+	s.mu.Unlock()
+
+	go func() {
+		defer close(done)
+		s.run(runCtx)
+		s.mu.Lock()
+		s.running = false
+		s.cancelRun = nil
+		s.runDone = nil
+		s.mu.Unlock()
+	}()
+}
+
+func (s *Scanner) Stop() {
+	s.mu.Lock()
+	cancel := s.cancelRun
+	done := s.runDone
+	s.mu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
+	if done != nil {
+		<-done
+	}
+}
+
+func (s *Scanner) Running() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.running
 }
 
 func (s *Scanner) run(ctx context.Context) {
@@ -62,7 +104,7 @@ func (s *Scanner) run(ctx context.Context) {
 }
 
 func (s *Scanner) scan(ctx context.Context) {
-	targets := enumerateTargets()
+	targets := discoveryEnumerateTargets()
 	if len(targets) == 0 {
 		return
 	}
@@ -80,7 +122,7 @@ func (s *Scanner) scan(ctx context.Context) {
 		go func(addr netip.Addr) {
 			defer wg.Done()
 			defer func() { <-sem }()
-			device, ok := probeTarget(ctx, addr)
+			device, ok := discoveryProbeTarget(ctx, addr)
 			if !ok {
 				return
 			}
@@ -89,6 +131,11 @@ func (s *Scanner) scan(ctx context.Context) {
 	}
 	wg.Wait()
 }
+
+var (
+	discoveryEnumerateTargets = enumerateTargets
+	discoveryProbeTarget      = probeTarget
+)
 
 func (s *Scanner) publish(device Device) {
 	s.mu.Lock()
@@ -219,13 +266,7 @@ func probeScheme(parent context.Context, addr netip.Addr, scheme string) (Device
 	if err != nil {
 		return Device{}, false
 	}
-	client := &http.Client{
-		Timeout: 1200 * time.Millisecond,
-		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, //nolint:gosec
-		},
-	}
-	resp, err := client.Do(req)
+	resp, err := discoveryHTTPClient.Do(req)
 	if err != nil {
 		return Device{}, false
 	}
@@ -255,6 +296,15 @@ func probeScheme(parent context.Context, addr netip.Addr, scheme string) (Device
 		IsSetup:   status.IsSetup,
 		UpdatedAt: time.Now(),
 	}, true
+}
+
+var discoveryHTTPClient = &http.Client{
+	Timeout: 1200 * time.Millisecond,
+	Transport: &http.Transport{
+		TLSClientConfig:     &tls.Config{InsecureSkipVerify: true}, //nolint:gosec
+		DisableKeepAlives:   true,
+		TLSHandshakeTimeout: 1200 * time.Millisecond,
+	},
 }
 
 func reverseLookup(addr netip.Addr) string {
