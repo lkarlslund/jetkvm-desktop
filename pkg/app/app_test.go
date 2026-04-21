@@ -434,6 +434,21 @@ func TestShouldSendRelativeMouseThrottlesMovementOnly(t *testing.T) {
 	}
 }
 
+func TestMediaModeButtonsMeasureIntrinsicWidth(t *testing.T) {
+	app, err := New(Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	size := mediaModeButtons{app: app}.Measure(&ui.Context{}, ui.Constraints{MaxW: 400, MaxH: 40})
+	if size.W >= 400 {
+		t.Fatalf("mediaModeButtons measured width = %v, want intrinsic width smaller than row width", size.W)
+	}
+	if size.H <= 0 {
+		t.Fatalf("mediaModeButtons measured height = %v, want positive height", size.H)
+	}
+}
+
 func TestSavePreferencesUsesThrottleDurations(t *testing.T) {
 	app, err := New(Config{})
 	if err != nil {

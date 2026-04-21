@@ -777,18 +777,22 @@ type mediaModeButtons struct {
 	disabled bool
 }
 
-func (mediaModeButtons) Measure(_ *ui.Context, constraints ui.Constraints) ui.Size {
-	return constraints.Clamp(ui.Size{W: constraints.MaxW, H: 30})
-}
-
-func (e mediaModeButtons) Draw(ctx *ui.Context, bounds ui.Rect) {
-	ui.Row{
+func (e mediaModeButtons) buttons() ui.Element {
+	return ui.Row{
 		Children: []ui.Child{
 			ui.Fixed(ui.Button{ID: "media_mode_cdrom", Label: "CD/DVD", Enabled: !e.disabled, Active: e.app.mediaMode == virtualmedia.ModeCDROM}),
 			ui.Fixed(ui.Button{ID: "media_mode_disk", Label: "Disk", Enabled: !e.disabled, Active: e.app.mediaMode == virtualmedia.ModeDisk}),
 		},
 		Spacing: 12,
-	}.Draw(ctx, bounds)
+	}
+}
+
+func (e mediaModeButtons) Measure(ctx *ui.Context, constraints ui.Constraints) ui.Size {
+	return e.buttons().Measure(ctx, constraints)
+}
+
+func (e mediaModeButtons) Draw(ctx *ui.Context, bounds ui.Rect) {
+	e.buttons().Draw(ctx, bounds)
 }
 
 type mediaFileRowElement struct {
