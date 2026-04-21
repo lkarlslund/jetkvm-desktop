@@ -90,8 +90,8 @@ jobs:
           GOARCH: ${{ matrix.goarch }}
         run: |
           New-Item -ItemType Directory -Force -Path dist/pkg | Out-Null
-          $env:CGO_LDFLAGS = "-static-libgcc -static-libstdc++"
-          go build -trimpath -ldflags='-s -w -extldflags "-static-libgcc -static-libstdc++"' -o "dist/pkg/${{ matrix.client_bin }}" ./cmd/jetkvm-desktop
+          $env:CGO_LDFLAGS = "-static-libgcc -static-libstdc++ -static-libssp"
+          go build -trimpath -ldflags='-s -w -extldflags "-static-libgcc -static-libstdc++ -static-libssp"' -o "dist/pkg/${{ matrix.client_bin }}" ./cmd/jetkvm-desktop
           Copy-Item README.md dist/pkg/README.md
           Compress-Archive -Path dist/pkg/* -DestinationPath "dist/${{ matrix.archive_name }}"
 
