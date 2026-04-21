@@ -436,6 +436,30 @@ func TestShouldSendRelativeMouseThrottlesMovementOnly(t *testing.T) {
 	}
 }
 
+func TestDidWindowMove(t *testing.T) {
+	if didWindowMove(false, 0, 0, true, 100, 200) {
+		t.Fatal("expected unknown prior window position to suppress move detection")
+	}
+	if didWindowMove(true, 100, 200, true, 100, 200) {
+		t.Fatal("expected unchanged window position to avoid move detection")
+	}
+	if !didWindowMove(true, 100, 200, true, 132, 244) {
+		t.Fatal("expected changed window position to be detected")
+	}
+}
+
+func TestAbsoluteCursorPositionChangedIgnoresWindowOriginShift(t *testing.T) {
+	if absoluteCursorPositionChanged(true, 100, 200, 300, 400, true, 180, 260, 220, 340) {
+		t.Fatal("expected equal screen-space cursor position to avoid movement detection")
+	}
+	if !absoluteCursorPositionChanged(true, 100, 200, 300, 400, true, 180, 260, 240, 340) {
+		t.Fatal("expected screen-space cursor change to be detected")
+	}
+	if !absoluteCursorPositionChanged(false, 0, 0, 300, 400, true, 180, 260, 301, 400) {
+		t.Fatal("expected logical cursor change fallback when window position is unknown")
+	}
+}
+
 func TestMediaModeButtonsMeasureIntrinsicWidth(t *testing.T) {
 	app, err := New(Config{})
 	if err != nil {

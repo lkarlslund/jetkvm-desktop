@@ -53,6 +53,9 @@ type App struct {
 	lastTitle              string
 	relative               bool
 	renderRect             rect
+	windowX                int
+	windowY                int
+	windowPositionKnown    bool
 	focused                bool
 	lastWidth              int
 	lastHeight             int
@@ -709,6 +712,7 @@ func (a *App) syncMouse() {
 	snapshot := a.ctrl.Snapshot()
 	now := time.Now()
 	x, y := ebiten.CursorPosition()
+	windowX, windowY, windowPositionKnown := currentWindowPosition()
 	buttons := currentMouseButtons(ebiten.IsMouseButtonPressed)
 	if a.settingsOpen || a.pasteOpen || a.mediaOpen || a.serialConsoleOpen || snapshot.Phase != session.PhaseConnected {
 		if buttons != a.lastButtons {
@@ -723,6 +727,18 @@ func (a *App) syncMouse() {
 				Str("phase", snapshot.Phase.String()).
 				Msg("mouse input suppressed")
 		}
+		a.windowX = windowX
+		a.windowY = windowY
+		a.windowPositionKnown = windowPositionKnown
+		return
+	}
+	if !a.focused {
+		a.lastX = x
+		a.lastY = y
+		a.lastButtons = buttons
+		a.windowX = windowX
+		a.windowY = windowY
+		a.windowPositionKnown = windowPositionKnown
 		return
 	}
 	if a.suppressMouseUntilUp {
@@ -740,6 +756,9 @@ func (a *App) syncMouse() {
 			a.suppressMouseUntilUp = false
 			a.lastButtons = 0
 		}
+		a.windowX = windowX
+		a.windowY = windowY
+		a.windowPositionKnown = windowPositionKnown
 		return
 	}
 	if !a.relative && a.prefs.AbsoluteSideButtonsViaRel && buttons&sideMouseButtonMask != 0 {
@@ -770,6 +789,7 @@ func (a *App) syncMouse() {
 			a.lastButtons = buttons
 		}
 	} else {
+		windowMoved := didWindowMove(a.windowPositionKnown, a.windowX, a.windowY, windowPositionKnown, windowX, windowY)
 		if !a.renderRect.valid() {
 			if buttons != 0 {
 				log.Debug().
@@ -778,6 +798,9 @@ func (a *App) syncMouse() {
 					Uint8("buttons", buttons).
 					Msg("mouse input dropped because render rect is invalid")
 			}
+			a.windowX = windowX
+			a.windowY = windowY
+			a.windowPositionKnown = windowPositionKnown
 			return
 		}
 		if now.Before(a.resizeUntil) {
@@ -792,14 +815,40 @@ func (a *App) syncMouse() {
 					Time("resize_until", a.resizeUntil).
 					Msg("mouse input delayed during resize")
 			}
+			a.windowX = windowX
+			a.windowY = windowY
+			a.windowPositionKnown = windowPositionKnown
 			return
+		}
+		if windowMoved {
+			if a.lastButtons != 0 && buttons == 0 {
+				nx, ny := a.renderRect.toHID(x, y)
+				if err := a.ctrl.SendAbsPointer(nx, ny, 0); err != nil {
+					log.Debug().
+						Err(err).
+						Int32("hid_x", nx).
+						Int32("hid_y", ny).
+						Msg("failed to release absolute mouse after window move")
+				}
+			}
+			a.lastX = x
+			a.lastY = y
+			a.lastButtons = buttons
+			a.lastPointerAt = time.Time{}
+			a.windowX = windowX
+			a.windowY = windowY
+			a.windowPositionKnown = windowPositionKnown
+			goto wheel
 		}
 		if !a.renderRect.contains(x, y) && buttons == 0 && a.lastButtons == 0 {
 			a.lastX = x
 			a.lastY = y
+			a.windowX = windowX
+			a.windowY = windowY
+			a.windowPositionKnown = windowPositionKnown
 			return
 		}
-		positionChanged := x != a.lastX || y != a.lastY
+		positionChanged := absoluteCursorPositionChanged(a.windowPositionKnown, a.windowX, a.windowY, a.lastX, a.lastY, windowPositionKnown, windowX, windowY, x, y)
 		buttonsChanged := buttons != a.lastButtons
 		if positionChanged || buttonsChanged {
 			if shouldThrottlePointerMovement(a.pointerMoveThrottle, a.lastPointerAt, now, positionChanged, buttonsChanged) {
@@ -859,6 +908,9 @@ func (a *App) syncMouse() {
 			a.lastButtons = buttons
 		}
 	}
+	a.windowX = windowX
+	a.windowY = windowY
+	a.windowPositionKnown = windowPositionKnown
 wheel:
 	wheelX, wheelY := ebiten.Wheel()
 	if (wheelX != 0 || wheelY != 0) && (a.scrollThrottle == 0 || now.Sub(a.lastWheelAt) >= a.scrollThrottle) {
@@ -900,6 +952,32 @@ func shouldSendRelativeMouse(lastX, lastY, x, y int, lastButtons, buttons byte, 
 		return dx, dy, false
 	}
 	return dx, dy, true
+}
+
+func currentWindowPosition() (x, y int, known bool) {
+	if ebiten.IsFullscreen() {
+		return 0, 0, false
+	}
+	x, y = ebiten.WindowPosition()
+	return x, y, true
+}
+
+func didWindowMove(lastKnown bool, lastX, lastY int, currentKnown bool, currentX, currentY int) bool {
+	if !lastKnown || !currentKnown {
+		return false
+	}
+	return lastX != currentX || lastY != currentY
+}
+
+func absoluteCursorPositionChanged(lastWindowKnown bool, lastWindowX, lastWindowY, lastX, lastY int, currentWindowKnown bool, currentWindowX, currentWindowY, currentX, currentY int) bool {
+	if !lastWindowKnown || !currentWindowKnown {
+		return currentX != lastX || currentY != lastY
+	}
+	lastScreenX := lastWindowX + lastX
+	lastScreenY := lastWindowY + lastY
+	currentScreenX := currentWindowX + currentX
+	currentScreenY := currentWindowY + currentY
+	return lastScreenX != currentScreenX || lastScreenY != currentScreenY
 }
 
 const (
