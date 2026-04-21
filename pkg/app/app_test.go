@@ -224,6 +224,19 @@ func TestSettingsATXModalConsumesBackdropClicks(t *testing.T) {
 	}
 }
 
+func TestSerialConsoleDisplayLinesNormalizesLineEndings(t *testing.T) {
+	lines := serialConsoleDisplayLines("first\r\nsecond\rthird\n")
+	if len(lines) != 4 {
+		t.Fatalf("line count = %d, want 4", len(lines))
+	}
+	if lines[0] != "first" || lines[1] != "second" || lines[2] != "third" {
+		t.Fatalf("lines = %#v, want normalized lines", lines)
+	}
+	if lines[3] != "" {
+		t.Fatalf("last line = %q, want trailing blank line", lines[3])
+	}
+}
+
 func TestShouldDismissOverlayOnOutsidePress(t *testing.T) {
 	if shouldDismissOverlayOnOutsidePress("settings") {
 		t.Fatal("settings overlay should not dismiss on outside click")
@@ -451,6 +464,9 @@ func TestDefaultPreferencesEnableAbsoluteSideButtonFallback(t *testing.T) {
 	prefs := defaultPreferences()
 	if !prefs.AbsoluteSideButtonsViaRel {
 		t.Fatal("expected absolute side-button fallback to default on")
+	}
+	if prefs.ExperimentalGlobalHotkeys {
+		t.Fatal("expected experimental hotkeys to default to off")
 	}
 }
 

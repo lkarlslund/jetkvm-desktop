@@ -15,6 +15,7 @@ import (
 	"github.com/pion/webrtc/v4"
 
 	"github.com/lkarlslund/jetkvm-desktop/pkg/client"
+	"github.com/lkarlslund/jetkvm-desktop/pkg/hotkeys"
 	"github.com/lkarlslund/jetkvm-desktop/pkg/input"
 	"github.com/lkarlslund/jetkvm-desktop/pkg/logging"
 	"github.com/lkarlslund/jetkvm-desktop/pkg/protocol/auth"
@@ -48,26 +49,31 @@ type Config struct {
 }
 
 type Snapshot struct {
-	Phase                 Phase
-	Status                string
-	BaseURL               string
-	DeviceID              string
-	Hostname              string
-	ActiveExtension       string
-	ATXState              *ATXState
-	Quality               float64
-	KeyboardLayout        string
-	EDID                  string
-	AppVersion            string
-	SystemVersion         string
-	AppUpdateAvailable    bool
-	SystemUpdateAvailable bool
-	HIDReady              bool
-	VideoReady            bool
-	LastError             string
-	RTCState              webrtc.PeerConnectionState
-	SignalingMode         client.SignalingMode
-	PasteInProgress       bool
+	Phase                  Phase
+	Status                 string
+	BaseURL                string
+	DeviceID               string
+	Hostname               string
+	ActiveExtension        string
+	ATXState               *ATXState
+	SerialSettings         *SerialSettings
+	SerialConsoleReady     bool
+	SerialConsoleBuffer    string
+	SerialConsoleError     string
+	SerialConsoleTruncated bool
+	Quality                float64
+	KeyboardLayout         string
+	EDID                   string
+	AppVersion             string
+	SystemVersion          string
+	AppUpdateAvailable     bool
+	SystemUpdateAvailable  bool
+	HIDReady               bool
+	VideoReady             bool
+	LastError              string
+	RTCState               webrtc.PeerConnectionState
+	SignalingMode          client.SignalingMode
+	PasteInProgress        bool
 }
 
 type Controller struct {
@@ -75,10 +81,85 @@ type Controller struct {
 
 	mu        sync.RWMutex
 	snapshot  Snapshot
+	serialLog serialScrollback
 	current   *client.Client
 	runParent context.Context
 	cancelRun context.CancelFunc
 	running   bool
+}
+
+const (
+	serialScrollbackMaxLines = 5000
+	serialScrollbackMaxBytes = 1 << 20
+)
+
+type serialScrollback struct {
+	chunks    []string
+	lineCount int
+	byteCount int
+	truncated bool
+}
+
+func (s *serialScrollback) Reset() {
+	s.chunks = nil
+	s.lineCount = 0
+	s.byteCount = 0
+	s.truncated = false
+}
+
+func (s *serialScrollback) Append(text string) (string, bool) {
+	if text == "" {
+		return s.String(), s.truncated
+	}
+	s.chunks = append(s.chunks, text)
+	s.byteCount += len(text)
+	s.lineCount += serialChunkLines(text)
+	for s.byteCount > serialScrollbackMaxBytes || s.lineCount > serialScrollbackMaxLines {
+		if len(s.chunks) == 0 {
+			break
+		}
+		dropped := s.chunks[0]
+		s.chunks = s.chunks[1:]
+		s.byteCount -= len(dropped)
+		s.lineCount -= serialChunkLines(dropped)
+		s.truncated = true
+	}
+	return s.String(), s.truncated
+}
+
+func (s *serialScrollback) String() string {
+	if len(s.chunks) == 0 {
+		return ""
+	}
+	return strings.Join(s.chunks, "")
+}
+
+func serialChunkLines(text string) int {
+	if text == "" {
+		return 0
+	}
+	return strings.Count(text, "\n") + 1
+}
+
+func defaultSerialSettings() SerialSettings {
+	return SerialSettings{
+		BaudRate: 9600,
+		DataBits: 8,
+		Parity:   "none",
+		StopBits: "1",
+		Terminator: Terminator{
+			Label: "LF (\\n)",
+			Value: "\n",
+		},
+		HideSerialSettings: false,
+		EnableEcho:         false,
+		NormalizeMode:      "names",
+		NormalizeLineEnd:   "keep",
+		TabRender:          "",
+		PreserveANSI:       true,
+		ShowNLTag:          true,
+		Buttons:            []QuickButton{},
+	}
 }
 
 func New(cfg Config) *Controller {
@@ -321,7 +402,7 @@ func (c *Controller) SetATXPowerAction(action ATXPowerAction) error {
 }
 
 func (c *Controller) SetActiveExtension(extensionID string) error {
-	return c.mutateAndConfirm(func(ctx context.Context) error {
+	if err := c.mutateAndConfirm(func(ctx context.Context) error {
 		current := c.clientIfConnected()
 		if current == nil {
 			return errors.New("client not connected")
@@ -333,7 +414,34 @@ func (c *Controller) SetActiveExtension(extensionID string) error {
 			return false, err
 		}
 		return current == extensionID, nil
+	}); err != nil {
+		return err
+	}
+
+	c.setState(func(s *Snapshot) {
+		s.ActiveExtension = extensionID
+		s.SerialConsoleError = ""
 	})
+	if extensionID != "serial-console" {
+		c.setState(func(s *Snapshot) {
+			s.SerialSettings = nil
+		})
+		return nil
+	}
+
+	settings, err := c.GetSerialSettings(withTimeout(context.Background(), c.cfg.RPCTimeout))
+	if err != nil {
+		defaults := defaultSerialSettings()
+		c.setState(func(s *Snapshot) {
+			s.SerialSettings = &defaults
+			s.SerialConsoleError = err.Error()
+		})
+		return nil
+	}
+	c.setState(func(s *Snapshot) {
+		s.SerialSettings = settings
+	})
+	return nil
 }
 
 func (c *Controller) SetDCPowerState(enabled bool) error {
@@ -370,7 +478,7 @@ func (c *Controller) SetSerialSettings(settings SerialSettings) error {
 			Sort: button.Sort,
 		})
 	}
-	return current.SetSerialSettings(withTimeout(context.Background(), c.cfg.MutationTimeout), client.SerialSettings{
+	if err := current.SetSerialSettings(withTimeout(context.Background(), c.cfg.MutationTimeout), client.SerialSettings{
 		BaudRate: settings.BaudRate,
 		DataBits: settings.DataBits,
 		Parity:   settings.Parity,
@@ -387,7 +495,15 @@ func (c *Controller) SetSerialSettings(settings SerialSettings) error {
 		PreserveANSI:       settings.PreserveANSI,
 		ShowNLTag:          settings.ShowNLTag,
 		Buttons:            buttons,
+	}); err != nil {
+		return err
+	}
+	settingsCopy := settings
+	c.setState(func(s *Snapshot) {
+		s.SerialSettings = &settingsCopy
+		s.SerialConsoleError = ""
 	})
+	return nil
 }
 
 func (c *Controller) SetSerialCommandHistory(history []string) error {
@@ -404,6 +520,34 @@ func (c *Controller) SendCustomCommand(command string) error {
 		return errors.New("client not connected")
 	}
 	return current.SendCustomCommand(withTimeout(context.Background(), c.cfg.MutationTimeout), command)
+}
+
+func (c *Controller) SendSerialText(text string) error {
+	current := c.clientIfConnected()
+	if current == nil {
+		return errors.New("client not connected")
+	}
+	return current.SendSerialText(text)
+}
+
+func (c *Controller) SendSerialRaw(text string) error {
+	current := c.clientIfConnected()
+	if current == nil {
+		return errors.New("client not connected")
+	}
+	return current.SendSerialRaw(text)
+}
+
+func (c *Controller) SendSerialTerminator() error {
+	c.mu.RLock()
+	settings := c.snapshot.SerialSettings
+	c.mu.RUnlock()
+
+	terminator := "\n"
+	if settings != nil && settings.Terminator.Value != "" {
+		terminator = settings.Terminator.Value
+	}
+	return c.SendSerialRaw(terminator)
 }
 
 func (c *Controller) SetUSBDevices(devices USBDevices) error {
@@ -1659,6 +1803,18 @@ func (c *Controller) CancelPaste() error {
 	return current.CancelKeyboardMacro()
 }
 
+func (c *Controller) ExecuteRemoteHotkey(action hotkeys.Action) error {
+	current := c.clientIfConnected()
+	if current == nil {
+		return errors.New("client not connected")
+	}
+	steps, err := hotkeys.MacroSteps(action)
+	if err != nil {
+		return err
+	}
+	return current.ExecuteKeyboardMacro(false, steps)
+}
+
 func (c *Controller) Stats() client.StatsSnapshot {
 	c.mu.RLock()
 	current := c.current
@@ -1712,7 +1868,13 @@ func (c *Controller) run(ctx context.Context) {
 			}
 			s.HIDReady = false
 			s.VideoReady = false
+			s.SerialConsoleReady = false
+			s.SerialConsoleError = ""
+			s.SerialConsoleBuffer = ""
+			s.SerialConsoleTruncated = false
+			s.SerialSettings = nil
 		})
+		c.serialLog.Reset()
 
 		cl := c.newClient()
 		c.setClient(cl)
@@ -1796,6 +1958,50 @@ func (c *Controller) bootstrap(ctx context.Context, cl *client.Client) error {
 				})
 			}
 		}
+		if activeExtension == "serial-console" {
+			settings, stateErr := cl.GetSerialSettings(ctx)
+			if stateErr != nil {
+				defaults := defaultSerialSettings()
+				c.setState(func(s *Snapshot) {
+					s.SerialSettings = &defaults
+					s.SerialConsoleError = stateErr.Error()
+				})
+			} else {
+				buttons := make([]QuickButton, 0, len(settings.Buttons))
+				for _, button := range settings.Buttons {
+					buttons = append(buttons, QuickButton{
+						ID:      button.ID,
+						Label:   button.Label,
+						Command: button.Command,
+						Terminator: Terminator{
+							Label: button.Terminator.Label,
+							Value: button.Terminator.Value,
+						},
+						Sort: button.Sort,
+					})
+				}
+				c.setState(func(s *Snapshot) {
+					s.SerialSettings = &SerialSettings{
+						BaudRate: settings.BaudRate,
+						DataBits: settings.DataBits,
+						Parity:   settings.Parity,
+						StopBits: settings.StopBits,
+						Terminator: Terminator{
+							Label: settings.Terminator.Label,
+							Value: settings.Terminator.Value,
+						},
+						HideSerialSettings: settings.HideSerialSettings,
+						EnableEcho:         settings.EnableEcho,
+						NormalizeMode:      settings.NormalizeMode,
+						NormalizeLineEnd:   settings.NormalizeLineEnd,
+						TabRender:          settings.TabRender,
+						PreserveANSI:       settings.PreserveANSI,
+						ShowNLTag:          settings.ShowNLTag,
+						Buttons:            buttons,
+					}
+				})
+			}
+		}
 	}
 	if quality, err := cl.GetStreamQualityFactor(ctx); err == nil {
 		c.setState(func(s *Snapshot) { s.Quality = quality })
@@ -1865,6 +2071,21 @@ func (c *Controller) watch(ctx context.Context, cl *client.Client) (reason strin
 					}
 				})
 			}
+		case serial, ok := <-cl.SerialEvents():
+			if !ok {
+				return "disconnected", false
+			}
+			c.mu.RLock()
+			activeExtension := c.snapshot.ActiveExtension
+			c.mu.RUnlock()
+			if activeExtension != "serial-console" {
+				continue
+			}
+			buffer, truncated := c.serialLog.Append(serial.Text)
+			c.setState(func(s *Snapshot) {
+				s.SerialConsoleBuffer = buffer
+				s.SerialConsoleTruncated = truncated
+			})
 		case life, ok := <-cl.Lifecycle():
 			if !ok {
 				return "disconnected", false
@@ -1876,6 +2097,11 @@ func (c *Controller) watch(ctx context.Context, cl *client.Client) (reason strin
 				c.setState(func(s *Snapshot) { s.HIDReady = true })
 			case "video_ready":
 				c.setState(func(s *Snapshot) { s.VideoReady = true })
+			case "serial_ready":
+				c.setState(func(s *Snapshot) {
+					s.SerialConsoleReady = true
+					s.SerialConsoleError = ""
+				})
 			case "paste_state":
 				c.setState(func(s *Snapshot) { s.PasteInProgress = life.PasteState })
 			case "peer_state":
@@ -1893,6 +2119,8 @@ func (c *Controller) watch(ctx context.Context, cl *client.Client) (reason strin
 				}
 			case "connect_error", "video_error":
 				c.setState(func(s *Snapshot) { s.LastError = life.Err })
+			case "serial_error":
+				c.setState(func(s *Snapshot) { s.SerialConsoleError = life.Err })
 			}
 		}
 	}
@@ -1912,6 +2140,7 @@ func (c *Controller) setConnectError(err error) {
 		s.LastError = err.Error()
 		s.HIDReady = false
 		s.VideoReady = false
+		s.SerialConsoleReady = false
 		if isAuthError(err) {
 			s.Phase = PhaseAuthFailed
 			s.Status = "authentication failed"
@@ -2015,6 +2244,15 @@ func sleepWithContext(ctx context.Context, d time.Duration) bool {
 	case <-timer.C:
 		return true
 	}
+}
+
+func withTimeout(ctx context.Context, d time.Duration) context.Context {
+	timeoutCtx, cancel := context.WithTimeout(ctx, d)
+	go func() {
+		<-timeoutCtx.Done()
+		cancel()
+	}()
+	return timeoutCtx
 }
 
 func sessionLocalAuthMode(mode auth.LocalAuthMode) LocalAuthMode {

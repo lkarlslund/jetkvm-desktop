@@ -10,6 +10,7 @@ const (
 	IconPaste
 	IconMedia
 	IconStats
+	IconTerminal
 	IconMinus
 	IconPlus
 	IconPower
@@ -105,6 +106,11 @@ func drawIcon(ctx *Context, kind IconKind, r Rect, clr color.Color, active bool)
 		ctx.StrokeLine(Point{left + 2, bottom}, Point{left + 2, mid + 4}, 2, clr)
 		ctx.StrokeLine(Point{cx, bottom}, Point{cx, top + 5}, 2, clr)
 		ctx.StrokeLine(Point{right - 2, bottom}, Point{right - 2, mid - 1}, 2, clr)
+	case IconTerminal:
+		ctx.StrokeRect(Rect{X: left, Y: top + 1, W: right - left, H: bottom - top - 2}, 1.4, clr)
+		ctx.StrokeLine(Point{left + 4, top + 6}, Point{left + 7, top + 9}, 1.4, clr)
+		ctx.StrokeLine(Point{left + 4, bottom - 7}, Point{left + 7, top + 9}, 1.4, clr)
+		ctx.StrokeLine(Point{left + 10, bottom - 6}, Point{right - 4, bottom - 6}, 1.4, clr)
 	case IconMinus:
 		ctx.StrokeLine(Point{left, cy}, Point{right, cy}, 2, clr)
 	case IconPlus:

@@ -2,6 +2,8 @@ package app
 
 import (
 	"fmt"
+	"image/color"
+	"math"
 	"strings"
 	"time"
 
@@ -81,6 +83,67 @@ func (a *App) syncPasteInput() {
 		}
 	}
 	a.updatePastePreview()
+}
+
+func (a *App) openSerialConsoleOverlay() {
+	if a.ctrl == nil {
+		return
+	}
+	snap := a.ctrl.Snapshot()
+	if snap.ActiveExtension != "serial-console" {
+		return
+	}
+	a.releaseAllKeys(true)
+	a.settingsOpen = false
+	a.pasteOpen = false
+	a.mediaOpen = false
+	a.serialConsoleOpen = true
+	a.serialConsoleScroll = 0
+	a.settingsInputFocus = settingsInputNone
+	a.applyCursorMode()
+}
+
+func (a *App) syncSerialConsoleInput() {
+	if !a.serialConsoleOpen || !a.focused || a.ctrl == nil || a.ctrl.Snapshot().Phase != session.PhaseConnected {
+		return
+	}
+	rawKeys := inpututil.AppendPressedKeys(nil)
+	if a.suppressKeysUntilClear {
+		if len(rawKeys) == 0 {
+			a.suppressKeysUntilClear = false
+		}
+		return
+	}
+
+	_, wheelY := ebiten.Wheel()
+	if wheelY != 0 {
+		lines := int(math.Round(math.Abs(wheelY) * 3))
+		if lines < 1 {
+			lines = 1
+		}
+		if wheelY > 0 {
+			a.serialConsoleScroll += lines
+		} else {
+			a.serialConsoleScroll -= lines
+			if a.serialConsoleScroll < 0 {
+				a.serialConsoleScroll = 0
+			}
+		}
+	}
+
+	if inpututil.IsKeyJustPressed(ebiten.KeyEnter) || inpututil.IsKeyJustPressed(ebiten.KeyNumpadEnter) {
+		_ = a.ctrl.SendSerialTerminator()
+	}
+	if inpututil.IsKeyJustPressed(ebiten.KeyBackspace) {
+		_ = a.ctrl.SendSerialText("\x7f")
+	}
+	if inpututil.IsKeyJustPressed(ebiten.KeyTab) {
+		_ = a.ctrl.SendSerialText("\t")
+	}
+	chars := ebiten.AppendInputChars(nil)
+	if len(chars) != 0 {
+		_ = a.ctrl.SendSerialText(string(chars))
+	}
 }
 
 func (a *App) updatePastePreview() {
@@ -232,6 +295,118 @@ func humanFrameAge(at time.Time) string {
 	default:
 		return fmt.Sprintf("%ds", int(age.Seconds()))
 	}
+}
+
+func (a *App) drawSerialConsoleOverlay(screen *ebiten.Image, snap session.Snapshot) {
+	if !a.serialConsoleOpen {
+		return
+	}
+	a.drawUIRoot(screen, &a.serialConsoleRuntime, func(chromeButton) {}, serialConsoleOverlayRootElement{
+		app:  a,
+		snap: snap,
+	})
+}
+
+type serialConsoleOverlayRootElement struct {
+	app  *App
+	snap session.Snapshot
+}
+
+func (serialConsoleOverlayRootElement) Measure(_ *ui.Context, constraints ui.Constraints) ui.Size {
+	return constraints.Clamp(ui.Size{W: constraints.MaxW, H: constraints.MaxH})
+}
+
+func (e serialConsoleOverlayRootElement) Draw(ctx *ui.Context, bounds ui.Rect) {
+	if ctx.Runtime != nil {
+		ctx.Runtime.Register(ui.Control{
+			ID:      "serial_console_backdrop",
+			Rect:    bounds,
+			Enabled: true,
+			OnClick: func(ui.PointerEvent) {},
+		})
+	}
+	ui.Backdrop{Color: colorRGBA(0, 0, 0, 132)}.Draw(ctx, bounds)
+	panelW := min(bounds.W-72, 1040)
+	panelH := min(bounds.H-96, 680)
+	if panelW < 320 {
+		panelW = bounds.W - 24
+	}
+	if panelH < 220 {
+		panelH = bounds.H - 24
+	}
+	panel := ui.Rect{
+		X: bounds.X + (bounds.W-panelW)/2,
+		Y: bounds.Y + (bounds.H-panelH)/2,
+		W: panelW,
+		H: panelH,
+	}
+	e.app.serialConsolePanel = rect{x: panel.X, y: panel.Y, w: panel.W, h: panel.H}
+	ctx.FillStrokedRoundedRect(panel, 1, 8, ctx.Theme.ModalStroke, ctx.Theme.ModalFill)
+
+	titleY := panel.Y + 18
+	ctx.DrawText(ctx.Screen, "Serial Console", panel.X+18, titleY, 20, ctx.Theme.Title)
+
+	closeRect := ui.Rect{X: panel.Right() - 54, Y: panel.Y + 14, W: 36, H: 28}
+	ui.Button{Label: "X", Enabled: true, OnClick: e.app.closeSerialConsoleOverlay}.Draw(ctx, closeRect)
+
+	status := "Connected"
+	if e.snap.ActiveExtension != "serial-console" {
+		status = "Serial extension is not active"
+	} else if !e.snap.SerialConsoleReady {
+		status = "Waiting for serial channel"
+	}
+	statusColor := ctx.Theme.Muted
+	if e.snap.SerialConsoleError != "" {
+		status = e.snap.SerialConsoleError
+		statusColor = ctx.Theme.Error
+	}
+	ctx.DrawText(ctx.Screen, status, panel.X+18, panel.Y+48, 12, statusColor)
+
+	textRect := ui.Rect{
+		X: panel.X + 18,
+		Y: panel.Y + 72,
+		W: panel.W - 36,
+		H: panel.H - 118,
+	}
+	ctx.FillRect(textRect, ctx.Theme.InputFill)
+	ctx.StrokeRect(textRect, 1, ctx.Theme.InputStroke)
+
+	lines := serialConsoleDisplayLines(e.snap.SerialConsoleBuffer)
+	lineHeight := ui.LineHeight(12)
+	visibleLines := maxInt(1, int((textRect.H-12)/lineHeight))
+	maxScroll := maxInt(0, len(lines)-visibleLines)
+	if e.app.serialConsoleScroll > maxScroll {
+		e.app.serialConsoleScroll = maxScroll
+	}
+	start := maxInt(0, len(lines)-visibleLines-e.app.serialConsoleScroll)
+	end := minInt(len(lines), start+visibleLines)
+	y := textRect.Y + 8
+	for _, line := range lines[start:end] {
+		ctx.DrawText(ctx.Screen, line, textRect.X+8, y, 12, ctx.Theme.Body)
+		y += lineHeight
+	}
+	if len(lines) == 0 {
+		ctx.DrawText(ctx.Screen, "No serial output yet.", textRect.X+8, textRect.Y+8, 12, ctx.Theme.Muted)
+	}
+
+	hint := "Typing is sent directly to the serial console. Esc closes."
+	if e.snap.SerialConsoleTruncated {
+		hint = "Typing is sent directly to the serial console. Older scrollback has been truncated."
+	}
+	ctx.DrawText(ctx.Screen, hint, panel.X+18, panel.Bottom()-28, 12, ctx.Theme.Muted)
+}
+
+func serialConsoleDisplayLines(buffer string) []string {
+	if buffer == "" {
+		return nil
+	}
+	normalized := strings.ReplaceAll(buffer, "\r\n", "\n")
+	normalized = strings.ReplaceAll(normalized, "\r", "\n")
+	return strings.Split(normalized, "\n")
+}
+
+func colorRGBA(r, g, b, a uint8) color.Color {
+	return color.RGBA{R: r, G: g, B: b, A: a}
 }
 
 func (a *App) drawPasteOverlay(screen *ebiten.Image, snap session.Snapshot) {

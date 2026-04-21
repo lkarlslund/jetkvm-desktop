@@ -3,6 +3,7 @@ package session
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -150,6 +151,24 @@ func TestControllerReceivesVideoAndForwardsInput(t *testing.T) {
 		time.Sleep(25 * time.Millisecond)
 	}
 	t.Fatalf("expected keypress, pointer, mouse, and wheel inputs, got %+v", srv.Inputs())
+}
+
+func TestSerialScrollbackTrimsOldContent(t *testing.T) {
+	var log serialScrollback
+	var text string
+	var truncated bool
+	for i := 0; i < serialScrollbackMaxLines+10; i++ {
+		text, truncated = log.Append(fmt.Sprintf("line-%d\n", i))
+	}
+	if !truncated {
+		t.Fatal("expected scrollback to report truncation")
+	}
+	if strings.Contains(text, "line-0\n") {
+		t.Fatal("expected oldest lines to be dropped from scrollback")
+	}
+	if !strings.Contains(text, fmt.Sprintf("line-%d\n", serialScrollbackMaxLines+9)) {
+		t.Fatal("expected newest lines to remain in scrollback")
+	}
 }
 
 func TestControllerSetQualitySucceedsWhenWriteAckIsDropped(t *testing.T) {

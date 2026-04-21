@@ -46,6 +46,10 @@ type LifecycleEvent struct {
 	PasteState bool
 }
 
+type SerialConsoleEvent struct {
+	Text string
+}
+
 type StatsSnapshot struct {
 	SignalingMode   SignalingMode
 	RTCState        webrtc.PeerConnectionState
@@ -74,7 +78,9 @@ type Client struct {
 	hidDC          *webrtc.DataChannel
 	hidUnreliable  *webrtc.DataChannel
 	hidNonOrdered  *webrtc.DataChannel
+	serialDC       *webrtc.DataChannel
 	eventCh        chan jsonrpc.Event
+	serialCh       chan SerialConsoleEvent
 	pending        sync.Map
 	requestCounter atomic.Uint64
 	hidReady       chan struct{}
@@ -135,6 +141,7 @@ func New(cfg Config) (*Client, error) {
 		cfg:         cfg,
 		authClient:  authClient,
 		eventCh:     make(chan jsonrpc.Event, 32),
+		serialCh:    make(chan SerialConsoleEvent, 128),
 		hidReady:    make(chan struct{}),
 		lifecycleCh: make(chan LifecycleEvent, 32),
 		closeCh:     make(chan struct{}),
@@ -143,6 +150,10 @@ func New(cfg Config) (*Client, error) {
 
 func (c *Client) Events() <-chan jsonrpc.Event {
 	return c.eventCh
+}
+
+func (c *Client) SerialEvents() <-chan SerialConsoleEvent {
+	return c.serialCh
 }
 
 func (c *Client) Lifecycle() <-chan LifecycleEvent {
@@ -484,6 +495,36 @@ func (c *Client) ExecuteKeyboardMacro(isPaste bool, steps []hidrpc.KeyboardMacro
 	return c.hidDC.Send(data)
 }
 
+func (c *Client) SendSerialText(text string) error {
+	if text == "" {
+		return nil
+	}
+	if c.serialDC == nil {
+		return fmt.Errorf("serial channel not ready")
+	}
+	data, err := json.Marshal(struct {
+		Type string `json:"type"`
+		Data string `json:"data"`
+	}{
+		Type: "serial",
+		Data: text,
+	})
+	if err != nil {
+		return err
+	}
+	return c.serialDC.SendText(string(data))
+}
+
+func (c *Client) SendSerialRaw(text string) error {
+	if text == "" {
+		return nil
+	}
+	if c.serialDC == nil {
+		return fmt.Errorf("serial channel not ready")
+	}
+	return c.serialDC.SendText(text)
+}
+
 func (c *Client) CancelKeyboardMacro() error {
 	if c.hidDC == nil {
 		return fmt.Errorf("hid channel not ready")
@@ -571,7 +612,34 @@ func (c *Client) openDataChannels() error {
 	if err == nil {
 		c.watchControlChannel(c.hidNonOrdered)
 	}
-	return err
+	if err != nil {
+		return err
+	}
+
+	c.serialDC, err = c.pc.CreateDataChannel("serial", nil)
+	if err != nil {
+		return err
+	}
+	c.watchControlChannel(c.serialDC)
+	c.serialDC.OnOpen(func() {
+		c.emitLifecycle(LifecycleEvent{Type: "serial_ready"})
+	})
+	c.serialDC.OnError(func(err error) {
+		if err != nil {
+			c.emitLifecycle(LifecycleEvent{Type: "serial_error", Err: err.Error()})
+		}
+	})
+	c.serialDC.OnMessage(func(msg webrtc.DataChannelMessage) {
+		text := string(msg.Data)
+		if text == "" {
+			return
+		}
+		select {
+		case c.serialCh <- SerialConsoleEvent{Text: text}:
+		default:
+		}
+	})
+	return nil
 }
 
 func (c *Client) watchControlChannel(dc *webrtc.DataChannel) {

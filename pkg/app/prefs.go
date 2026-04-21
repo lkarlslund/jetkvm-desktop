@@ -18,6 +18,7 @@ type Preferences struct {
 	HideCursor                bool           `json:"hide_cursor"`
 	InvertScroll              bool           `json:"invert_scroll"`
 	ShowPressedKeys           bool           `json:"show_pressed_keys"`
+	ExperimentalGlobalHotkeys bool           `json:"experimental_global_hotkeys"`
 	AbsoluteSideButtonsViaRel bool           `json:"absolute_side_buttons_via_relative"`
 	ScrollThrottle            ScrollThrottle `json:"scroll_throttle"`
 	ScrollThrottleMs          int            `json:"scroll_throttle_ms,omitempty"`
@@ -79,6 +80,7 @@ func defaultPreferences() Preferences {
 		HideCursor:                false,
 		InvertScroll:              false,
 		ShowPressedKeys:           false,
+		ExperimentalGlobalHotkeys: false,
 		AbsoluteSideButtonsViaRel: true,
 		ScrollThrottle:            scrollThrottleOff,
 		ScrollThrottleMs:          0,

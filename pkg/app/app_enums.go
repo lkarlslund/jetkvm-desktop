@@ -123,7 +123,7 @@ func (i settingsActionGroup) String() string {
 // An "invalid array index" compiler error signifies that the constant values have changed.
 // Re-run the stringer command to generate them again.
 func _settingsActionGroupNoOp() {
-	var x [64]struct{}
+	var x [1]struct{}
 	_ = x[settingsGroupKeyboardLayout-(0)]
 	_ = x[settingsGroupVideoQuality-(1)]
 	_ = x[settingsGroupVideoCodec-(2)]

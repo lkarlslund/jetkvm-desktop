@@ -11,6 +11,7 @@ import (
 
 	"github.com/hajimehoshi/ebiten/v2"
 
+	"github.com/lkarlslund/jetkvm-desktop/pkg/hotkeys"
 	"github.com/lkarlslund/jetkvm-desktop/pkg/input"
 	"github.com/lkarlslund/jetkvm-desktop/pkg/logging"
 	"github.com/lkarlslund/jetkvm-desktop/pkg/session"
@@ -27,6 +28,7 @@ const (
 	iconPaste                      // paste
 	iconMedia                      // media
 	iconStats                      // stats
+	iconTerminal                   // terminal
 	iconMinus                      // minus
 	iconPlus                       // plus
 	iconPower                      // power
@@ -183,6 +185,8 @@ func uiIcon(kind iconKind) ui.IconKind {
 		return ui.IconMedia
 	case iconStats:
 		return ui.IconStats
+	case iconTerminal:
+		return ui.IconTerminal
 	case iconMinus:
 		return ui.IconMinus
 	case iconPlus:
@@ -226,11 +230,12 @@ func settingsSections(snap session.Snapshot) []settingsSectionDef {
 		{
 			id:          sectionKeyboard,
 			label:       "Keyboard",
-			description: "Layout and pressed-key display",
+			description: "Layout, pressed-key display, experimental shortcuts",
 			available:   true,
 			items: []string{
 				"Keyboard layout selection",
 				"Show pressed keys overlay",
+				"Experimental remote task-switch chords",
 			},
 		},
 		{
@@ -393,6 +398,7 @@ func (a *App) layoutChromeButtons(width, height int, snap session.Snapshot) []ch
 				a.loadClipboardText()
 				a.settingsOpen = false
 				a.mediaOpen = false
+				a.serialConsoleOpen = false
 				a.applyCursorMode()
 			}
 		}})
@@ -403,6 +409,15 @@ func (a *App) layoutChromeButtons(width, height int, snap session.Snapshot) []ch
 				a.openMediaOverlay()
 			}
 		}})
+		if snap.ActiveExtension == "serial-console" {
+			defs = append(defs, chromeButton{id: "serial_console", hint: "Serial console", icon: iconTerminal, enabled: true, active: a.serialConsoleOpen, onClick: func() {
+				if a.serialConsoleOpen {
+					a.closeSerialConsoleOverlay()
+				} else {
+					a.openSerialConsoleOverlay()
+				}
+			}})
+		}
 	}
 	defs = append(defs,
 		chromeButton{id: "stats", hint: "Connection stats", icon: iconStats, enabled: true, active: a.statsOpen, onClick: func() { a.statsOpen = !a.statsOpen }},
@@ -414,6 +429,7 @@ func (a *App) layoutChromeButtons(width, height int, snap session.Snapshot) []ch
 				a.settingsOpen = true
 				a.pasteOpen = false
 				a.mediaOpen = false
+				a.serialConsoleOpen = false
 				a.refreshSettingsSection(a.settingsSection)
 				a.applyCursorMode()
 			}
@@ -2164,6 +2180,12 @@ func (a *App) settingsKeyboardBody(snap session.Snapshot) ui.Element {
 	if layout == "" {
 		layout = "en-US"
 	}
+	var capability hotkeys.Capability
+	var registrations []hotkeys.Registration
+	if a.hotkeys != nil {
+		capability = a.hotkeys.Capability()
+		registrations = a.hotkeys.Registrations()
+	}
 	layoutState := a.settingsAction(settingsGroupKeyboardLayout)
 	options := input.SupportedKeyboardLayouts()
 	buttons := make([]ui.Element, 0, len(options))
@@ -2199,6 +2221,17 @@ func (a *App) settingsKeyboardBody(snap session.Snapshot) ui.Element {
 			a.savePreferences()
 		})),
 		ui.Fixed(ui.Spacer{H: 18}),
+		ui.Fixed(settingsSectionLabelElement("Experimental remote shortcuts")),
+		ui.Fixed(ui.Spacer{H: 8}),
+		ui.Fixed(ui.Paragraph{Text: "Window-only experimental backend. These chords send remote task switching macros instead of forwarding the local chord as HID input.", Size: 12, Color: a.currentTheme().Muted}),
+		ui.Fixed(ui.Spacer{H: 12}),
+		ui.Fixed(settingsToggleRowControl("Enable Experimental Remote Hotkeys", settingsActionVisual{Enabled: true, Active: a.prefs.ExperimentalGlobalHotkeys}, func() {
+			a.prefs.ExperimentalGlobalHotkeys = !a.prefs.ExperimentalGlobalHotkeys
+			a.savePreferences()
+		})),
+		ui.Fixed(ui.Spacer{H: 12}),
+		ui.Fixed(settingsKeyValueElement("Backend", experimentalHotkeyBackendLabel(capability), 76)),
+		ui.Fixed(ui.Spacer{H: 18}),
 		ui.Fixed(settingsSectionLabelElement("Layout presets")),
 		ui.Fixed(ui.Spacer{H: 10}),
 		ui.Fixed(ui.Wrap{Children: buttons, Spacing: 10, LineSpacing: 8}),
@@ -2211,9 +2244,28 @@ func (a *App) settingsKeyboardBody(snap session.Snapshot) ui.Element {
 	}
 	children = append(children,
 		ui.Fixed(ui.Spacer{H: 14}),
+		ui.Fixed(settingsSectionLabelElement("Shortcut chords")),
+		ui.Fixed(ui.Spacer{H: 8}),
+	)
+	for i, registration := range registrations {
+		if i > 0 {
+			children = append(children, ui.Fixed(ui.Spacer{H: 10}))
+		}
+		children = append(children, ui.Fixed(settingsKeyValueElement(registration.Trigger, registration.Description, 138)))
+	}
+	children = append(children,
+		ui.Fixed(ui.Spacer{H: 14}),
 		ui.Fixed(ui.Paragraph{Text: "Make this match the remote OS only for pasted text and macros.", Size: 13, Color: a.currentTheme().Muted}),
 	)
 	return settingsCardElement("", ui.Column{Children: children})
+}
+
+func experimentalHotkeyBackendLabel(capability hotkeys.Capability) string {
+	scope := capability.Scope.String()
+	if capability.GlobalRegistration {
+		scope = "global"
+	}
+	return fmt.Sprintf("%s (%s)", capability.Backend, scope)
 }
 
 func (a *App) settingsVideoBody(snap session.Snapshot) ui.Element {
@@ -2755,6 +2807,10 @@ func (a *App) settingsSerialExtensionCard(settings *session.SerialSettings, hist
 	}
 	children := []ui.Child{
 		ui.Fixed(ui.Paragraph{Text: "Configure the serial-console extension and trigger any saved quick commands directly from the desktop client.", Size: 12, Color: a.currentTheme().Muted}),
+		ui.Fixed(ui.Spacer{H: 16}),
+		ui.Fixed(ui.Wrap{Children: []ui.Element{
+			settingsActionButton("Open Console", settingsActionVisual{Enabled: true}, 116, a.openSerialConsoleOverlay),
+		}, Spacing: 10, LineSpacing: 8}),
 		ui.Fixed(ui.Spacer{H: 16}),
 		ui.Fixed(settingsSectionLabelElement("Connection")),
 		ui.Fixed(ui.Spacer{H: 8}),

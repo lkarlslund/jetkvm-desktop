@@ -8,11 +8,11 @@ import (
 	"strings"
 )
 
-const _iconKindName = "reconnectmousepastemediastatsminuspluspowersettingsfullscreenclose"
+const _iconKindName = "reconnectmousepastemediastatsterminalminuspluspowersettingsfullscreenclose"
 
-var _iconKindIndex = [...]uint8{0, 9, 14, 19, 24, 29, 34, 38, 43, 51, 61, 66}
+var _iconKindIndex = [...]uint8{0, 9, 14, 19, 24, 29, 37, 42, 46, 51, 59, 69, 74}
 
-const _iconKindLowerName = "reconnectmousepastemediastatsminuspluspowersettingsfullscreenclose"
+const _iconKindLowerName = "reconnectmousepastemediastatsterminalminuspluspowersettingsfullscreenclose"
 
 func (i iconKind) String() string {
 	if i >= iconKind(len(_iconKindIndex)-1) {
@@ -24,21 +24,22 @@ func (i iconKind) String() string {
 // An "invalid array index" compiler error signifies that the constant values have changed.
 // Re-run the stringer command to generate them again.
 func _iconKindNoOp() {
-	var x [1]struct{}
+	var x [64]struct{}
 	_ = x[iconReconnect-(0)]
 	_ = x[iconMouse-(1)]
 	_ = x[iconPaste-(2)]
 	_ = x[iconMedia-(3)]
 	_ = x[iconStats-(4)]
-	_ = x[iconMinus-(5)]
-	_ = x[iconPlus-(6)]
-	_ = x[iconPower-(7)]
-	_ = x[iconSettings-(8)]
-	_ = x[iconFullscreen-(9)]
-	_ = x[iconClose-(10)]
+	_ = x[iconTerminal-(5)]
+	_ = x[iconMinus-(6)]
+	_ = x[iconPlus-(7)]
+	_ = x[iconPower-(8)]
+	_ = x[iconSettings-(9)]
+	_ = x[iconFullscreen-(10)]
+	_ = x[iconClose-(11)]
 }
 
-var _iconKindValues = []iconKind{iconReconnect, iconMouse, iconPaste, iconMedia, iconStats, iconMinus, iconPlus, iconPower, iconSettings, iconFullscreen, iconClose}
+var _iconKindValues = []iconKind{iconReconnect, iconMouse, iconPaste, iconMedia, iconStats, iconTerminal, iconMinus, iconPlus, iconPower, iconSettings, iconFullscreen, iconClose}
 
 var _iconKindNameToValueMap = map[string]iconKind{
 	_iconKindName[0:9]:        iconReconnect,
@@ -51,18 +52,20 @@ var _iconKindNameToValueMap = map[string]iconKind{
 	_iconKindLowerName[19:24]: iconMedia,
 	_iconKindName[24:29]:      iconStats,
 	_iconKindLowerName[24:29]: iconStats,
-	_iconKindName[29:34]:      iconMinus,
-	_iconKindLowerName[29:34]: iconMinus,
-	_iconKindName[34:38]:      iconPlus,
-	_iconKindLowerName[34:38]: iconPlus,
-	_iconKindName[38:43]:      iconPower,
-	_iconKindLowerName[38:43]: iconPower,
-	_iconKindName[43:51]:      iconSettings,
-	_iconKindLowerName[43:51]: iconSettings,
-	_iconKindName[51:61]:      iconFullscreen,
-	_iconKindLowerName[51:61]: iconFullscreen,
-	_iconKindName[61:66]:      iconClose,
-	_iconKindLowerName[61:66]: iconClose,
+	_iconKindName[29:37]:      iconTerminal,
+	_iconKindLowerName[29:37]: iconTerminal,
+	_iconKindName[37:42]:      iconMinus,
+	_iconKindLowerName[37:42]: iconMinus,
+	_iconKindName[42:46]:      iconPlus,
+	_iconKindLowerName[42:46]: iconPlus,
+	_iconKindName[46:51]:      iconPower,
+	_iconKindLowerName[46:51]: iconPower,
+	_iconKindName[51:59]:      iconSettings,
+	_iconKindLowerName[51:59]: iconSettings,
+	_iconKindName[59:69]:      iconFullscreen,
+	_iconKindLowerName[59:69]: iconFullscreen,
+	_iconKindName[69:74]:      iconClose,
+	_iconKindLowerName[69:74]: iconClose,
 }
 
 var _iconKindNames = []string{
@@ -71,12 +74,13 @@ var _iconKindNames = []string{
 	_iconKindName[14:19],
 	_iconKindName[19:24],
 	_iconKindName[24:29],
-	_iconKindName[29:34],
-	_iconKindName[34:38],
-	_iconKindName[38:43],
-	_iconKindName[43:51],
-	_iconKindName[51:61],
-	_iconKindName[61:66],
+	_iconKindName[29:37],
+	_iconKindName[37:42],
+	_iconKindName[42:46],
+	_iconKindName[46:51],
+	_iconKindName[51:59],
+	_iconKindName[59:69],
+	_iconKindName[69:74],
 }
 
 // iconKindString retrieves an enum value from the enum constants string name.
@@ -159,7 +163,7 @@ func (i settingsSection) String() string {
 // An "invalid array index" compiler error signifies that the constant values have changed.
 // Re-run the stringer command to generate them again.
 func _settingsSectionNoOp() {
-	var x [1]struct{}
+	var x [64]struct{}
 	_ = x[sectionGeneral-(0)]
 	_ = x[sectionMouse-(1)]
 	_ = x[sectionKeyboard-(2)]

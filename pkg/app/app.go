@@ -18,6 +18,7 @@ import (
 
 	"github.com/lkarlslund/jetkvm-desktop/pkg/client"
 	"github.com/lkarlslund/jetkvm-desktop/pkg/discovery"
+	"github.com/lkarlslund/jetkvm-desktop/pkg/hotkeys"
 	"github.com/lkarlslund/jetkvm-desktop/pkg/input"
 	"github.com/lkarlslund/jetkvm-desktop/pkg/logging"
 	"github.com/lkarlslund/jetkvm-desktop/pkg/session"
@@ -41,6 +42,7 @@ type App struct {
 	lastImg                *ebiten.Image
 	lastFrameAt            time.Time
 	keyboard               *input.Keyboard
+	hotkeys                hotkeys.Manager
 	lastX                  int
 	lastY                  int
 	lastButtons            byte
@@ -59,11 +61,13 @@ type App struct {
 	pasteOpen              bool
 	statsOpen              bool
 	mediaOpen              bool
+	serialConsoleOpen      bool
 	settingsSection        settingsSection
 	chromeButtons          []chromeButton
 	settingsPanel          rect
 	pastePanel             rect
 	mediaPanel             rect
+	serialConsolePanel     rect
 	prefs                  Preferences
 	systemTheme            Theme
 	systemThemeCheckedAt   time.Time
@@ -111,6 +115,7 @@ type App struct {
 	mediaUploadSent        int64
 	mediaUploadTotal       int64
 	mediaUploadSpeed       float64
+	serialConsoleScroll    int
 	mediaStorageLoaded     bool
 	settingsInputFocus     settingsInputField
 	textInput              ui.TextInputState
@@ -154,6 +159,7 @@ type App struct {
 	settingsRuntime        ui.Runtime
 	pasteRuntime           ui.Runtime
 	mediaRuntime           ui.Runtime
+	serialConsoleRuntime   ui.Runtime
 	chromeRuntime          ui.Runtime
 }
 
@@ -385,9 +391,12 @@ type mediaSpaceSnapshot struct {
 func New(cfg Config) (*App, error) {
 	prefs := loadPreferences()
 	launcherOpen := strings.TrimSpace(cfg.BaseURL) == ""
+	manager := hotkeys.NewManager()
+	manager.SetEnabled(prefs.ExperimentalGlobalHotkeys)
 	return &App{
 		cfg:                 cfg,
 		keyboard:            input.NewKeyboard(),
+		hotkeys:             manager,
 		lastPhase:           session.PhaseIdle,
 		focused:             true,
 		uiVisibleUntil:      time.Now().Add(3 * time.Second),
@@ -421,6 +430,11 @@ func (a *App) Start(ctx context.Context) {
 
 func (a *App) Update() error {
 	if inpututil.IsKeyJustPressed(ebiten.KeyEscape) {
+		if a.serialConsoleOpen {
+			a.closeSerialConsoleOverlay()
+			a.revealUIFor(1200 * time.Millisecond)
+			return nil
+		}
 		if a.pasteOpen {
 			a.closePasteOverlay()
 			a.revealUIFor(1200 * time.Millisecond)
@@ -466,6 +480,7 @@ func (a *App) Update() error {
 
 	a.syncPasteInput()
 	a.syncMediaInput()
+	a.syncSerialConsoleInput()
 	a.syncVideoFrame()
 	a.syncKeyboard()
 	a.syncMouse()
@@ -505,6 +520,11 @@ func (a *App) syncUIPointer() {
 	}
 	if a.settingsOpen {
 		if a.settingsRuntime.HandlePointer(point, pressed, justPressed, justReleased) {
+			return
+		}
+	}
+	if a.serialConsoleOpen {
+		if a.serialConsoleRuntime.HandlePointer(point, pressed, justPressed, justReleased) {
 			return
 		}
 	}
@@ -582,6 +602,7 @@ func (a *App) Draw(screen *ebiten.Image) {
 	a.drawMediaOverlay(screen, snap)
 	a.drawSettingsOverlay(screen, snap)
 	a.drawPasteOverlay(screen, snap)
+	a.drawSerialConsoleOverlay(screen, snap)
 }
 
 func (a *App) Layout(outsideWidth, outsideHeight int) (int, int) {
@@ -594,7 +615,10 @@ func (a *App) Layout(outsideWidth, outsideHeight int) (int, int) {
 }
 
 func (a *App) syncKeyboard() {
-	if !a.focused || a.settingsOpen || a.pasteOpen || a.mediaOpen || a.ctrl.Snapshot().Phase != session.PhaseConnected {
+	if !a.focused || a.settingsOpen || a.pasteOpen || a.mediaOpen || a.serialConsoleOpen || a.ctrl.Snapshot().Phase != session.PhaseConnected {
+		if a.hotkeys != nil {
+			a.hotkeys.Reset()
+		}
 		return
 	}
 	now := time.Now()
@@ -613,6 +637,9 @@ func (a *App) syncKeyboard() {
 			keys = append(keys, key)
 		}
 	}
+	if a.handleExperimentalHotkeys(keys) {
+		return
+	}
 	for _, evt := range a.keyboard.Update(keys, now) {
 		_ = a.ctrl.SendKeypress(evt.HID, evt.Press)
 	}
@@ -621,13 +648,32 @@ func (a *App) syncKeyboard() {
 	}
 }
 
+func (a *App) handleExperimentalHotkeys(keys []input.Key) bool {
+	if a.hotkeys == nil {
+		return false
+	}
+	result := a.hotkeys.Update(keys)
+	if !result.Consumed {
+		return false
+	}
+	if len(result.Actions) == 0 {
+		return true
+	}
+	a.releaseAllKeys(true)
+	a.suppressKeysUntilClear = true
+	for _, action := range result.Actions {
+		_ = a.ctrl.ExecuteRemoteHotkey(action)
+	}
+	return true
+}
+
 func (a *App) syncMouse() {
 	log := logging.Subsystem("app")
 	snapshot := a.ctrl.Snapshot()
 	now := time.Now()
 	x, y := ebiten.CursorPosition()
 	buttons := currentMouseButtons(ebiten.IsMouseButtonPressed)
-	if a.settingsOpen || a.pasteOpen || a.mediaOpen || snapshot.Phase != session.PhaseConnected {
+	if a.settingsOpen || a.pasteOpen || a.mediaOpen || a.serialConsoleOpen || snapshot.Phase != session.PhaseConnected {
 		if buttons != a.lastButtons {
 			log.Trace().
 				Int("x", x).
@@ -636,6 +682,7 @@ func (a *App) syncMouse() {
 				Bool("settings_open", a.settingsOpen).
 				Bool("paste_open", a.pasteOpen).
 				Bool("media_open", a.mediaOpen).
+				Bool("serial_console_open", a.serialConsoleOpen).
 				Str("phase", snapshot.Phase.String()).
 				Msg("mouse input suppressed")
 		}
@@ -1283,6 +1330,8 @@ func (a *App) applyCursorMode() {
 		ebiten.SetCursorMode(ebiten.CursorModeVisible)
 	case a.mediaOpen:
 		ebiten.SetCursorMode(ebiten.CursorModeVisible)
+	case a.serialConsoleOpen:
+		ebiten.SetCursorMode(ebiten.CursorModeVisible)
 	case a.relative:
 		ebiten.SetCursorMode(ebiten.CursorModeCaptured)
 	case a.hideCursor:
@@ -1299,6 +1348,9 @@ func (a *App) savePreferences() {
 	a.prefs.ScrollThrottle = scrollThrottlePref(a.scrollThrottle)
 	a.prefs.ScrollThrottleMs = int(a.scrollThrottle / time.Millisecond)
 	a.prefs.PointerMoveThrottleMs = int(a.pointerMoveThrottle / time.Millisecond)
+	if a.hotkeys != nil {
+		a.hotkeys.SetEnabled(a.prefs.ExperimentalGlobalHotkeys)
+	}
 	_ = savePreferences(a.prefs)
 }
 
@@ -3388,13 +3440,13 @@ func (a *App) syncChromeVisibility() {
 	hotZone := a.chromeRevealZone(a.lastWidth, a.lastHeight, snap)
 	x, y := ebiten.CursorPosition()
 	if x != a.lastUIX || y != a.lastUIY {
-		if hotZone.contains(x, y) || a.settingsOpen || a.pasteOpen || a.mediaOpen {
+		if hotZone.contains(x, y) || a.settingsOpen || a.pasteOpen || a.mediaOpen || a.serialConsoleOpen {
 			a.revealUIFor(1600 * time.Millisecond)
 		}
 		a.lastUIX = x
 		a.lastUIY = y
 	}
-	if a.settingsOpen || a.pasteOpen || a.mediaOpen {
+	if a.settingsOpen || a.pasteOpen || a.mediaOpen || a.serialConsoleOpen {
 		a.applyCursorMode()
 		a.revealUIFor(500 * time.Millisecond)
 	}
@@ -3416,6 +3468,7 @@ func (a *App) syncSessionState() {
 		a.pasteOpen = false
 		a.statsOpen = false
 		a.mediaOpen = false
+		a.serialConsoleOpen = false
 		a.relative = false
 		a.applyCursorMode()
 	}
@@ -3429,6 +3482,9 @@ func (a *App) syncSessionState() {
 		}
 		if a.mediaOpen {
 			a.mediaOpen = false
+		}
+		if a.serialConsoleOpen {
+			a.serialConsoleOpen = false
 		}
 		a.releaseAllKeys(false)
 		a.releasePointerState()
@@ -3483,6 +3539,9 @@ func (a *App) syncWindowTitle() {
 }
 
 func (a *App) releaseAllKeys(send bool) {
+	if a.hotkeys != nil {
+		a.hotkeys.Reset()
+	}
 	if send {
 		for _, evt := range a.keyboard.ReleaseAll() {
 			_ = a.ctrl.SendKeypress(evt.HID, evt.Press)
@@ -3530,6 +3589,15 @@ func (a *App) closeMediaOverlay() {
 	a.mediaOpen = false
 	a.mediaURLFocused = false
 	a.mediaUploadFocused = false
+	a.armOverlayDismissSuppression()
+	a.applyCursorMode()
+}
+
+func (a *App) closeSerialConsoleOverlay() {
+	if !a.serialConsoleOpen {
+		return
+	}
+	a.serialConsoleOpen = false
 	a.armOverlayDismissSuppression()
 	a.applyCursorMode()
 }
@@ -3591,7 +3659,7 @@ func (a *App) drawOverlay(screen *ebiten.Image, snap session.Snapshot, hasVideo 
 		detail:     detail,
 		takeover:   snap.Phase == session.PhaseOtherSession,
 		withButton: snap.Phase == session.PhaseOtherSession,
-		width:      float64(screen.Bounds().Dx() - 52),
+		width:      min(420, float64(screen.Bounds().Dx()-52)),
 		onClick: func() {
 			a.releaseAllKeys(true)
 			a.ctrl.ReconnectNow()
@@ -3601,7 +3669,7 @@ func (a *App) drawOverlay(screen *ebiten.Image, snap session.Snapshot, hasVideo 
 }
 
 func (a *App) drawPressedKeysOverlay(screen *ebiten.Image) {
-	if !a.showPressedKeys || a.settingsOpen || a.mediaOpen {
+	if !a.showPressedKeys || a.settingsOpen || a.mediaOpen || a.serialConsoleOpen {
 		return
 	}
 	pressed := a.keyboard.Pressed()
@@ -3671,8 +3739,12 @@ func (overlayBannerRootElement) Measure(_ *ui.Context, constraints ui.Constraint
 }
 
 func (e overlayBannerRootElement) Draw(ctx *ui.Context, bounds ui.Rect) {
+	x := bounds.W - e.width - 26
+	if x < 12 {
+		x = 12
+	}
 	ui.Positioned{
-		X: 26,
+		X: x,
 		Y: 84,
 		W: e.width,
 		H: 96,
