@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"image"
+	imagedraw "image/draw"
 	"math"
 	"net"
 	"net/url"
@@ -566,11 +568,30 @@ func (a *App) syncVideoFrame() {
 	if frame == nil || !at.After(a.lastFrameAt) {
 		return
 	}
-	img := ebiten.NewImageFromImage(frame)
+	a.uploadVideoFrame(frame, at)
+}
+
+func (a *App) uploadVideoFrame(frame image.Image, at time.Time) {
+	rgba := frameToRGBA(frame)
+
 	a.mu.Lock()
-	a.lastImg = img
+	defer a.mu.Unlock()
+
+	if a.lastImg == nil || a.lastImg.Bounds().Dx() != rgba.Bounds().Dx() || a.lastImg.Bounds().Dy() != rgba.Bounds().Dy() {
+		if a.lastImg != nil {
+			a.lastImg.Deallocate()
+		}
+		a.lastImg = ebiten.NewImage(rgba.Bounds().Dx(), rgba.Bounds().Dy())
+	}
+	a.lastImg.WritePixels(rgba.Pix)
 	a.lastFrameAt = at
-	a.mu.Unlock()
+}
+
+func frameToRGBA(src image.Image) *image.RGBA {
+	bounds := src.Bounds()
+	dst := image.NewRGBA(bounds)
+	imagedraw.Draw(dst, bounds, src, bounds.Min, imagedraw.Src)
+	return dst
 }
 
 func (a *App) Draw(screen *ebiten.Image) {
@@ -3977,8 +3998,13 @@ func (a *App) connectTo(target string) {
 	password := a.effectivePassword()
 	a.cfg.BaseURL = baseURL
 	a.cfg.Password = password
-	a.lastImg = nil
+	a.mu.Lock()
+	if a.lastImg != nil {
+		a.lastImg.Deallocate()
+		a.lastImg = nil
+	}
 	a.lastFrameAt = time.Time{}
+	a.mu.Unlock()
 	a.lastPhase = session.PhaseIdle
 	a.resetConnectionHardwareState()
 	a.stats = client.StatsSnapshot{}

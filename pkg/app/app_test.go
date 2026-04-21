@@ -3,6 +3,8 @@ package app
 import (
 	"context"
 	"errors"
+	"image"
+	"image/color"
 	"testing"
 	"time"
 
@@ -464,6 +466,54 @@ func TestSavePreferencesUsesThrottleDurations(t *testing.T) {
 	}
 	if app.prefs.PointerMoveThrottleMs != 24 {
 		t.Fatalf("prefs.PointerMoveThrottleMs = %d, want 24", app.prefs.PointerMoveThrottleMs)
+	}
+}
+
+func TestUploadVideoFrameReusesImageForSameSize(t *testing.T) {
+	app, err := New(Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	first := image.NewRGBA(image.Rect(0, 0, 8, 6))
+	first.Set(0, 0, color.RGBA{R: 0xaa, G: 0x11, B: 0x22, A: 0xff})
+	app.uploadVideoFrame(first, time.Unix(100, 0))
+
+	if app.lastImg == nil {
+		t.Fatal("expected uploaded frame image to be cached")
+	}
+	cached := app.lastImg
+
+	second := image.NewRGBA(image.Rect(0, 0, 8, 6))
+	second.Set(0, 0, color.RGBA{R: 0x33, G: 0x44, B: 0x55, A: 0xff})
+	app.uploadVideoFrame(second, time.Unix(101, 0))
+
+	if app.lastImg != cached {
+		t.Fatal("expected same-size frame upload to reuse ebiten image")
+	}
+	if !app.lastFrameAt.Equal(time.Unix(101, 0)) {
+		t.Fatalf("lastFrameAt = %v, want updated timestamp", app.lastFrameAt)
+	}
+}
+
+func TestUploadVideoFrameRecreatesImageOnResize(t *testing.T) {
+	app, err := New(Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	app.uploadVideoFrame(image.NewRGBA(image.Rect(0, 0, 8, 6)), time.Unix(100, 0))
+	first := app.lastImg
+	app.uploadVideoFrame(image.NewRGBA(image.Rect(0, 0, 16, 9)), time.Unix(101, 0))
+
+	if app.lastImg == nil {
+		t.Fatal("expected uploaded frame image to exist after resize")
+	}
+	if app.lastImg == first {
+		t.Fatal("expected resized frame upload to recreate ebiten image")
+	}
+	if got := app.lastImg.Bounds().Size(); got.X != 16 || got.Y != 9 {
+		t.Fatalf("image bounds = %v, want 16x9", got)
 	}
 }
 
