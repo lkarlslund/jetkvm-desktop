@@ -962,6 +962,14 @@ func cloneStrings(src []string) []string {
 	return append([]string(nil), src...)
 }
 
+func mapsClone(src map[string]any) map[string]any {
+	dst := make(map[string]any, len(src))
+	for key, value := range src {
+		dst[key] = value
+	}
+	return dst
+}
+
 func cloneKeyboardMacros(src []client.KeyboardMacro) []client.KeyboardMacro {
 	if src == nil {
 		return nil
@@ -1222,12 +1230,14 @@ func (s *session) handleRPC(data []byte) error {
 	case "getActiveExtension":
 		resp = jsonrpc.NewResponse(req.ID, s.serverRef.state.ActiveExtension)
 	case "setActiveExtension":
-		extensionID, ok := params["extensionId"].(string)
-		if !ok {
+		params, err := decodeParams[struct {
+			ExtensionID string `json:"extensionId"`
+		}](req.Params)
+		if err != nil || params.ExtensionID == "" {
 			resp = jsonrpc.NewErrorResponse(req.ID, -32602, "missing extensionId", nil)
 			break
 		}
-		s.serverRef.state.ActiveExtension = extensionID
+		s.serverRef.state.ActiveExtension = params.ExtensionID
 		resp = jsonrpc.NewResponse(req.ID, true)
 	case "getDCPowerState":
 		resp = jsonrpc.NewResponse(req.ID, s.serverRef.state.DCPowerState)
@@ -1261,14 +1271,16 @@ func (s *session) handleRPC(data []byte) error {
 	case "getATXState":
 		resp = jsonrpc.NewResponse(req.ID, mapsClone(s.serverRef.state.ATXState))
 	case "setATXPowerAction":
-		action, ok := params["action"].(string)
-		if !ok || action == "" {
+		params, err := decodeParams[struct {
+			Action string `json:"action"`
+		}](req.Params)
+		if err != nil || params.Action == "" {
 			resp = jsonrpc.NewErrorResponse(req.ID, -32602, "missing action", nil)
 			break
 		}
-		switch action {
+		switch params.Action {
 		case "power-short", "power-long", "reset":
-			s.serverRef.appendInput("rpc", "rpc.setATXPowerAction", action)
+			s.serverRef.appendInput("rpc", "rpc.setATXPowerAction", params.Action)
 			resp = jsonrpc.NewResponse(req.ID, true)
 		default:
 			resp = jsonrpc.NewErrorResponse(req.ID, -32602, "invalid action", nil)
@@ -1288,28 +1300,24 @@ func (s *session) handleRPC(data []byte) error {
 	case "getSerialCommandHistory":
 		resp = jsonrpc.NewResponse(req.ID, append([]string(nil), s.serverRef.state.SerialCommandHistory...))
 	case "setSerialCommandHistory":
-		rawHistory, ok := params["commandHistory"].([]any)
-		if !ok {
+		params, err := decodeParams[struct {
+			CommandHistory []string `json:"commandHistory"`
+		}](req.Params)
+		if err != nil {
 			resp = jsonrpc.NewErrorResponse(req.ID, -32602, "missing commandHistory", nil)
 			break
 		}
-		history := make([]string, 0, len(rawHistory))
-		for _, item := range rawHistory {
-			text, ok := item.(string)
-			if !ok {
-				continue
-			}
-			history = append(history, text)
-		}
-		s.serverRef.state.SerialCommandHistory = history
+		s.serverRef.state.SerialCommandHistory = append([]string(nil), params.CommandHistory...)
 		resp = jsonrpc.NewResponse(req.ID, true)
 	case "sendCustomCommand":
-		command, ok := params["command"].(string)
-		if !ok {
+		params, err := decodeParams[struct {
+			Command string `json:"command"`
+		}](req.Params)
+		if err != nil || params.Command == "" {
 			resp = jsonrpc.NewErrorResponse(req.ID, -32602, "missing command", nil)
 			break
 		}
-		s.serverRef.appendInput("rpc", "rpc.sendCustomCommand", command)
+		s.serverRef.appendInput("rpc", "rpc.sendCustomCommand", params.Command)
 		resp = jsonrpc.NewResponse(req.ID, true)
 	case "getUsbEmulationState":
 		resp = jsonrpc.NewResponse(req.ID, s.serverRef.state.USBEmulation)
