@@ -58,3 +58,5 @@ require (
 )
 
 tool github.com/dmarkham/enumer
+
+replace github.com/Azunyan1111/openh264-go => ./third_party/openh264-go

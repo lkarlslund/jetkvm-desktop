@@ -1,5 +1,3 @@
-github.com/Azunyan1111/openh264-go v0.2.0 h1:6PUoNUrsLRMJiwZID8KMEPi6rx266Z4u08ecYatu8x8=
-github.com/Azunyan1111/openh264-go v0.2.0/go.mod h1:21m/6vqiu54Xpxq8e2Y9RSoTjYoYFyRqEfnxECE6dp8=
 github.com/BurntSushi/xgb v0.0.0-20160522181843-27f122750802/go.mod h1:IVnqGOEym/WlBOVXweHU+Q+/VP0lqqI8lqeDx9IjBqo=
 github.com/TheTitanrain/w32 v0.0.0-20180517000239-4f5cfb03fabf h1:FPsprx82rdrX2jiKyS17BH6IrTmUBYqZa/CXT4uvb+I=
 github.com/TheTitanrain/w32 v0.0.0-20180517000239-4f5cfb03fabf/go.mod h1:peYoMncQljjNS6tZwI9WVyQB3qZS6u79/N3mBOcnd3I=
