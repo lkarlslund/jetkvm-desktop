@@ -90,9 +90,38 @@ jobs:
           GOARCH: ${{ matrix.goarch }}
         run: |
           New-Item -ItemType Directory -Force -Path dist/pkg | Out-Null
-          go build -trimpath -ldflags="-s -w" -o "dist/pkg/${{ matrix.client_bin }}" ./cmd/jetkvm-desktop
+          $env:CGO_LDFLAGS = "-static-libgcc -static-libstdc++"
+          go build -trimpath -ldflags='-s -w -extldflags "-static-libgcc -static-libstdc++"' -o "dist/pkg/${{ matrix.client_bin }}" ./cmd/jetkvm-desktop
           Copy-Item README.md dist/pkg/README.md
           Compress-Archive -Path dist/pkg/* -DestinationPath "dist/${{ matrix.archive_name }}"
+
+      - name: Verify Windows runtime dependencies
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $exe = "dist/pkg/${{ matrix.client_bin }}"
+          $imports = & objdump -p $exe |
+            Select-String "DLL Name:" |
+            ForEach-Object { $_.ToString().Split(":", 2)[1].Trim().ToLowerInvariant() }
+
+          if (-not $imports) {
+            throw "Failed to detect imported DLLs for $exe"
+          }
+
+          Write-Host "Imported DLLs:"
+          $imports | Sort-Object -Unique | ForEach-Object { Write-Host " - $_" }
+
+          $forbidden = @(
+            "libstdc++-6.dll",
+            "libgcc_s_seh-1.dll",
+            "libwinpthread-1.dll",
+            "libssp-0.dll"
+          )
+
+          $remaining = $imports | Where-Object { $forbidden -contains $_ } | Sort-Object -Unique
+          if ($remaining) {
+            throw "Windows binary still depends on forbidden MinGW runtime DLLs: $($remaining -join ', ')"
+          }
 
       - name: Upload packaged artifact
         uses: actions/upload-artifact@v6
