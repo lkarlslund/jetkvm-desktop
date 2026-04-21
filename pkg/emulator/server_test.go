@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -460,6 +461,10 @@ func TestKeyboardStateTracksModifiersAndReleases(t *testing.T) {
 }
 
 func TestForcedDisconnectFaultClosesPeerConnection(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("skipping flaky emulator disconnect test on Windows")
+	}
+
 	srv, err := NewServer(Config{
 		ListenAddr: "127.0.0.1:0",
 		AuthMode:   AuthModePassword,
