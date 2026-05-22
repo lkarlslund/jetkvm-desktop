@@ -90,7 +90,7 @@ func (g *darwinGrabber) Grab() error {
 		return nil
 	}
 
-	if !C.AXIsProcessTrusted() {
+	if C.AXIsProcessTrusted() == 0 {
 		return fmt.Errorf("capture: Accessibility permission required — enable it in System Settings > Privacy & Security > Accessibility")
 	}
 

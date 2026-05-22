@@ -1,3 +1,7 @@
 research/
 .cache/
 /jetkvm-desktop
+
+dist/
+
+scripts/
