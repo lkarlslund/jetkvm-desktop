@@ -57,6 +57,10 @@ func New() Grabber {
 	return &darwinGrabber{}
 }
 
+func (g *darwinGrabber) IsSupported() bool {
+	return true
+}
+
 var activeDarwinGrabber *darwinGrabber
 
 //export eventTapCallback

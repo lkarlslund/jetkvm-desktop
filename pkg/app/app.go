@@ -165,6 +165,7 @@ type App struct {
 	factoryResetSuccess    bool
 	hardwareConn           hardwareConnectionState
 	chromeDragging         bool
+	chromeDragMoved        bool
 	chromeDragStartX       float64
 	chromeDragStartY       float64
 	chromeDragOriginX      float64
@@ -539,7 +540,7 @@ func (a *App) Update() error {
 			ebiten.SetFullscreen(false)
 		} else {
 			ebiten.SetFullscreen(true)
-			if a.ctrl != nil && a.ctrl.Snapshot().Phase == session.PhaseConnected && !a.totalCapture {
+			if a.grabber.IsSupported() && a.ctrl != nil && a.ctrl.Snapshot().Phase == session.PhaseConnected && !a.totalCapture {
 				_ = a.grabber.Grab()
 				a.totalCapture = a.grabber.IsGrabbed()
 			}
@@ -3747,9 +3748,7 @@ func (a *App) syncSessionState() {
 		a.resetConnectionHardwareState()
 		a.saveConnectedRecent()
 		a.maybeExpandBrowseWindow()
-		if !ebiten.IsFullscreen() && !ebiten.IsWindowMaximized() {
-			ebiten.MaximizeWindow()
-		}
+		a.applyConnectWindowMode()
 		a.launcherOpen = false
 		a.launcherMode = launcherModeBrowse
 		a.launcherError = ""
@@ -3777,7 +3776,7 @@ func parseHostPort(baseURL string) (string, error) {
 
 func (a *App) syncWindowTitle() {
 	if a.launcherOpen {
-		title := "JetKVM"
+		title := "JetKVM Desktop"
 		if title != a.lastTitle {
 			ebiten.SetWindowTitle(title)
 			a.lastTitle = title
@@ -3799,7 +3798,7 @@ func (a *App) syncWindowTitle() {
 		label = snap.DeviceID
 	}
 	phase := snap.Phase.String()
-	title := fmt.Sprintf("JetKVM [%s - %s]", label, phase)
+	title := fmt.Sprintf("JetKVM Desktop [%s - %s]", label, phase)
 	if title == a.lastTitle {
 		return
 	}

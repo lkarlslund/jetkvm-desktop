@@ -5,6 +5,9 @@ package capture
 // while forwarding them through the normal Ebiten event pipeline to
 // the KVM target.
 type Grabber interface {
+	// IsSupported reports whether total capture is available on this
+	// platform/session (e.g. false on Wayland where X11 grabs don't work).
+	IsSupported() bool
 	// Grab activates exclusive input capture.
 	Grab() error
 	// Release deactivates input capture and restores normal host behaviour.

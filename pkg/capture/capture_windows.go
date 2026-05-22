@@ -62,6 +62,10 @@ func New() Grabber {
 	return &winGrabber{}
 }
 
+func (g *winGrabber) IsSupported() bool {
+	return true
+}
+
 // Global reference so hook callbacks can reach the grabber state.
 // Only one grabber instance is active at a time.
 var activeGrabber *winGrabber

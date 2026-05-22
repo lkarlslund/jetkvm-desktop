@@ -106,6 +106,18 @@ func New() Grabber {
 	return g
 }
 
+func (g *x11Grabber) IsSupported() bool {
+	if os.Getenv("XDG_SESSION_TYPE") == "wayland" && os.Getenv("DISPLAY") == "" {
+		return false
+	}
+	dpy := C.XOpenDisplay((*C.char)(unsafe.Pointer(nil)))
+	if dpy == nil {
+		return false
+	}
+	C.XCloseDisplay(dpy)
+	return true
+}
+
 func (g *x11Grabber) Grab() error {
 	g.mu.Lock()
 	defer g.mu.Unlock()

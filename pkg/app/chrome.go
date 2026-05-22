@@ -436,7 +436,7 @@ func (a *App) layoutChromeButtons(width, height int, snap session.Snapshot) []ch
 			}
 		}})
 	}
-	if snap.Phase == session.PhaseConnected {
+	if snap.Phase == session.PhaseConnected && a.grabber.IsSupported() {
 		defs = append(defs, chromeButton{id: "capture", hint: "Total Capture", icon: iconCapture, enabled: true, active: a.totalCapture, onClick: func() {
 			a.toggleTotalCapture()
 		}})
@@ -569,6 +569,7 @@ func (a *App) drawTopBar(screen *ebiten.Image, snap session.Snapshot) {
 		alpha:   alpha,
 		onDragStart: func(x, y float64) {
 			a.chromeDragging = true
+			a.chromeDragMoved = false
 			a.chromeDragStartX = x
 			a.chromeDragStartY = y
 			if len(buttons) > 0 {
@@ -582,6 +583,9 @@ func (a *App) drawTopBar(screen *ebiten.Image, snap session.Snapshot) {
 			}
 			dx := x - a.chromeDragStartX
 			dy := y - a.chromeDragStartY
+			if dx*dx+dy*dy > 9 {
+				a.chromeDragMoved = true
+			}
 			a.prefs.ChromeCustomX = a.chromeDragOriginX + dx
 			a.prefs.ChromeCustomY = a.chromeDragOriginY + dy
 			a.prefs.ChromeCustomPos = true
@@ -591,6 +595,13 @@ func (a *App) drawTopBar(screen *ebiten.Image, snap session.Snapshot) {
 				return
 			}
 			a.chromeDragging = false
+			if !a.chromeDragMoved {
+				if a.prefs.ChromeLayout == chromeLayoutVertical {
+					a.prefs.ChromeLayout = chromeLayoutHorizontal
+				} else {
+					a.prefs.ChromeLayout = chromeLayoutVertical
+				}
+			}
 			_ = savePreferences(a.prefs)
 		},
 	})
@@ -3966,16 +3977,6 @@ func (a *App) settingsAppearanceBody() ui.Element {
 			a.savePreferences()
 		}),
 	}
-	positionButtons := []ui.Element{
-		settingsActionButton("Top Left", settingsActionVisual{Enabled: true, Active: a.prefs.ChromeAnchor == chromeAnchorTopLeft}, 96, func() { a.prefs.ChromeAnchor = chromeAnchorTopLeft; a.savePreferences() }),
-		settingsActionButton("Top Center", settingsActionVisual{Enabled: true, Active: a.prefs.ChromeAnchor == chromeAnchorTopCenter}, 108, func() { a.prefs.ChromeAnchor = chromeAnchorTopCenter; a.savePreferences() }),
-		settingsActionButton("Top Right", settingsActionVisual{Enabled: true, Active: a.prefs.ChromeAnchor == chromeAnchorTopRight}, 100, func() { a.prefs.ChromeAnchor = chromeAnchorTopRight; a.savePreferences() }),
-		settingsActionButton("Left Center", settingsActionVisual{Enabled: true, Active: a.prefs.ChromeAnchor == chromeAnchorLeftCenter}, 108, func() { a.prefs.ChromeAnchor = chromeAnchorLeftCenter; a.savePreferences() }),
-		settingsActionButton("Right Center", settingsActionVisual{Enabled: true, Active: a.prefs.ChromeAnchor == chromeAnchorRightCenter}, 118, func() { a.prefs.ChromeAnchor = chromeAnchorRightCenter; a.savePreferences() }),
-		settingsActionButton("Bottom Left", settingsActionVisual{Enabled: true, Active: a.prefs.ChromeAnchor == chromeAnchorBottomLeft}, 108, func() { a.prefs.ChromeAnchor = chromeAnchorBottomLeft; a.savePreferences() }),
-		settingsActionButton("Bottom Center", settingsActionVisual{Enabled: true, Active: a.prefs.ChromeAnchor == chromeAnchorBottomCenter}, 126, func() { a.prefs.ChromeAnchor = chromeAnchorBottomCenter; a.savePreferences() }),
-		settingsActionButton("Bottom Right", settingsActionVisual{Enabled: true, Active: a.prefs.ChromeAnchor == chromeAnchorBottomRight}, 118, func() { a.prefs.ChromeAnchor = chromeAnchorBottomRight; a.savePreferences() }),
-	}
 	return settingsCardElement("Appearance", ui.Column{Children: []ui.Child{
 		ui.Fixed(settingsSectionLabelElement("Theme")),
 		ui.Fixed(ui.Spacer{H: 8}),
@@ -3989,22 +3990,31 @@ func (a *App) settingsAppearanceBody() ui.Element {
 		ui.Fixed(ui.Spacer{H: 14}),
 		ui.Fixed(settingsToggleRowControl("Hide Footer Status", settingsActionVisual{Enabled: true, Active: a.prefs.HideStatusBar}, func() { a.prefs.HideStatusBar = !a.prefs.HideStatusBar; a.savePreferences() })),
 		ui.Fixed(ui.Spacer{H: 14}),
-		ui.Fixed(settingsSectionLabelElement("Position")),
-		ui.Fixed(ui.Spacer{H: 8}),
-		ui.Fixed(ui.Wrap{Children: positionButtons, Spacing: 12, LineSpacing: 8}),
-		ui.Fixed(ui.Spacer{H: 14}),
-		ui.Fixed(settingsSectionLabelElement("Layout")),
-		ui.Fixed(ui.Spacer{H: 8}),
-		ui.Fixed(ui.Wrap{Children: []ui.Element{
-			settingsActionButton("Horizontal", settingsActionVisual{Enabled: true, Active: a.prefs.ChromeLayout == chromeLayoutHorizontal}, 112, func() { a.prefs.ChromeLayout = chromeLayoutHorizontal; a.savePreferences() }),
-			settingsActionButton("Vertical", settingsActionVisual{Enabled: true, Active: a.prefs.ChromeLayout == chromeLayoutVertical}, 96, func() { a.prefs.ChromeLayout = chromeLayoutVertical; a.savePreferences() }),
-		}, Spacing: 12, LineSpacing: 8}),
-		ui.Fixed(ui.Spacer{H: 14}),
 		ui.Fixed(settingsSectionLabelElement("Window")),
 		ui.Fixed(ui.Spacer{H: 8}),
 		ui.Fixed(settingsActionButton("Toggle Fullscreen", settingsActionVisual{Enabled: true, Active: ebiten.IsFullscreen()}, 160, func() { ebiten.SetFullscreen(!ebiten.IsFullscreen()) })),
 		ui.Fixed(ui.Spacer{H: 14}),
-		ui.Fixed(settingsStatusElement("Position chooses where the icon bar sits on screen. Layout changes whether the controls run across or down. Button hints and footer status are desktop-only UI helpers.", a.currentTheme().Muted)),
+		ui.Fixed(settingsSectionLabelElement("Initial window size after connect")),
+		ui.Fixed(ui.Spacer{H: 8}),
+		ui.Fixed(ui.Wrap{Children: []ui.Element{
+			settingsActionButton("Unchanged", settingsActionVisual{Enabled: true, Active: a.prefs.ConnectWindowMode == connectWindowUnchanged}, 108, func() { a.prefs.ConnectWindowMode = connectWindowUnchanged; a.savePreferences() }),
+			settingsActionButton("Maximize", settingsActionVisual{Enabled: true, Active: a.prefs.ConnectWindowMode == connectWindowMaximize}, 100, func() { a.prefs.ConnectWindowMode = connectWindowMaximize; a.savePreferences() }),
+			settingsActionButton("1:1 pixel ratio", settingsActionVisual{Enabled: true, Active: a.prefs.ConnectWindowMode == connectWindowPixelRatio}, 130, func() { a.prefs.ConnectWindowMode = connectWindowPixelRatio; a.savePreferences() }),
+			settingsActionButton("Fullscreen", settingsActionVisual{Enabled: true, Active: a.prefs.ConnectWindowMode == connectWindowFullscreen}, 108, func() { a.prefs.ConnectWindowMode = connectWindowFullscreen; a.savePreferences() }),
+		}, Spacing: 12, LineSpacing: 8}),
+		ui.Fixed(ui.Spacer{H: 14}),
+		ui.Fixed(settingsSectionLabelElement("Icon bar position")),
+		ui.Fixed(ui.Spacer{H: 8}),
+		ui.Fixed(settingsActionButton("Reset position", settingsActionVisual{Enabled: true, Active: false}, 130, func() {
+			a.prefs.ChromeCustomPos = false
+			a.prefs.ChromeCustomX = 0
+			a.prefs.ChromeCustomY = 0
+			a.prefs.ChromeAnchor = chromeAnchorTopRight
+			a.prefs.ChromeLayout = chromeLayoutHorizontal
+			a.savePreferences()
+		})),
+		ui.Fixed(ui.Spacer{H: 14}),
+		ui.Fixed(settingsStatusElement("Drag the icon bar handle to reposition. Click the handle to flip between horizontal and vertical layout. Reset returns it to the top-right corner.", a.currentTheme().Muted)),
 	}})
 }
 

@@ -33,13 +33,14 @@ type Preferences struct {
 	ScrollThrottleMs          int                `json:"scroll_throttle_ms,omitempty"`
 	PointerMoveThrottleMs     int                `json:"pointer_move_throttle_ms,omitempty"`
 	CaptureToggleKey          string             `json:"capture_toggle_key,omitempty"`
+	ConnectWindowMode         ConnectWindowMode  `json:"connect_window_mode,omitempty"`
 	ChromeCustomX             float64            `json:"chrome_custom_x,omitempty"`
 	ChromeCustomY             float64            `json:"chrome_custom_y,omitempty"`
 	ChromeCustomPos           bool               `json:"chrome_custom_pos,omitempty"`
 	RecentConnections         []RecentConnection `json:"recent_connections,omitempty"`
 }
 
-//go:generate go tool github.com/dmarkham/enumer -type=Theme,ChromeAnchor,ChromeLayout,ScrollThrottle -linecomment -json -text -output prefs_enums.go
+//go:generate go tool github.com/dmarkham/enumer -type=Theme,ChromeAnchor,ChromeLayout,ScrollThrottle,ConnectWindowMode -linecomment -json -text -output prefs_enums.go
 
 type Theme uint8
 
@@ -83,6 +84,15 @@ const (
 	scrollThrottle100ms                         // 100
 )
 
+type ConnectWindowMode uint8
+
+const (
+	connectWindowUnchanged   ConnectWindowMode = iota // unchanged
+	connectWindowMaximize                             // maximize
+	connectWindowPixelRatio                           // pixel_ratio
+	connectWindowFullscreen                           // fullscreen
+)
+
 func defaultPreferences() Preferences {
 	return Preferences{
 		Theme:                     themeSystem,
@@ -99,6 +109,7 @@ func defaultPreferences() Preferences {
 		ScrollThrottle:            scrollThrottleOff,
 		ScrollThrottleMs:          0,
 		PointerMoveThrottleMs:     8,
+		ConnectWindowMode:         connectWindowMaximize,
 	}
 }
 
@@ -127,6 +138,9 @@ func loadPreferences() Preferences {
 	}
 	if _, ok := raw["pointer_move_throttle_ms"]; !ok {
 		prefs.PointerMoveThrottleMs = defaultPointerMoveThrottleMs
+	}
+	if _, ok := raw["connect_window_mode"]; !ok {
+		prefs.ConnectWindowMode = connectWindowMaximize
 	}
 	prefs.normalize()
 	return prefs
@@ -182,6 +196,11 @@ func (p *Preferences) normalize() {
 	case chromeLayoutHorizontal, chromeLayoutVertical:
 	default:
 		p.ChromeLayout = chromeLayoutHorizontal
+	}
+	switch p.ConnectWindowMode {
+	case connectWindowUnchanged, connectWindowMaximize, connectWindowPixelRatio, connectWindowFullscreen:
+	default:
+		p.ConnectWindowMode = connectWindowMaximize
 	}
 }
 
