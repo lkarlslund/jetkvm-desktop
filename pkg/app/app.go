@@ -185,6 +185,7 @@ type App struct {
 
 	launcherRuntime        ui.Runtime
 	overlayRuntime         ui.Runtime
+	pasteBannerRuntime     ui.Runtime
 	settingsRuntime        ui.Runtime
 	pasteRuntime           ui.Runtime
 	mediaRuntime           ui.Runtime
@@ -603,6 +604,9 @@ func (a *App) syncUIPointer() {
 			return
 		}
 	}
+	if a.pasteBannerRuntime.HandlePointer(point, pressed, justPressed, justReleased) {
+		return
+	}
 	if a.overlayRuntime.HandlePointer(point, pressed, justPressed, justReleased) {
 		return
 	}
@@ -696,6 +700,7 @@ func (a *App) Draw(screen *ebiten.Image) {
 	a.drawStatusFooter(screen, snap)
 	a.drawPressedKeysOverlay(screen)
 	a.drawOverlay(screen, snap, img != nil)
+	a.drawPasteBanner(screen, snap)
 	a.drawStatsOverlay(screen)
 	a.drawHint(screen)
 	a.drawMediaOverlay(screen, snap)
@@ -714,7 +719,8 @@ func (a *App) Layout(outsideWidth, outsideHeight int) (int, int) {
 }
 
 func (a *App) syncKeyboard() {
-	if !a.focused || a.settingsOpen || a.pasteOpen || a.mediaOpen || a.serialConsoleOpen || a.ctrl.Snapshot().Phase != session.PhaseConnected {
+	snap := a.ctrl.Snapshot()
+	if !a.focused || a.settingsOpen || a.pasteOpen || a.mediaOpen || a.serialConsoleOpen || snap.PasteInProgress || snap.Phase != session.PhaseConnected {
 		if a.hotkeys != nil {
 			a.hotkeys.Reset()
 		}
@@ -836,7 +842,7 @@ func (a *App) syncMouse() {
 	x, y := ebiten.CursorPosition()
 	windowX, windowY, windowPositionKnown := currentWindowPosition()
 	buttons := currentMouseButtons(ebiten.IsMouseButtonPressed)
-	if a.settingsOpen || a.pasteOpen || a.mediaOpen || a.serialConsoleOpen || snapshot.Phase != session.PhaseConnected {
+	if a.settingsOpen || a.pasteOpen || a.mediaOpen || a.serialConsoleOpen || snapshot.PasteInProgress || snapshot.Phase != session.PhaseConnected {
 		if buttons != a.lastButtons {
 			log.Trace().
 				Int("x", x).
@@ -846,6 +852,7 @@ func (a *App) syncMouse() {
 				Bool("paste_open", a.pasteOpen).
 				Bool("media_open", a.mediaOpen).
 				Bool("serial_console_open", a.serialConsoleOpen).
+				Bool("paste_in_progress", snapshot.PasteInProgress).
 				Str("phase", snapshot.Phase.String()).
 				Msg("mouse input suppressed")
 		}
@@ -3936,6 +3943,20 @@ func (a *App) drawOverlay(screen *ebiten.Image, snap session.Snapshot, hasVideo 
 	})
 }
 
+func (a *App) drawPasteBanner(screen *ebiten.Image, snap session.Snapshot) {
+	a.pasteBannerRuntime.BeginFrame()
+	if !snap.PasteInProgress || a.pasteOpen {
+		return
+	}
+	width := min(360.0, float64(screen.Bounds().Dx()-52))
+	a.drawUIRoot(screen, &a.pasteBannerRuntime, func(chromeButton) {}, pasteBannerRootElement{
+		width: width,
+		onCancel: func() {
+			_ = a.ctrl.CancelPaste()
+		},
+	})
+}
+
 func (a *App) drawPressedKeysOverlay(screen *ebiten.Image) {
 	if !a.showPressedKeys || a.settingsOpen || a.mediaOpen || a.serialConsoleOpen {
 		return
@@ -4026,6 +4047,37 @@ func (e overlayBannerRootElement) Draw(ctx *ui.Context, bounds ui.Rect) {
 				takeover:   e.takeover,
 				withButton: e.withButton,
 				onClick:    e.onClick,
+			},
+		},
+	}.Draw(ctx, bounds)
+}
+
+type pasteBannerRootElement struct {
+	width    float64
+	onCancel func()
+}
+
+func (pasteBannerRootElement) Measure(_ *ui.Context, constraints ui.Constraints) ui.Size {
+	return constraints.Clamp(ui.Size{W: constraints.MaxW, H: constraints.MaxH})
+}
+
+func (e pasteBannerRootElement) Draw(ctx *ui.Context, bounds ui.Rect) {
+	x := (bounds.W - e.width) / 2
+	ui.Positioned{
+		X: x,
+		Y: 48,
+		W: e.width,
+		H: 56,
+		Child: ui.Panel{
+			Fill:   ctx.Theme.ModalFill,
+			Stroke: ctx.Theme.ModalStroke,
+			Insets: ui.Insets{Top: 12, Right: 16, Bottom: 12, Left: 16},
+			Child: ui.Row{
+				Children: []ui.Child{
+					ui.Flex(ui.Label{Text: "Pasting — input is disabled until complete", Size: 13, Color: ctx.Theme.AccentText}, 1),
+					ui.Fixed(ui.Spacer{W: 12}),
+					ui.Fixed(ui.Button{Label: "Cancel", Enabled: true, OnClick: e.onCancel}),
+				},
 			},
 		},
 	}.Draw(ctx, bounds)
