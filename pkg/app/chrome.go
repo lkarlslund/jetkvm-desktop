@@ -559,9 +559,6 @@ func (a *App) drawTopBar(screen *ebiten.Image, snap session.Snapshot) {
 	if alpha <= 0 {
 		return
 	}
-	if a.prefs.HideHeaderBar {
-		return
-	}
 	buttons := a.layoutChromeButtons(screen.Bounds().Dx(), screen.Bounds().Dy(), snap)
 	a.chromeButtons = buttons
 	a.drawUIRoot(screen, &a.chromeRuntime, func(chromeButton) {}, chromeButtonsElement{
@@ -610,9 +607,6 @@ func (a *App) drawTopBar(screen *ebiten.Image, snap session.Snapshot) {
 func (a *App) drawHint(screen *ebiten.Image) {
 	alpha := a.uiAlpha()
 	if alpha <= 0 {
-		return
-	}
-	if a.prefs.HideHeaderBar {
 		return
 	}
 	x, y := ebiten.CursorPosition()
@@ -3984,9 +3978,7 @@ func (a *App) settingsAppearanceBody() ui.Element {
 		ui.Fixed(ui.Spacer{H: 14}),
 		ui.Fixed(settingsSectionLabelElement("Icon bar")),
 		ui.Fixed(ui.Spacer{H: 8}),
-		ui.Fixed(settingsToggleRowControl("Pin Icon Bar", settingsActionVisual{Enabled: true, Active: a.prefs.PinChrome}, func() { a.prefs.PinChrome = !a.prefs.PinChrome; a.savePreferences() })),
-		ui.Fixed(ui.Spacer{H: 14}),
-		ui.Fixed(settingsToggleRowControl("Hide Button Hints", settingsActionVisual{Enabled: true, Active: a.prefs.HideHeaderBar}, func() { a.prefs.HideHeaderBar = !a.prefs.HideHeaderBar; a.savePreferences() })),
+		ui.Fixed(settingsToggleRowControl("Always visible", settingsActionVisual{Enabled: true, Active: a.prefs.PinChrome}, func() { a.prefs.PinChrome = !a.prefs.PinChrome; a.savePreferences() })),
 		ui.Fixed(ui.Spacer{H: 14}),
 		ui.Fixed(settingsToggleRowControl("Hide Footer Status", settingsActionVisual{Enabled: true, Active: a.prefs.HideStatusBar}, func() { a.prefs.HideStatusBar = !a.prefs.HideStatusBar; a.savePreferences() })),
 		ui.Fixed(ui.Spacer{H: 14}),
@@ -4005,7 +3997,7 @@ func (a *App) settingsAppearanceBody() ui.Element {
 		ui.Fixed(ui.Spacer{H: 14}),
 		ui.Fixed(settingsSectionLabelElement("Icon bar position")),
 		ui.Fixed(ui.Spacer{H: 8}),
-		ui.Fixed(settingsActionButton("Reset position", settingsActionVisual{Enabled: true, Active: false}, 130, func() {
+		ui.Fixed(settingsActionButton("Reset position", settingsActionVisual{Enabled: a.prefs.ChromeCustomPos, Active: !a.prefs.ChromeCustomPos}, 130, func() {
 			a.prefs.ChromeCustomPos = false
 			a.prefs.ChromeCustomX = 0
 			a.prefs.ChromeCustomY = 0

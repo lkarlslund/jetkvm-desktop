@@ -64,6 +64,8 @@ type App struct {
 	lastUIX                int
 	lastUIY                int
 	uiVisibleUntil         time.Time
+	settingsHintUntil      time.Time
+	settingsHintRuntime    ui.Runtime
 	settingsOpen           bool
 	pasteOpen              bool
 	statsOpen              bool
@@ -605,12 +607,20 @@ func (a *App) syncUIPointer() {
 		}
 	}
 	if a.pasteBannerRuntime.HandlePointer(point, pressed, justPressed, justReleased) {
+		a.suppressMouseUntilUp = true
+		return
+	}
+	if a.settingsHintRuntime.HandlePointer(point, pressed, justPressed, justReleased) {
+		a.suppressMouseUntilUp = true
 		return
 	}
 	if a.overlayRuntime.HandlePointer(point, pressed, justPressed, justReleased) {
+		a.suppressMouseUntilUp = true
 		return
 	}
-	a.chromeRuntime.HandlePointer(point, pressed, justPressed, justReleased)
+	if a.chromeRuntime.HandlePointer(point, pressed, justPressed, justReleased) {
+		a.suppressMouseUntilUp = true
+	}
 }
 
 func shouldDismissOverlayOnOutsidePress(kind string) bool {
@@ -698,6 +708,7 @@ func (a *App) Draw(screen *ebiten.Image) {
 	}
 	a.drawTopBar(screen, snap)
 	a.drawStatusFooter(screen, snap)
+	a.drawSettingsHint(screen)
 	a.drawPressedKeysOverlay(screen)
 	a.drawOverlay(screen, snap, img != nil)
 	a.drawPasteBanner(screen, snap)
@@ -3763,6 +3774,7 @@ func (a *App) syncSessionState() {
 		a.lastX, a.lastY = ebiten.CursorPosition()
 		a.lastButtons = 0
 		a.revealUIFor(2 * time.Second)
+		a.settingsHintUntil = time.Now().Add(10 * time.Second)
 		if a.prefs.AbsoluteSideButtonsViaRel {
 			a.ensureConnectionUSBDevicesLoaded()
 		}
@@ -3943,6 +3955,38 @@ func (a *App) drawOverlay(screen *ebiten.Image, snap session.Snapshot, hasVideo 
 	})
 }
 
+func (a *App) drawSettingsHint(screen *ebiten.Image) {
+	a.settingsHintRuntime.BeginFrame()
+	if a.settingsOpen || a.launcherOpen || a.ctrl == nil || a.ctrl.Snapshot().Phase != session.PhaseConnected {
+		return
+	}
+	remaining := time.Until(a.settingsHintUntil)
+	if remaining <= 0 {
+		return
+	}
+	alpha := 1.0
+	if remaining < 2*time.Second {
+		alpha = float64(remaining) / float64(2*time.Second)
+	}
+	w := float64(screen.Bounds().Dx())
+	h := float64(screen.Bounds().Dy())
+	a.drawUIRoot(screen, &a.settingsHintRuntime, func(chromeButton) {}, settingsHintElement{
+		x:     w - 52,
+		y:     h - 52,
+		alpha: alpha,
+		onClick: func() {
+			a.settingsOpen = true
+			a.pasteOpen = false
+			a.mediaOpen = false
+			a.serialConsoleOpen = false
+			a.releaseTotalCapture()
+			a.refreshSettingsSection(a.settingsSection)
+			a.applyCursorMode()
+			a.settingsHintUntil = time.Time{}
+		},
+	})
+}
+
 func (a *App) drawPasteBanner(screen *ebiten.Image, snap session.Snapshot) {
 	a.pasteBannerRuntime.BeginFrame()
 	if !snap.PasteInProgress || a.pasteOpen {
@@ -4049,6 +4093,39 @@ func (e overlayBannerRootElement) Draw(ctx *ui.Context, bounds ui.Rect) {
 				onClick:    e.onClick,
 			},
 		},
+	}.Draw(ctx, bounds)
+}
+
+type settingsHintElement struct {
+	x       float64
+	y       float64
+	alpha   float64
+	onClick func()
+}
+
+func (settingsHintElement) Measure(_ *ui.Context, constraints ui.Constraints) ui.Size {
+	return constraints.Clamp(ui.Size{W: constraints.MaxW, H: constraints.MaxH})
+}
+
+func (e settingsHintElement) Draw(ctx *ui.Context, bounds ui.Rect) {
+	if ctx.Runtime != nil {
+		ctx.Runtime.Register(ui.Control{
+			ID:      "settings_hint",
+			Rect:    ui.Rect{X: e.x, Y: e.y, W: 34, H: 34},
+			Enabled: true,
+			OnClick: func(ui.PointerEvent) {
+				if e.onClick != nil {
+					e.onClick()
+				}
+			},
+		})
+	}
+	ui.Positioned{
+		X:     e.x,
+		Y:     e.y,
+		W:     34,
+		H:     34,
+		Child: ui.IconButton{Kind: ui.IconSettings, Active: false, Enabled: true, Alpha: e.alpha},
 	}.Draw(ctx, bounds)
 }
 
