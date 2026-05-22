@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/diamondburned/gotk4/pkg/gdk/v4"
+	"github.com/diamondburned/gotk4/pkg/glib/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 
 	"github.com/lkarlslund/jetkvm-desktop/pkg/input"
@@ -29,6 +30,10 @@ type VideoView struct {
 	buttons   byte
 	lastMX    float64
 	lastMY    float64
+
+	scrollAccY   float64
+	scrollAccX   float64
+	scrollTimer  bool
 
 	app  *Application
 	ctrl *session.Controller
@@ -205,20 +210,21 @@ func (v *VideoView) setupInput() {
 		v.GLArea.AddController(clickCtrl)
 	}
 
-	// Scroll wheel
-	scrollCtrl := gtk.NewEventControllerScroll(gtk.EventControllerScrollVertical | gtk.EventControllerScrollDiscrete)
+	// Scroll wheel — accumulate + flush async to avoid blocking GTK main loop.
+	// SendWheel is a synchronous RPC; touchpads generate many events per second.
+	scrollCtrl := gtk.NewEventControllerScroll(gtk.EventControllerScrollVertical)
 	scrollCtrl.ConnectScroll(func(dx, dy float64) bool {
 		if v.ctrl == nil || v.isPasteInProgress() {
 			return true
 		}
-		wy := int8(0)
-		if dy < 0 {
-			wy = 1
-		} else if dy > 0 {
-			wy = -1
-		}
-		if wy != 0 {
-			_ = v.ctrl.SendWheel(wy, 0)
+		v.scrollAccY += dy
+		v.scrollAccX += dx
+		if !v.scrollTimer {
+			v.scrollTimer = true
+			glib.TimeoutAdd(50, func() bool {
+				v.flushScroll()
+				return false
+			})
 		}
 		return true
 	})
@@ -283,6 +289,39 @@ func mouseButton(gtkBtn uint) byte {
 	default:
 		return 0
 	}
+}
+
+func (v *VideoView) flushScroll() {
+	v.scrollTimer = false
+	ay := v.scrollAccY
+	ax := v.scrollAccX
+	v.scrollAccY = 0
+	v.scrollAccX = 0
+
+	if v.ctrl == nil {
+		return
+	}
+
+	wy := int8(0)
+	if ay < -0.5 {
+		wy = 1
+	} else if ay > 0.5 {
+		wy = -1
+	}
+	wx := int8(0)
+	if ax < -0.5 {
+		wx = 1
+	} else if ax > 0.5 {
+		wx = -1
+	}
+	if wy == 0 && wx == 0 {
+		return
+	}
+
+	ctrl := v.ctrl
+	go func() {
+		_ = ctrl.SendWheel(wy, wx)
+	}()
 }
 
 func (v *VideoView) isPasteInProgress() bool {

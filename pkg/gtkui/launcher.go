@@ -24,15 +24,18 @@ type Launcher struct {
 	prefs   *Preferences
 
 	// Browse page widgets
-	browsePage  *gtk.Box
-	deviceList  *gtk.ListBox
-	deviceFrame *gtk.Frame
-	recentList  *gtk.ListBox
-	urlEntry    *gtk.Entry
-	connectBtn  *gtk.Button
-	errorLabel  *gtk.Label
-	scanLabel   *gtk.Label
-	scanSpinner *gtk.Spinner
+	browsePage     *gtk.Box
+	deviceList     *gtk.ListBox
+	deviceFrame    *gtk.Frame
+	recentList     *gtk.ListBox
+	urlEntry       *gtk.Entry
+	connectBtn     *gtk.Button
+	errorLabel     *gtk.Label
+	scanLabel      *gtk.Label
+	scanSpinner    *gtk.Spinner
+	connectingBox  *gtk.Box
+	connectingLbl  *gtk.Label
+	connectSpinner *gtk.Spinner
 
 	// URL lookup tables keyed by row index
 	deviceURLs []string
@@ -160,6 +163,16 @@ func (l *Launcher) buildBrowsePage() {
 	l.errorLabel.AddCSSClass("error")
 	l.errorLabel.SetXAlign(0)
 	l.browsePage.Append(l.errorLabel)
+
+	l.connectingBox = gtk.NewBox(gtk.OrientationHorizontal, 8)
+	l.connectingBox.SetHAlign(gtk.AlignCenter)
+	l.connectingBox.SetVisible(false)
+	l.connectSpinner = gtk.NewSpinner()
+	l.connectingLbl = gtk.NewLabel("Connecting…")
+	l.connectingLbl.AddCSSClass("dim-label")
+	l.connectingBox.Append(l.connectSpinner)
+	l.connectingBox.Append(l.connectingLbl)
+	l.browsePage.Append(l.connectingBox)
 }
 
 func (l *Launcher) buildPasswordPage() {
@@ -204,6 +217,20 @@ func (l *Launcher) buildPasswordPage() {
 	l.passwordPage.Append(l.passErrorLabel)
 }
 
+func (l *Launcher) setConnecting(active bool) {
+	l.deviceList.SetSensitive(!active)
+	l.recentList.SetSensitive(!active)
+	l.urlEntry.SetSensitive(!active)
+	l.connectBtn.SetSensitive(!active)
+	l.connectingBox.SetVisible(active)
+	if active {
+		l.connectSpinner.Start()
+		l.errorLabel.SetText("")
+	} else {
+		l.connectSpinner.Stop()
+	}
+}
+
 func (l *Launcher) onConnect() {
 	host := strings.TrimSpace(l.urlEntry.Text())
 	if host == "" {
@@ -223,26 +250,31 @@ func (l *Launcher) connectTo(baseURL string) {
 	_ = savePrefs(*l.prefs)
 
 	l.pendingURL = baseURL
+	l.setConnecting(true)
+	l.connectingLbl.SetText("Connecting to " + baseURL + "…")
 	l.app.startSession(baseURL, "")
 
-	// Defer list rebuild to next idle so we don't mutate widgets during signals.
 	glib.IdleAdd(func() { l.refreshRecents() })
 
 	glib.TimeoutAdd(200, func() bool {
 		if l.app.ctrl == nil {
+			l.setConnecting(false)
 			return false
 		}
 		snap := l.app.ctrl.Snapshot()
 		switch snap.Phase {
 		case session.PhaseAuthFailed:
+			l.setConnecting(false)
 			l.targetLabel.SetText(baseURL)
 			l.passErrorLabel.SetText("Authentication required")
 			l.Stack.SetVisibleChildName("password")
 			return false
 		case session.PhaseConnected:
+			l.setConnecting(false)
 			l.app.showSession()
 			return false
 		case session.PhaseFatal:
+			l.setConnecting(false)
 			l.errorLabel.SetText(snap.LastError)
 			return false
 		}
@@ -260,21 +292,33 @@ func (l *Launcher) onPasswordConnect() {
 		return
 	}
 	l.passErrorLabel.SetText("")
+	l.passConnBtn.SetSensitive(false)
+	l.passBackBtn.SetSensitive(false)
+	l.passwordEntry.SetSensitive(false)
 	l.app.startSession(l.pendingURL, password)
 
 	glib.TimeoutAdd(200, func() bool {
 		if l.app.ctrl == nil {
+			l.passConnBtn.SetSensitive(true)
+			l.passBackBtn.SetSensitive(true)
+			l.passwordEntry.SetSensitive(true)
 			return false
 		}
 		snap := l.app.ctrl.Snapshot()
 		switch snap.Phase {
 		case session.PhaseAuthFailed:
+			l.passConnBtn.SetSensitive(true)
+			l.passBackBtn.SetSensitive(true)
+			l.passwordEntry.SetSensitive(true)
 			l.passErrorLabel.SetText("Incorrect password")
 			return false
 		case session.PhaseConnected:
 			l.app.showSession()
 			return false
 		case session.PhaseFatal:
+			l.passConnBtn.SetSensitive(true)
+			l.passBackBtn.SetSensitive(true)
+			l.passwordEntry.SetSensitive(true)
 			l.passErrorLabel.SetText(snap.LastError)
 			return false
 		}
