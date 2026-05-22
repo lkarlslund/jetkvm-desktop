@@ -3,6 +3,8 @@ package input
 import (
 	"strings"
 
+	"golang.org/x/text/unicode/norm"
+
 	"github.com/lkarlslund/jetkvm-desktop/pkg/protocol/hidrpc"
 )
 
@@ -21,6 +23,10 @@ const (
 // key sequence first. Stand-alone dead keys (e.g. ~ on a Portuguese layout)
 // are followed by a space to commit the character.
 func BuildPasteMacro(layout, text string, delay uint16) ([]hidrpc.KeyboardMacroStep, []rune) {
+	// macOS (and some other sources) provide text in NFD form, where 'á' is
+	// stored as 'a' + combining acute. Our layout tables use NFC, so normalize
+	// the input before lookup so we don't drop accented characters as invalid.
+	text = norm.NFC.String(text)
 	chars := lookupPasteLayout(layout)
 	steps := make([]hidrpc.KeyboardMacroStep, 0, len(text)*4)
 	invalidMap := map[rune]bool{}

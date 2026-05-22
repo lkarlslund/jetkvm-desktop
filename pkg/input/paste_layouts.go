@@ -87,7 +87,12 @@ var (
 // NormalizeKeyboardLayoutCode) to char maps.
 var pasteLayouts = map[string]pasteLayout{
 	"en-US": enUSPasteChars,
+	"en-UK": enUKPasteChars,
 	"pt-PT": ptPTPasteChars,
+	"de-DE": deDEPasteChars,
+	"es-ES": esESPasteChars,
+	"fr-FR": frFRPasteChars,
+	"it-IT": itITPasteChars,
 }
 
 // lookupPasteLayout returns the char map for the given layout code, falling
