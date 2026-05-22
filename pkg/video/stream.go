@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"image"
 	"image/color"
+	"log"
 	"runtime"
 	"sync"
 	"time"
@@ -33,7 +34,9 @@ type Stream struct {
 }
 
 func NewStream() *Stream {
-	return &Stream{frameCh: make(chan Frame, 4)}
+	// 1-slot buffered channel: producer overwrites if consumer is behind.
+	// This matches the renderer's pull model where only the latest frame matters.
+	return &Stream{frameCh: make(chan Frame, 1)}
 }
 
 func (s *Stream) Latest() *Frame {
@@ -53,9 +56,20 @@ func (s *Stream) publish(frame Frame) {
 	s.latest = &frame
 	s.mu.Unlock()
 
+	// Latest-only semantics: drop the prior queued frame if the consumer
+	// hasn't picked it up yet, then push the new one. The renderer only
+	// cares about the most recent frame.
 	select {
 	case s.frameCh <- frame:
 	default:
+		select {
+		case <-s.frameCh:
+		default:
+		}
+		select {
+		case s.frameCh <- frame:
+		default:
+		}
 	}
 }
 
@@ -89,7 +103,7 @@ func AttachRemoteTrack(parent context.Context, track *webrtc.TrackRemote) (*Stre
 	stream := NewStream()
 	stream.cancelFunc = cancel
 
-	decoder, err := openh264.NewDecoder(bytes.NewReader(nil))
+	decoder, err := NewDecoder()
 	if err != nil {
 		cancel()
 		return nil, err
@@ -99,14 +113,20 @@ func AttachRemoteTrack(parent context.Context, track *webrtc.TrackRemote) (*Stre
 	go func() {
 		defer stream.Close()
 
-		// Screen-content H.264 keyframes can span well over hundreds of RTP packets,
-		// especially on real 1080p devices. A too-small samplebuilder buffer drops
-		// fragmented access units before the decoder ever sees a complete frame.
+		// Screen-content H.264 keyframes can span well over hundreds of RTP
+		// packets, especially on real 1080p devices, so the samplebuilder
+		// buffer needs to be large enough to hold a full access unit.
 		sb := samplebuilder.New(
 			4096,
 			&codecs.H264Packet{},
 			track.Codec().ClockRate,
 			samplebuilder.WithMaxTimeDelay(33*time.Millisecond),
+		)
+		var (
+			frameCount   int
+			dropCount    int
+			lastLog      = time.Now()
+			maxDecodeDur time.Duration
 		)
 		for {
 			select {
@@ -120,23 +140,52 @@ func AttachRemoteTrack(parent context.Context, track *webrtc.TrackRemote) (*Stre
 				return
 			}
 			sb.Push(pkt)
+
+			// Drain everything the samplebuilder has, but only keep the
+			// most recent assembled access unit. Earlier samples are
+			// thrown away — replaying stale frames would compound any lag
+			// instead of catching up.
+			var latest *media.Sample
+			dropped := 0
 			for {
-				sample := sb.Pop()
-				if sample == nil {
+				s := sb.Pop()
+				if s == nil {
 					break
 				}
-				payload := ensureAnnexB(sample.Data)
-				if len(payload) == 0 {
-					continue
+				if latest != nil {
+					dropped++
 				}
-				img, err := decoder.Decode(payload)
-				if err != nil {
-					stream.setError(err)
-					continue
-				}
-				if img != nil {
-					stream.publish(Frame{Image: img, At: time.Now()})
-				}
+				latest = s
+			}
+			if latest == nil {
+				continue
+			}
+			dropCount += dropped
+			payload := ensureAnnexB(latest.Data)
+			if len(payload) == 0 {
+				continue
+			}
+			t0 := time.Now()
+			img, err := decoder.Decode(payload)
+			dur := time.Since(t0)
+			if dur > maxDecodeDur {
+				maxDecodeDur = dur
+			}
+			if err != nil {
+				stream.setError(err)
+				continue
+			}
+			if img != nil {
+				stream.publish(Frame{Image: img, At: time.Now()})
+				frameCount++
+			}
+			if time.Since(lastLog) >= time.Second {
+				log.Printf("[video] %d frames/sec, %d dropped samples, max decode %v",
+					frameCount, dropCount, maxDecodeDur)
+				frameCount = 0
+				dropCount = 0
+				maxDecodeDur = 0
+				lastLog = time.Now()
 			}
 		}
 	}()

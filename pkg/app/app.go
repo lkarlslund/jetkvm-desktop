@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"image"
 	imagedraw "image/draw"
+	"log"
 	"math"
 	"net"
 	"net/url"
@@ -26,6 +27,7 @@ import (
 	"github.com/lkarlslund/jetkvm-desktop/pkg/logging"
 	"github.com/lkarlslund/jetkvm-desktop/pkg/session"
 	"github.com/lkarlslund/jetkvm-desktop/pkg/ui"
+	"github.com/lkarlslund/jetkvm-desktop/pkg/video"
 	"github.com/lkarlslund/jetkvm-desktop/pkg/virtualmedia"
 )
 
@@ -43,7 +45,18 @@ type App struct {
 
 	mu                     sync.RWMutex
 	lastImg                *ebiten.Image
-	lastFrameAt            time.Time
+	// yCbCrImage holds the raw Y/Cb/Cr/0xff packed video frame.
+	// frameImage holds the RGB result after the GPU shader runs.
+	// We keep both around to avoid per-frame allocation.
+	yCbCrImage  *ebiten.Image
+	frameImage  *ebiten.Image
+	yCbCrShader *ebiten.Shader
+	lastFrameAt time.Time
+
+	frameAgeCount   int
+	frameAgeSum     time.Duration
+	frameAgeMax     time.Duration
+	frameAgeLastLog time.Time
 	keyboard               *input.Keyboard
 	hotkeys                hotkeys.Manager
 	allowDiscovery         bool
@@ -639,10 +652,56 @@ func (a *App) syncVideoFrame() {
 	if frame == nil || !at.After(a.lastFrameAt) {
 		return
 	}
+	a.recordFrameAge(at)
 	a.uploadVideoFrame(frame, at)
 }
 
+func (a *App) recordFrameAge(at time.Time) {
+	age := time.Since(at)
+	a.frameAgeCount++
+	a.frameAgeSum += age
+	if age > a.frameAgeMax {
+		a.frameAgeMax = age
+	}
+	if time.Since(a.frameAgeLastLog) >= time.Second {
+		if a.frameAgeCount > 0 {
+			avg := a.frameAgeSum / time.Duration(a.frameAgeCount)
+			log.Printf("[render] picked up %d frames; avg age %v, max %v",
+				a.frameAgeCount, avg, a.frameAgeMax)
+		}
+		a.frameAgeCount = 0
+		a.frameAgeSum = 0
+		a.frameAgeMax = 0
+		a.frameAgeLastLog = time.Now()
+	}
+}
+
+// ycbcrShaderSrc samples each pixel as Y in R, Cb in G, Cr in B and converts
+// to RGB on the GPU. Mirrors the canonical Ebitengine MPEG video example.
+const ycbcrShaderSrc = `package main
+
+//kage:unit pixels
+
+func Fragment(dstPos vec4, srcPos vec2, color vec4) vec4 {
+	c := imageSrc0UnsafeAt(srcPos)
+	return vec4(
+		c.x + 1.40200 * (c.z-0.5),
+		c.x - 0.34414 * (c.y-0.5) - 0.71414 * (c.z-0.5),
+		c.x + 1.77200 * (c.y-0.5),
+		1,
+	)
+}
+`
+
 func (a *App) uploadVideoFrame(frame image.Image, at time.Time) {
+	// Fast path: PackedYCbCr from the FFmpeg decoder. Upload the raw YCbCr
+	// bytes to the GPU and let a fragment shader do the conversion at draw
+	// time. This skips ~30 MB/s of CPU YCbCr→RGB conversion.
+	if packed, ok := frame.(*video.PackedYCbCr); ok {
+		a.uploadYCbCrFrame(packed, at)
+		return
+	}
+
 	rgba := frameToRGBA(frame)
 
 	a.mu.Lock()
@@ -658,7 +717,65 @@ func (a *App) uploadVideoFrame(frame image.Image, at time.Time) {
 	a.lastFrameAt = at
 }
 
+// uploadYCbCrFrame writes a YCbCr-packed frame into a dedicated source image
+// and converts to RGB via a GPU shader. Result is stored in a.lastImg so the
+// rest of Draw() does not need to change.
+func (a *App) uploadYCbCrFrame(frame *video.PackedYCbCr, at time.Time) {
+	w := frame.Bounds().Dx()
+	h := frame.Bounds().Dy()
+
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	if a.yCbCrShader == nil {
+		s, err := ebiten.NewShader([]byte(ycbcrShaderSrc))
+		if err != nil {
+			// Fall back to CPU conversion if the shader fails to compile.
+			rgba := frameToRGBA(frame)
+			if a.lastImg == nil || a.lastImg.Bounds().Dx() != w || a.lastImg.Bounds().Dy() != h {
+				if a.lastImg != nil {
+					a.lastImg.Deallocate()
+				}
+				a.lastImg = ebiten.NewImage(w, h)
+			}
+			a.lastImg.WritePixels(rgba.Pix)
+			a.lastFrameAt = at
+			return
+		}
+		a.yCbCrShader = s
+	}
+
+	if a.yCbCrImage == nil || a.yCbCrImage.Bounds().Dx() != w || a.yCbCrImage.Bounds().Dy() != h {
+		if a.yCbCrImage != nil {
+			a.yCbCrImage.Deallocate()
+		}
+		// lastImg may alias frameImage; clear the alias first.
+		if a.lastImg != nil && a.lastImg != a.frameImage {
+			a.lastImg.Deallocate()
+		}
+		a.lastImg = nil
+		if a.frameImage != nil {
+			a.frameImage.Deallocate()
+		}
+		a.yCbCrImage = ebiten.NewImage(w, h)
+		a.frameImage = ebiten.NewImage(w, h)
+		a.lastImg = a.frameImage
+	}
+
+	a.yCbCrImage.WritePixels(frame.Pix)
+
+	op := &ebiten.DrawRectShaderOptions{}
+	op.Images[0] = a.yCbCrImage
+	op.Blend = ebiten.BlendCopy
+	a.frameImage.DrawRectShader(w, h, a.yCbCrShader, op)
+
+	a.lastFrameAt = at
+}
+
 func frameToRGBA(src image.Image) *image.RGBA {
+	if rgba, ok := src.(*image.RGBA); ok {
+		return rgba
+	}
 	bounds := src.Bounds()
 	dst := image.NewRGBA(bounds)
 	imagedraw.Draw(dst, bounds, src, bounds.Min, imagedraw.Src)
@@ -4380,9 +4497,19 @@ func (a *App) connectTo(target string) {
 	a.cfg.BaseURL = baseURL
 	a.cfg.Password = password
 	a.mu.Lock()
-	if a.lastImg != nil {
+	// lastImg may alias frameImage when the YCbCr fast path is active;
+	// clear the alias first to avoid double-deallocate.
+	if a.lastImg != nil && a.lastImg != a.frameImage {
 		a.lastImg.Deallocate()
-		a.lastImg = nil
+	}
+	a.lastImg = nil
+	if a.yCbCrImage != nil {
+		a.yCbCrImage.Deallocate()
+		a.yCbCrImage = nil
+	}
+	if a.frameImage != nil {
+		a.frameImage.Deallocate()
+		a.frameImage = nil
 	}
 	a.lastFrameAt = time.Time{}
 	a.mu.Unlock()

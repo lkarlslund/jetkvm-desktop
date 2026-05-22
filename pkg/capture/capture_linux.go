@@ -98,6 +98,9 @@ type x11Grabber struct {
 	done          chan struct{}
 	savedBindings []savedBinding
 	sigChan       chan os.Signal
+
+	supportedOnce sync.Once
+	supportedVal  bool
 }
 
 func New() Grabber {
@@ -107,15 +110,20 @@ func New() Grabber {
 }
 
 func (g *x11Grabber) IsSupported() bool {
-	if os.Getenv("XDG_SESSION_TYPE") == "wayland" && os.Getenv("DISPLAY") == "" {
-		return false
-	}
-	dpy := C.XOpenDisplay((*C.char)(unsafe.Pointer(nil)))
-	if dpy == nil {
-		return false
-	}
-	C.XCloseDisplay(dpy)
-	return true
+	g.supportedOnce.Do(func() {
+		if os.Getenv("XDG_SESSION_TYPE") == "wayland" && os.Getenv("DISPLAY") == "" {
+			g.supportedVal = false
+			return
+		}
+		dpy := C.XOpenDisplay((*C.char)(unsafe.Pointer(nil)))
+		if dpy == nil {
+			g.supportedVal = false
+			return
+		}
+		C.XCloseDisplay(dpy)
+		g.supportedVal = true
+	})
+	return g.supportedVal
 }
 
 func (g *x11Grabber) Grab() error {

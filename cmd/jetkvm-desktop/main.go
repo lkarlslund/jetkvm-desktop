@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"strings"
 	"time"
@@ -80,6 +82,15 @@ func main() {
 				return err
 			}
 
+			if addr := strings.TrimSpace(os.Getenv("JETKVM_DESKTOP_PPROF")); addr != "" {
+				go func() {
+					log.Printf("[pprof] listening on %s", addr)
+					if err := http.ListenAndServe(addr, nil); err != nil {
+						log.Printf("[pprof] server error: %v", err)
+					}
+				}()
+			}
+
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 			clientApp.Start(ctx)
@@ -87,7 +98,8 @@ func main() {
 			windowWidth, windowHeight := app.InitialWindowSize(cfg.BaseURL == "")
 			ebiten.SetWindowSize(windowWidth, windowHeight)
 			ebiten.SetWindowResizingMode(ebiten.WindowResizingModeEnabled)
-			ebiten.SetTPS(ebiten.SyncWithFPS)
+			ebiten.SetTPS(30)
+			ebiten.SetVsyncEnabled(true)
 			ebiten.SetWindowTitle("JetKVM Desktop")
 			return ebiten.RunGame(clientApp)
 		},
