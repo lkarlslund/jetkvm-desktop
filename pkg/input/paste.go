@@ -12,60 +12,22 @@ const (
 	modAltRight  = 0x40
 )
 
-type textKey struct {
-	hid      byte
-	modifier byte
-}
-
-var textKeyMap = map[rune]textKey{
-	'a': {hid: 4}, 'b': {hid: 5}, 'c': {hid: 6}, 'd': {hid: 7}, 'e': {hid: 8},
-	'f': {hid: 9}, 'g': {hid: 10}, 'h': {hid: 11}, 'i': {hid: 12}, 'j': {hid: 13},
-	'k': {hid: 14}, 'l': {hid: 15}, 'm': {hid: 16}, 'n': {hid: 17}, 'o': {hid: 18},
-	'p': {hid: 19}, 'q': {hid: 20}, 'r': {hid: 21}, 's': {hid: 22}, 't': {hid: 23},
-	'u': {hid: 24}, 'v': {hid: 25}, 'w': {hid: 26}, 'x': {hid: 27}, 'y': {hid: 28},
-	'z': {hid: 29},
-	'A': {hid: 4, modifier: modShiftLeft}, 'B': {hid: 5, modifier: modShiftLeft},
-	'C': {hid: 6, modifier: modShiftLeft}, 'D': {hid: 7, modifier: modShiftLeft},
-	'E': {hid: 8, modifier: modShiftLeft}, 'F': {hid: 9, modifier: modShiftLeft},
-	'G': {hid: 10, modifier: modShiftLeft}, 'H': {hid: 11, modifier: modShiftLeft},
-	'I': {hid: 12, modifier: modShiftLeft}, 'J': {hid: 13, modifier: modShiftLeft},
-	'K': {hid: 14, modifier: modShiftLeft}, 'L': {hid: 15, modifier: modShiftLeft},
-	'M': {hid: 16, modifier: modShiftLeft}, 'N': {hid: 17, modifier: modShiftLeft},
-	'O': {hid: 18, modifier: modShiftLeft}, 'P': {hid: 19, modifier: modShiftLeft},
-	'Q': {hid: 20, modifier: modShiftLeft}, 'R': {hid: 21, modifier: modShiftLeft},
-	'S': {hid: 22, modifier: modShiftLeft}, 'T': {hid: 23, modifier: modShiftLeft},
-	'U': {hid: 24, modifier: modShiftLeft}, 'V': {hid: 25, modifier: modShiftLeft},
-	'W': {hid: 26, modifier: modShiftLeft}, 'X': {hid: 27, modifier: modShiftLeft},
-	'Y': {hid: 28, modifier: modShiftLeft}, 'Z': {hid: 29, modifier: modShiftLeft},
-	'1': {hid: 30}, '2': {hid: 31}, '3': {hid: 32}, '4': {hid: 33}, '5': {hid: 34},
-	'6': {hid: 35}, '7': {hid: 36}, '8': {hid: 37}, '9': {hid: 38}, '0': {hid: 39},
-	'!': {hid: 30, modifier: modShiftLeft}, '@': {hid: 31, modifier: modShiftLeft},
-	'#': {hid: 32, modifier: modShiftLeft}, '$': {hid: 33, modifier: modShiftLeft},
-	'%': {hid: 34, modifier: modShiftLeft}, '^': {hid: 35, modifier: modShiftLeft},
-	'&': {hid: 36, modifier: modShiftLeft}, '*': {hid: 37, modifier: modShiftLeft},
-	'(': {hid: 38, modifier: modShiftLeft}, ')': {hid: 39, modifier: modShiftLeft},
-	'\n': {hid: 40}, '\r': {hid: 40}, '\t': {hid: 43}, ' ': {hid: 44},
-	'-': {hid: 45}, '_': {hid: 45, modifier: modShiftLeft},
-	'=': {hid: 46}, '+': {hid: 46, modifier: modShiftLeft},
-	'[': {hid: 47}, '{': {hid: 47, modifier: modShiftLeft},
-	']': {hid: 48}, '}': {hid: 48, modifier: modShiftLeft},
-	'\\': {hid: 49}, '|': {hid: 49, modifier: modShiftLeft},
-	';': {hid: 51}, ':': {hid: 51, modifier: modShiftLeft},
-	'\'': {hid: 52}, '"': {hid: 52, modifier: modShiftLeft},
-	'`': {hid: 53}, '~': {hid: 53, modifier: modShiftLeft},
-	',': {hid: 54}, '<': {hid: 54, modifier: modShiftLeft},
-	'.': {hid: 55}, '>': {hid: 55, modifier: modShiftLeft},
-	'/': {hid: 56}, '?': {hid: 56, modifier: modShiftLeft},
-}
-
+// BuildPasteMacro converts the given text into a sequence of keyboard macro
+// steps for the given keyboard layout. Characters that are not supported by
+// the layout are skipped and reported in `invalid`.
+//
+// Each character produces a press step (held for 20ms) followed by a release
+// step (held for `delay` ms). Accented characters automatically emit the dead
+// key sequence first. Stand-alone dead keys (e.g. ~ on a Portuguese layout)
+// are followed by a space to commit the character.
 func BuildPasteMacro(layout, text string, delay uint16) ([]hidrpc.KeyboardMacroStep, []rune) {
-	_ = NormalizeKeyboardLayoutCode(layout)
-	steps := make([]hidrpc.KeyboardMacroStep, 0, len(text)*2)
+	chars := lookupPasteLayout(layout)
+	steps := make([]hidrpc.KeyboardMacroStep, 0, len(text)*4)
 	invalidMap := map[rune]bool{}
 	invalid := make([]rune, 0)
 
 	for _, r := range text {
-		mapping, ok := textKeyMap[r]
+		entry, ok := chars[r]
 		if !ok {
 			if !invalidMap[r] {
 				invalidMap[r] = true
@@ -73,15 +35,31 @@ func BuildPasteMacro(layout, text string, delay uint16) ([]hidrpc.KeyboardMacroS
 			}
 			continue
 		}
-		var press hidrpc.KeyboardMacroStep
-		press.Modifier = mapping.modifier
-		press.Keys[0] = mapping.hid
-		press.Delay = 20
-		steps = append(steps, press)
-		steps = append(steps, hidrpc.KeyboardMacroStep{Delay: delay})
+
+		if entry.Accent != nil {
+			steps = appendPress(steps, entry.Accent.HID, entry.Accent.Modifier, delay)
+		}
+
+		steps = appendPress(steps, entry.HID, entry.Modifier, delay)
+
+		// Stand-alone dead keys need a following space to actually emit the
+		// accent glyph rather than waiting for the next letter to combine.
+		if entry.DeadKey && entry.Accent == nil {
+			steps = appendPress(steps, hidSpace, 0, delay)
+		}
 	}
 
 	return steps, invalid
+}
+
+func appendPress(steps []hidrpc.KeyboardMacroStep, key, modifier byte, delay uint16) []hidrpc.KeyboardMacroStep {
+	var press hidrpc.KeyboardMacroStep
+	press.Modifier = modifier
+	press.Keys[0] = key
+	press.Delay = 20
+	steps = append(steps, press)
+	steps = append(steps, hidrpc.KeyboardMacroStep{Delay: delay})
+	return steps
 }
 
 func InvalidRunesString(invalid []rune) string {
