@@ -70,6 +70,10 @@ func (g *winGrabber) IsSupported() bool {
 // Only one grabber instance is active at a time.
 var activeGrabber *winGrabber
 
+func (g *winGrabber) GrabWithCallback(cb KeyCallback) error {
+	return g.Grab()
+}
+
 func (g *winGrabber) Grab() error {
 	g.mu.Lock()
 	defer g.mu.Unlock()

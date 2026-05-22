@@ -2024,8 +2024,16 @@ func (c *Controller) bootstrap(ctx context.Context, cl *client.Client) error {
 			s.SystemUpdateAvailable = updateStatus.SystemUpdateAvailable
 		})
 	}
-	if network, err := cl.GetNetworkSettings(ctx); err == nil {
+	if network, err := cl.GetNetworkSettings(ctx); err == nil && network.Hostname != "" {
 		c.setState(func(s *Snapshot) { s.Hostname = network.Hostname })
+	} else if state, err := cl.GetNetworkState(ctx); err == nil {
+		host := state.Hostname
+		if host == "" && state.DHCPLease != nil {
+			host = state.DHCPLease.Hostname
+		}
+		if host != "" {
+			c.setState(func(s *Snapshot) { s.Hostname = host })
+		}
 	}
 	c.setState(func(s *Snapshot) {
 		s.Phase = PhaseConnected

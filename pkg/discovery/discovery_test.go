@@ -15,8 +15,8 @@ func TestScannerStartStopRunning(t *testing.T) {
 		discoveryProbeTarget = originalProbe
 	})
 
-	discoveryEnumerateTargets = func() []netip.Addr {
-		return []netip.Addr{netip.MustParseAddr("192.168.1.10")}
+	discoveryEnumerateTargets = func() []targetBatch {
+		return enumerateTargetsFlat([]netip.Addr{netip.MustParseAddr("192.168.1.10")})
 	}
 	probeStarted := make(chan struct{}, 1)
 	releaseProbe := make(chan struct{})

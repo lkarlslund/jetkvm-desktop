@@ -82,6 +82,10 @@ func eventTapCallback(proxy C.CGEventTapProxy, eventType C.CGEventType, event C.
 	return C.CGEventRef(C.NULL)
 }
 
+func (g *darwinGrabber) GrabWithCallback(cb KeyCallback) error {
+	return g.Grab()
+}
+
 func (g *darwinGrabber) Grab() error {
 	g.mu.Lock()
 	defer g.mu.Unlock()

@@ -46,6 +46,22 @@ static int x11_pump_one(Display *dpy, Window target) {
 	}
 	return 1;
 }
+
+// Like x11_pump_one but returns keysym instead of forwarding.
+// out_keysym and out_pressed are set for key events.
+// Returns: 0=no event, 1=key event, 2=other event (ignored).
+static int x11_pump_key(Display *dpy, unsigned long *out_keysym, int *out_pressed) {
+	if (XPending(dpy) == 0)
+		return 0;
+	XEvent ev;
+	XNextEvent(dpy, &ev);
+	if (ev.type == KeyPress || ev.type == KeyRelease) {
+		*out_keysym = (unsigned long)XLookupKeysym(&ev.xkey, 0);
+		*out_pressed = (ev.type == KeyPress) ? 1 : 0;
+		return 1;
+	}
+	return 2;
+}
 */
 import "C"
 
@@ -98,6 +114,7 @@ type x11Grabber struct {
 	done          chan struct{}
 	savedBindings []savedBinding
 	sigChan       chan os.Signal
+	keyCb         KeyCallback
 
 	supportedOnce sync.Once
 	supportedVal  bool
@@ -127,6 +144,14 @@ func (g *x11Grabber) IsSupported() bool {
 }
 
 func (g *x11Grabber) Grab() error {
+	return g.grabInternal(nil)
+}
+
+func (g *x11Grabber) GrabWithCallback(cb KeyCallback) error {
+	return g.grabInternal(cb)
+}
+
+func (g *x11Grabber) grabInternal(cb KeyCallback) error {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 
@@ -152,19 +177,24 @@ func (g *x11Grabber) Grab() error {
 		return fmt.Errorf("capture: XGrabKeyboard failed (code %d)", int(rc))
 	}
 
-	prc := C.XGrabPointer(dpy, target, C.True,
-		C.uint(C.ButtonPressMask|C.ButtonReleaseMask|C.PointerMotionMask),
-		C.GrabModeAsync, C.GrabModeAsync, C.None, C.None, C.CurrentTime)
-	if prc != C.GrabSuccess {
-		C.XUngrabKeyboard(dpy, C.CurrentTime)
-		C.XFlush(dpy)
-		C.XCloseDisplay(dpy)
-		return fmt.Errorf("capture: XGrabPointer failed (code %d)", int(prc))
+	// In callback mode, let GTK handle mouse normally -- only grab keyboard.
+	// The keyboard grab + gsettings disable is enough for compositor shortcuts.
+	if cb == nil {
+		prc := C.XGrabPointer(dpy, target, C.True,
+			C.uint(C.ButtonPressMask|C.ButtonReleaseMask|C.PointerMotionMask),
+			C.GrabModeAsync, C.GrabModeAsync, C.None, C.None, C.CurrentTime)
+		if prc != C.GrabSuccess {
+			C.XUngrabKeyboard(dpy, C.CurrentTime)
+			C.XFlush(dpy)
+			C.XCloseDisplay(dpy)
+			return fmt.Errorf("capture: XGrabPointer failed (code %d)", int(prc))
+		}
 	}
 
 	C.XFlush(dpy)
 	g.display = dpy
 	g.target = target
+	g.keyCb = cb
 	g.done = make(chan struct{})
 
 	g.disableCompositorShortcuts()
@@ -172,7 +202,11 @@ func (g *x11Grabber) Grab() error {
 
 	g.grabbed.Store(true)
 
-	go g.pump()
+	if cb != nil {
+		go g.pumpCallback()
+	} else {
+		go g.pump()
+	}
 	return nil
 }
 
@@ -181,6 +215,27 @@ func (g *x11Grabber) pump() {
 	for g.grabbed.Load() {
 		if C.x11_pump_one(g.display, g.target) == 0 {
 			time.Sleep(time.Millisecond)
+		}
+	}
+}
+
+func (g *x11Grabber) pumpCallback() {
+	defer close(g.done)
+	var keysym C.ulong
+	var pressed C.int
+	for g.grabbed.Load() {
+		rc := C.x11_pump_key(g.display, &keysym, &pressed)
+		switch rc {
+		case 0:
+			time.Sleep(time.Millisecond)
+		case 1:
+			evt := KeyEvent{
+				Keysym:  uint32(keysym),
+				Pressed: pressed != 0,
+			}
+			if g.keyCb != nil {
+				g.keyCb(evt)
+			}
 		}
 	}
 }

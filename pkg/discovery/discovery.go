@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net"
 	"net/http"
 	"net/netip"
@@ -103,39 +104,76 @@ func (s *Scanner) run(ctx context.Context) {
 	}
 }
 
+var priorityNames = []string{"physical", "vpn", "container", "docker", "other"}
+
 func (s *Scanner) scan(ctx context.Context) {
-	targets := discoveryEnumerateTargets()
-	if len(targets) == 0 {
+	batches := discoveryEnumerateTargets()
+	if len(batches) == 0 {
+		log.Printf("[discovery] no targets to scan")
 		return
 	}
 
-	sem := make(chan struct{}, 48)
-	var wg sync.WaitGroup
-	for _, target := range targets {
+	total := 0
+	for _, b := range batches {
+		total += len(b.addrs)
+	}
+	log.Printf("[discovery] scanning %d targets across %d tiers", total, len(batches))
+
+	found := 0
+	var foundMu sync.Mutex
+	for _, batch := range batches {
 		select {
 		case <-ctx.Done():
 			return
 		default:
 		}
-		wg.Add(1)
-		sem <- struct{}{}
-		go func(addr netip.Addr) {
-			defer wg.Done()
-			defer func() { <-sem }()
-			device, ok := discoveryProbeTarget(ctx, addr)
-			if !ok {
+		name := "unknown"
+		if batch.priority < len(priorityNames) {
+			name = priorityNames[batch.priority]
+		}
+		log.Printf("[discovery] tier %d (%s): %d targets", batch.priority, name, len(batch.addrs))
+
+		sem := make(chan struct{}, 128)
+		var wg sync.WaitGroup
+		for _, addr := range batch.addrs {
+			select {
+			case <-ctx.Done():
 				return
+			default:
 			}
-			s.publish(device)
-		}(target)
+			wg.Add(1)
+			sem <- struct{}{}
+			go func(a netip.Addr) {
+				defer wg.Done()
+				defer func() { <-sem }()
+				device, ok := discoveryProbeTarget(ctx, a)
+				if !ok {
+					return
+				}
+				foundMu.Lock()
+				found++
+				foundMu.Unlock()
+				log.Printf("[discovery] found: %s (%s)", device.Name, device.BaseURL)
+				s.publish(device)
+			}(addr)
+		}
+		wg.Wait()
 	}
-	wg.Wait()
+	log.Printf("[discovery] scan complete, %d device(s) found", found)
 }
 
 var (
 	discoveryEnumerateTargets = enumerateTargets
 	discoveryProbeTarget      = probeTarget
 )
+
+// enumerateTargetsFlat is a convenience for tests that returns a single batch.
+func enumerateTargetsFlat(addrs []netip.Addr) []targetBatch {
+	if len(addrs) == 0 {
+		return nil
+	}
+	return []targetBatch{{priority: 0, addrs: addrs}}
+}
 
 func (s *Scanner) publish(device Device) {
 	s.mu.Lock()
@@ -154,18 +192,54 @@ func (s *Scanner) publish(device Device) {
 	}
 }
 
-func enumerateTargets() []netip.Addr {
+// interfacePriority classifies a network interface into scan priority tiers:
+//   0 = physical (eth*, en*, eno*, wl*, wlan*, etc.)
+//   1 = VPN / tunnel (tun*, tap*, wg*, tailscale*)
+//   2 = containers / virtual (lxc*, lxd*, virbr*)
+//   3 = docker (docker*, br-*, veth*)
+//   4 = anything else
+func interfacePriority(name string) int {
+	for _, prefix := range []string{"docker", "br-", "veth"} {
+		if strings.HasPrefix(name, prefix) {
+			return 3
+		}
+	}
+	for _, prefix := range []string{"lxc", "lxd", "virbr"} {
+		if strings.HasPrefix(name, prefix) {
+			return 2
+		}
+	}
+	for _, prefix := range []string{"tun", "tap", "wg", "tailscale"} {
+		if strings.HasPrefix(name, prefix) {
+			return 1
+		}
+	}
+	for _, prefix := range []string{"eth", "en", "wl", "wlan", "eno", "ens", "enp", "wlp"} {
+		if strings.HasPrefix(name, prefix) {
+			return 0
+		}
+	}
+	return 4
+}
+
+type targetBatch struct {
+	priority int
+	addrs    []netip.Addr
+}
+
+func enumerateTargets() []targetBatch {
 	ifaces, err := net.Interfaces()
 	if err != nil {
 		return nil
 	}
 
+	buckets := map[int][]netip.Addr{}
 	seen := map[netip.Addr]struct{}{}
-	out := make([]netip.Addr, 0, 256)
 	for _, iface := range ifaces {
 		if iface.Flags&net.FlagUp == 0 || iface.Flags&net.FlagLoopback != 0 {
 			continue
 		}
+		prio := interfacePriority(iface.Name)
 		addrs, err := iface.Addrs()
 		if err != nil {
 			continue
@@ -180,14 +254,23 @@ func enumerateTargets() []netip.Addr {
 					continue
 				}
 				seen[candidate] = struct{}{}
-				out = append(out, candidate)
+				buckets[prio] = append(buckets[prio], candidate)
 			}
 		}
 	}
-	slices.SortFunc(out, func(a, b netip.Addr) int {
-		return strings.Compare(a.String(), b.String())
-	})
-	return out
+
+	var batches []targetBatch
+	for prio := 0; prio <= 4; prio++ {
+		addrs := buckets[prio]
+		if len(addrs) == 0 {
+			continue
+		}
+		slices.SortFunc(addrs, func(a, b netip.Addr) int {
+			return strings.Compare(a.String(), b.String())
+		})
+		batches = append(batches, targetBatch{priority: prio, addrs: addrs})
+	}
+	return batches
 }
 
 func addrToPrefix(addr net.Addr) (netip.Prefix, bool) {
@@ -258,7 +341,7 @@ func probeTarget(parent context.Context, addr netip.Addr) (Device, bool) {
 }
 
 func probeScheme(parent context.Context, addr netip.Addr, scheme string) (Device, bool) {
-	ctx, cancel := context.WithTimeout(parent, 1200*time.Millisecond)
+	ctx, cancel := context.WithTimeout(parent, 600*time.Millisecond)
 	defer cancel()
 
 	baseURL := fmt.Sprintf("%s://%s", scheme, addr.String())
@@ -299,11 +382,11 @@ func probeScheme(parent context.Context, addr netip.Addr, scheme string) (Device
 }
 
 var discoveryHTTPClient = &http.Client{
-	Timeout: 1200 * time.Millisecond,
+	Timeout: 600 * time.Millisecond,
 	Transport: &http.Transport{
 		TLSClientConfig:     &tls.Config{InsecureSkipVerify: true}, //nolint:gosec
 		DisableKeepAlives:   true,
-		TLSHandshakeTimeout: 1200 * time.Millisecond,
+		TLSHandshakeTimeout: 600 * time.Millisecond,
 	},
 }
 
