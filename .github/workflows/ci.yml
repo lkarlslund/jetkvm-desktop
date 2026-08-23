@@ -30,37 +30,44 @@ jobs:
         include:
           - os: ubuntu-24.04
             name: linux-amd64
-            archive_name: jetkvm-desktop-linux-amd64.tar.gz
+            archive_ext: tar.gz
             client_bin: jetkvm-desktop
             goos: linux
             goarch: amd64
           - os: ubuntu-24.04-arm
             name: linux-aarch64
-            archive_name: jetkvm-desktop-linux-aarch64.tar.gz
+            archive_ext: tar.gz
             client_bin: jetkvm-desktop
             goos: linux
             goarch: arm64
           - os: macos-15-intel
             name: macos-amd64
-            archive_name: jetkvm-desktop-macos-amd64.tar.gz
+            archive_ext: tar.gz
             client_bin: jetkvm-desktop
             goos: darwin
             goarch: amd64
           - os: macos-15
             name: macos-aarch64
-            archive_name: jetkvm-desktop-macos-aarch64.tar.gz
+            archive_ext: tar.gz
             client_bin: jetkvm-desktop
             goos: darwin
             goarch: arm64
           - os: windows-latest
             name: windows-amd64
-            archive_name: jetkvm-desktop-windows-amd64.zip
+            archive_ext: zip
             client_bin: jetkvm-desktop.exe
             goos: windows
             goarch: amd64
     steps:
       - name: Checkout
         uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Compute build number
+        id: version
+        shell: bash
+        run: echo "version=$(scripts/build-number)" >> "$GITHUB_OUTPUT"
 
       - name: Set up native environment
         uses: ./.github/actions/setup-native-env
@@ -80,7 +87,7 @@ jobs:
           mkdir -p dist/pkg
           go build -trimpath -ldflags="-s -w" -o "dist/pkg/${{ matrix.client_bin }}" ./cmd/jetkvm-desktop
           cp README.md dist/pkg/
-          tar -C dist/pkg -czf "dist/${{ matrix.archive_name }}" .
+          tar -C dist/pkg -czf "dist/jetkvm-desktop-${{ steps.version.outputs.version }}-${{ matrix.name }}.tar.gz" .
 
       - name: Build release binaries (Windows)
         if: runner.os == 'Windows'
@@ -93,7 +100,7 @@ jobs:
           $env:CGO_LDFLAGS = "-static"
           go build -trimpath -ldflags='-s -w -extldflags "-static"' -o "dist/pkg/${{ matrix.client_bin }}" ./cmd/jetkvm-desktop
           Copy-Item README.md dist/pkg/README.md
-          Compress-Archive -Path dist/pkg/* -DestinationPath "dist/${{ matrix.archive_name }}"
+          Compress-Archive -Path dist/pkg/* -DestinationPath "dist/jetkvm-desktop-${{ steps.version.outputs.version }}-${{ matrix.name }}.zip"
 
       - name: Verify Windows runtime dependencies
         if: runner.os == 'Windows'
@@ -127,4 +134,5 @@ jobs:
         uses: actions/upload-artifact@v6
         with:
           name: ${{ matrix.name }}
-          path: dist/${{ matrix.archive_name }}
+          path: dist/jetkvm-desktop-${{ steps.version.outputs.version }}-${{ matrix.name }}.${{ matrix.archive_ext }}
+          if-no-files-found: error

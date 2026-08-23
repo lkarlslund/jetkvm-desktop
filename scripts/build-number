@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+COMMIT_COUNT="$(git -C "$ROOT_DIR" rev-list --count HEAD)"
+VERSION="$(printf 'r%04d' "$COMMIT_COUNT")"
+
+case "${1:-official}" in
+  official)
+    ;;
+  local)
+    VERSION="${VERSION}-local"
+    if ! git -C "$ROOT_DIR" diff --quiet --ignore-submodules HEAD --; then
+      VERSION="${VERSION}-dirty"
+    fi
+    ;;
+  *)
+    echo "usage: $0 [official|local]" >&2
+    exit 2
+    ;;
+esac
+
+printf '%s\n' "$VERSION"

@@ -1,136 +1,225 @@
-name: Release
+name: Rolling release
 
 on:
-  push:
-    tags:
-      - "v*"
   workflow_run:
     workflows:
       - CI
     types:
       - completed
   workflow_dispatch:
+    inputs:
+      force_rebuild:
+        description: "Replace release assets even when the latest release is already at HEAD"
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   actions: read
   contents: write
 
+concurrency:
+  group: rolling-release
+  cancel-in-progress: false
+
 jobs:
   resolve-release:
-    name: Resolve Release Tag
+    name: Resolve rolling release
     runs-on: ubuntu-latest
     outputs:
-      tag: ${{ steps.resolve.outputs.tag }}
-      run_id: ${{ steps.resolve.outputs.run_id || steps.resolve-dispatch.outputs.run_id }}
+      changed: ${{ steps.meta.outputs.changed }}
+      previous_tag: ${{ steps.meta.outputs.previous_tag }}
+      repair_release: ${{ steps.meta.outputs.repair_release }}
+      run_id: ${{ steps.meta.outputs.run_id }}
+      sha: ${{ steps.meta.outputs.sha }}
+      tag: ${{ steps.meta.outputs.tag }}
+
     steps:
-      - name: Checkout
+      - name: Check out repository
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
           ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
 
-      - name: Resolve tag and CI run
-        id: resolve
+      - name: Compute release metadata
+        id: meta
         shell: bash
         env:
+          FORCE_REBUILD: ${{ github.event_name == 'workflow_dispatch' && inputs.force_rebuild }}
+          GH_TOKEN: ${{ github.token }}
+          WORKFLOW_RUN_BRANCH: ${{ github.event.workflow_run.head_branch }}
           WORKFLOW_RUN_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
           WORKFLOW_RUN_EVENT: ${{ github.event.workflow_run.event }}
           WORKFLOW_RUN_ID: ${{ github.event.workflow_run.id }}
           WORKFLOW_RUN_SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
+          set -euo pipefail
+
           if [[ "${GITHUB_EVENT_NAME}" == "workflow_run" ]]; then
-            if [[ "${WORKFLOW_RUN_EVENT}" != "push" ]]; then
-              echo "Release only publishes from CI runs triggered by pushes"
+            if [[ "${WORKFLOW_RUN_EVENT}" != "push" || "${WORKFLOW_RUN_BRANCH}" != "main" ]]; then
+              echo "changed=false" >>"$GITHUB_OUTPUT"
+              echo "Rolling releases only publish from CI runs triggered by pushes to main."
               exit 0
             fi
             if [[ "${WORKFLOW_RUN_CONCLUSION}" != "success" ]]; then
-              echo "CI did not succeed; skipping release publish"
+              echo "changed=false" >>"$GITHUB_OUTPUT"
+              echo "CI did not succeed; skipping rolling release."
               exit 0
             fi
             sha="${WORKFLOW_RUN_SHA}"
             run_id="${WORKFLOW_RUN_ID}"
           else
             sha="${GITHUB_SHA}"
-            run_id=""
+            run_id="$(gh run list \
+              --workflow CI \
+              --commit "$sha" \
+              --event push \
+              --status success \
+              --limit 20 \
+              --json databaseId \
+              --jq '.[0].databaseId // ""')"
+            if [[ -z "$run_id" ]]; then
+              echo "No successful CI run found for commit ${sha}." >&2
+              exit 1
+            fi
           fi
 
-          tag="$(git tag --points-at "${sha}" | grep '^v' | sort -V | tail -n1 || true)"
-          if [[ -z "${tag}" ]]; then
-            echo "No release tag found for ${sha}"
-            exit 0
+          latest_tag="$(gh release list --limit 100 --json tagName --jq '[.[].tagName | select(test("^r[0-9]+$"))] | sort_by(ltrimstr("r") | tonumber) | reverse | .[0] // ""')"
+          if [[ -n "$latest_tag" ]]; then
+            git fetch --force origin "refs/tags/${latest_tag}:refs/tags/${latest_tag}" || true
           fi
 
-          echo "sha=${sha}" >> "${GITHUB_OUTPUT}"
-          echo "tag=${tag}" >> "${GITHUB_OUTPUT}"
-          if [[ -n "${run_id}" ]]; then
-            echo "run_id=${run_id}" >> "${GITHUB_OUTPUT}"
+          release_has_expected_assets() {
+            local tag="$1"
+            local missing=0
+            local asset
+            local expected_assets=(
+              "jetkvm-desktop-${tag}-linux-amd64.tar.gz"
+              "jetkvm-desktop-${tag}-linux-aarch64.tar.gz"
+              "jetkvm-desktop-${tag}-macos-amd64.tar.gz"
+              "jetkvm-desktop-${tag}-macos-aarch64.tar.gz"
+              "jetkvm-desktop-${tag}-windows-amd64.zip"
+              "SHA256SUMS.txt"
+            )
+
+            mapfile -t release_assets < <(gh release view "$tag" --json assets --jq '.assets[].name')
+            for asset in "${expected_assets[@]}"; do
+              if ! printf '%s\n' "${release_assets[@]}" | grep -Fxq "$asset"; then
+                echo "Release ${tag} is missing ${asset}."
+                missing=1
+              fi
+            done
+
+            return "$missing"
+          }
+
+          repair_release=false
+          if [[ -n "$latest_tag" ]] && git rev-parse -q --verify "refs/tags/${latest_tag}" >/dev/null; then
+            if [[ "$(git rev-parse "$sha")" == "$(git rev-parse "$latest_tag")" ]]; then
+              if [[ "${FORCE_REBUILD}" != "true" ]] && release_has_expected_assets "$latest_tag"; then
+                echo "changed=false" >>"$GITHUB_OUTPUT"
+                echo "No changes since ${latest_tag}, and all expected assets exist; skipping release."
+                exit 0
+              fi
+              repair_release=true
+              tag="$latest_tag"
+            else
+              tag="$(scripts/build-number)"
+            fi
+          else
+            tag="$(scripts/build-number)"
           fi
 
-      - name: Resolve CI run for workflow_dispatch
-        id: resolve-dispatch
-        if: github.event_name != 'workflow_run' && steps.resolve.outputs.tag != ''
-        uses: actions/github-script@v8
-        with:
-          script: |
-            const eventName = '${{ github.event_name }}';
-            const headSha = '${{ steps.resolve.outputs.sha }}';
-            const { owner, repo } = context.repo;
-            const runs = await github.paginate(github.rest.actions.listWorkflowRunsForRepo, {
-              owner,
-              repo,
-              head_sha: headSha,
-              event: 'push',
-              status: 'completed',
-              per_page: 100,
-            });
-
-            const ciRun = runs.find((run) =>
-              run.name === 'CI' &&
-              run.conclusion === 'success'
-            );
-
-            if (!ciRun) {
-              if (eventName === 'push') {
-                core.info(`No successful CI run found for commit ${headSha} yet. A later successful CI workflow_run can publish this tag.`);
-                return;
-              }
-              core.setFailed(`No successful CI run found for commit ${headSha}.`);
-              return;
-            }
-
-            core.setOutput('run_id', String(ciRun.id));
+          {
+            echo "changed=true"
+            echo "previous_tag=${latest_tag}"
+            echo "repair_release=${repair_release}"
+            echo "run_id=${run_id}"
+            echo "sha=${sha}"
+            echo "tag=${tag}"
+          } >>"$GITHUB_OUTPUT"
 
   publish:
-    name: Publish Release
+    name: Publish rolling release
     needs: resolve-release
+    if: needs.resolve-release.outputs.changed == 'true'
     runs-on: ubuntu-latest
-    if: needs.resolve-release.outputs.tag != '' && needs.resolve-release.outputs.run_id != ''
 
     steps:
-      - name: Checkout
+      - name: Check out repository
         uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          ref: ${{ needs.resolve-release.outputs.sha }}
 
       - name: Download CI artifacts
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh run download "${{ needs.resolve-release.outputs.run_id }}" -D dist
 
-      - name: Flatten artifacts
+      - name: Prepare release assets and notes
         shell: bash
+        env:
+          PREVIOUS_TAG: ${{ needs.resolve-release.outputs.previous_tag }}
+          REPAIR_RELEASE: ${{ needs.resolve-release.outputs.repair_release }}
+          RELEASE_SHA: ${{ needs.resolve-release.outputs.sha }}
+          RELEASE_TAG: ${{ needs.resolve-release.outputs.tag }}
         run: |
+          set -euo pipefail
+
           mkdir -p release
           find dist -type f \( -name '*.tar.gz' -o -name '*.zip' \) -exec cp {} release/ \;
-          (cd release && sha256sum * > SHA256SUMS.txt)
+
+          expected_assets=(
+            "jetkvm-desktop-${RELEASE_TAG}-linux-amd64.tar.gz"
+            "jetkvm-desktop-${RELEASE_TAG}-linux-aarch64.tar.gz"
+            "jetkvm-desktop-${RELEASE_TAG}-macos-amd64.tar.gz"
+            "jetkvm-desktop-${RELEASE_TAG}-macos-aarch64.tar.gz"
+            "jetkvm-desktop-${RELEASE_TAG}-windows-amd64.zip"
+          )
+          for asset in "${expected_assets[@]}"; do
+            if [[ ! -f "release/$asset" ]]; then
+              echo "Missing expected CI artifact: $asset" >&2
+              exit 1
+            fi
+          done
+          (cd release && sha256sum "${expected_assets[@]}" >SHA256SUMS.txt)
+
+          short_sha="$(git rev-parse --short=12 "$RELEASE_SHA")"
+          built_at="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+          {
+            echo "## JetKVM Desktop ${RELEASE_TAG}"
+            echo
+            echo "Rolling release for Linux, macOS, and Windows, built from ${short_sha} at ${built_at}."
+            echo
+            echo "### Changelog"
+            echo
+            if [[ "$REPAIR_RELEASE" == "true" ]]; then
+              echo "- Rebuilt release assets for ${short_sha}."
+            elif [[ -n "$PREVIOUS_TAG" ]]; then
+              git fetch --force origin "refs/tags/${PREVIOUS_TAG}:refs/tags/${PREVIOUS_TAG}" || true
+              git log --no-merges --format='- %s (%h)' "${PREVIOUS_TAG}..${RELEASE_SHA}"
+            else
+              git log --no-merges --format='- %s (%h)' "$RELEASE_SHA"
+            fi
+          } >release-notes.md
 
       - name: Publish GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
+          RELEASE_SHA: ${{ needs.resolve-release.outputs.sha }}
           RELEASE_TAG: ${{ needs.resolve-release.outputs.tag }}
         shell: bash
         run: |
-          tag="${RELEASE_TAG}"
-          if gh release view "$tag" >/dev/null 2>&1; then
-            gh release upload "$tag" release/* --clobber
+          set -euo pipefail
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" release/* --clobber
+            gh release edit "$RELEASE_TAG" \
+              --title "$RELEASE_TAG" \
+              --notes-file release-notes.md
           else
-            gh release create "$tag" release/* --title "$tag"
-          fi
+            gh release create "$RELEASE_TAG" \
+              --target "$RELEASE_SHA" \
+              --title "$RELEASE_TAG" \
+              --notes-file release-notes.md \
+              release/*
