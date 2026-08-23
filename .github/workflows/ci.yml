@@ -102,7 +102,7 @@ jobs:
           Copy-Item README.md dist/pkg/README.md
           Compress-Archive -Path dist/pkg/* -DestinationPath "dist/jetkvm-desktop-${{ steps.version.outputs.version }}-${{ matrix.name }}.zip"
 
-      - name: Verify Windows runtime dependencies
+      - name: Verify Windows DLL dependencies
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
@@ -118,16 +118,51 @@ jobs:
           Write-Host "Imported DLLs:"
           $imports | Sort-Object -Unique | ForEach-Object { Write-Host " - $_" }
 
-          $forbidden = @(
-            "libstdc++-6.dll",
-            "libgcc_s_seh-1.dll",
-            "libwinpthread-1.dll",
-            "libssp-0.dll"
+          $allowedImports = @(
+            "kernel32.dll",
+            "msvcrt.dll"
           )
 
-          $remaining = $imports | Where-Object { $forbidden -contains $_ } | Sort-Object -Unique
-          if ($remaining) {
-            throw "Windows binary still depends on forbidden MinGW runtime DLLs: $($remaining -join ', ')"
+          $unexpectedImports = $imports |
+            Where-Object { $allowedImports -notcontains $_ } |
+            Sort-Object -Unique
+          if ($unexpectedImports) {
+            throw "Windows binary imports unexpected DLLs: $($unexpectedImports -join ', ')"
+          }
+
+          # Imports do not reveal DLLs opened at runtime with LoadLibrary. Scan both
+          # ASCII and UTF-16LE strings so known external runtime families cannot be
+          # introduced as dynamically loaded dependencies without failing CI.
+          $binaryStrings = @(
+            & strings -a $exe
+            & strings -a -el $exe
+          )
+          if ($LASTEXITCODE -ne 0) {
+            throw "Failed to extract strings from $exe"
+          }
+
+          $forbiddenDynamicDLLs = [ordered]@{
+            "MinGW libstdc++" = '(?i)libstdc\+\+-[^\\/:*?"<>|\s]*\.dll'
+            "MinGW libgcc" = '(?i)libgcc[^\\/:*?"<>|\s]*\.dll'
+            "MinGW winpthreads" = '(?i)libwinpthread[^\\/:*?"<>|\s]*\.dll'
+            "MinGW libssp" = '(?i)libssp[^\\/:*?"<>|\s]*\.dll'
+            "LLVM libc++" = '(?i)libc\+\+[^\\/:*?"<>|\s]*\.dll'
+            "LLVM libunwind" = '(?i)libunwind[^\\/:*?"<>|\s]*\.dll'
+            "Microsoft C++ runtime" = '(?i)(?:msvcp|vcruntime)[0-9_]*\.dll'
+            "OpenH264" = '(?i)openh264[^\\/:*?"<>|\s]*\.dll'
+            "FFmpeg" = '(?i)(?:avcodec|avformat|avutil|swresample|swscale)[^\\/:*?"<>|\s]*\.dll'
+            "OpenSSL" = '(?i)lib(?:crypto|ssl)[^\\/:*?"<>|\s]*\.dll'
+            "SDL" = '(?i)sdl[0-9_+-]*\.dll'
+            "zlib" = '(?i)zlib[^\\/:*?"<>|\s]*\.dll'
+          }
+
+          $dynamicViolations = foreach ($entry in $forbiddenDynamicDLLs.GetEnumerator()) {
+            if ($binaryStrings | Where-Object { $_ -match $entry.Value } | Select-Object -First 1) {
+              $entry.Key
+            }
+          }
+          if ($dynamicViolations) {
+            throw "Windows binary references external runtime DLLs: $($dynamicViolations -join ', ')"
           }
 
       - name: Upload packaged artifact
