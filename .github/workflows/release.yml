@@ -223,3 +223,4 @@ jobs:
               --title "$RELEASE_TAG" \
               --notes-file release-notes.md \
               release/*
+          fi
