@@ -318,3 +318,9 @@ type KeyboardMacro struct {
 	Steps     []KeyboardMacroStep
 	SortOrder int
 }
+
+type WakeOnLanDevice struct {
+	Name        string
+	MacAddress  string
+	BroadcastIP string
+}

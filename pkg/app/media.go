@@ -28,6 +28,7 @@ func (a *App) openMediaOverlay() {
 	a.mediaError = ""
 	a.mediaURLFocused = false
 	a.mediaUploadFocused = false
+	a.releaseTotalCapture()
 	a.applyCursorMode()
 	a.refreshMediaData()
 }

@@ -394,3 +394,22 @@ type WheelReportRequest struct {
 type StorageFilesResponse struct {
 	Files []virtualmedia.StorageFile `json:"files"`
 }
+
+type WakeOnLanDevice struct {
+	Name        string `json:"name"`
+	MacAddress  string `json:"macAddress"`
+	BroadcastIP string `json:"broadcastIP,omitempty"`
+}
+
+type WakeOnLanDevicesRequest struct {
+	Params WakeOnLanDevicesParams `json:"params"`
+}
+
+type WakeOnLanDevicesParams struct {
+	Devices []WakeOnLanDevice `json:"devices"`
+}
+
+type SendWOLMagicPacketRequest struct {
+	MacAddress  string `json:"macAddress"`
+	BroadcastIP string `json:"broadcastIP,omitempty"`
+}

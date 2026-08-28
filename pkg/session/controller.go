@@ -2304,3 +2304,55 @@ func extractBool(v any, key string) bool {
 	}
 	return false
 }
+
+func (c *Controller) GetWakeOnLanDevices(ctx context.Context) ([]WakeOnLanDevice, error) {
+	current := c.clientIfConnected()
+	if current == nil {
+		return nil, errors.New("client not connected")
+	}
+	devices, err := current.GetWakeOnLanDevices(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]WakeOnLanDevice, len(devices))
+	for i, d := range devices {
+		out[i] = WakeOnLanDevice{
+			Name:        d.Name,
+			MacAddress:  d.MacAddress,
+			BroadcastIP: d.BroadcastIP,
+		}
+	}
+	return out, nil
+}
+
+func (c *Controller) SetWakeOnLanDevices(devices []struct {
+	Name        string
+	MacAddress  string
+	BroadcastIP string
+}) error {
+	current := c.clientIfConnected()
+	if current == nil {
+		return errors.New("client not connected")
+	}
+	items := make([]client.WakeOnLanDevice, len(devices))
+	for i, d := range devices {
+		items[i] = client.WakeOnLanDevice{
+			Name:        d.Name,
+			MacAddress:  d.MacAddress,
+			BroadcastIP: d.BroadcastIP,
+		}
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), c.cfg.MutationTimeout)
+	defer cancel()
+	return current.SetWakeOnLanDevices(ctx, items)
+}
+
+func (c *Controller) SendWakeOnLan(macAddress, broadcastIP string) error {
+	current := c.clientIfConnected()
+	if current == nil {
+		return errors.New("client not connected")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), c.cfg.MutationTimeout)
+	defer cancel()
+	return current.SendWOLMagicPacket(ctx, macAddress, broadcastIP)
+}

@@ -17,6 +17,22 @@ type textBinding struct {
 }
 
 func (a *App) currentTextBinding() *textBinding {
+	if a.wolOpen {
+		switch {
+		case a.wolLabelFocused:
+			return &textBinding{
+				ID:       "wol_focus_label",
+				Value:    &a.wolLabel,
+				TextSize: 13,
+			}
+		case a.wolMACFocused:
+			return &textBinding{
+				ID:       "wol_focus_mac",
+				Value:    &a.wolMAC,
+				TextSize: 13,
+			}
+		}
+	}
 	if a.launcherOpen {
 		switch a.launcherMode {
 		case launcherModeBrowse:
@@ -161,6 +177,26 @@ func (a *App) uiTextBinding() *ui.TextInputBinding {
 }
 
 func (a *App) pointerTextBinding(id string) *textBinding {
+	if a.wolOpen {
+		switch id {
+		case "wol_focus_label":
+			a.wolLabelFocused = true
+			a.wolMACFocused = false
+			return &textBinding{
+				ID:       id,
+				Value:    &a.wolLabel,
+				TextSize: 13,
+			}
+		case "wol_focus_mac":
+			a.wolMACFocused = true
+			a.wolLabelFocused = false
+			return &textBinding{
+				ID:       id,
+				Value:    &a.wolMAC,
+				TextSize: 13,
+			}
+		}
+	}
 	if a.launcherOpen {
 		switch id {
 		case "launcher_focus_input":
@@ -196,7 +232,7 @@ func (a *App) decorateTextField(field ui.TextField) ui.TextField {
 }
 
 func (a *App) currentTextFieldRect(id string) (ui.Rect, bool) {
-	for _, runtime := range []*ui.Runtime{&a.launcherRuntime, &a.mediaRuntime, &a.settingsRuntime, &a.pasteRuntime} {
+	for _, runtime := range []*ui.Runtime{&a.wolRuntime, &a.launcherRuntime, &a.mediaRuntime, &a.settingsRuntime, &a.pasteRuntime} {
 		if bounds, ok := runtime.Bounds(id); ok {
 			return bounds, true
 		}
@@ -273,6 +309,10 @@ func (a *App) markCurrentTextBindingDirty() {
 	}
 	if a.mediaOpen {
 		a.mediaError = ""
+	}
+	if a.wolOpen {
+		a.wolError = ""
+		a.wolSuccess = ""
 	}
 	if a.launcherOpen {
 		a.launcherError = ""

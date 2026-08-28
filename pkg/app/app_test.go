@@ -687,8 +687,8 @@ func TestLayoutChromeButtonsVertical(t *testing.T) {
 	app.prefs.ChromeLayout = chromeLayoutVertical
 
 	buttons := app.layoutChromeButtons(1280, 720, session.Snapshot{Phase: session.PhaseConnected})
-	if len(buttons) != 5 {
-		t.Fatalf("button count = %d, want 5", len(buttons))
+	if len(buttons) != 8 {
+		t.Fatalf("button count = %d, want 8", len(buttons))
 	}
 	if buttons[0].rect.x != buttons[1].rect.x {
 		t.Fatalf("expected vertical buttons to share x, got %v and %v", buttons[0].rect.x, buttons[1].rect.x)
@@ -704,6 +704,7 @@ func TestChromeRevealZoneTracksAnchor(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	app.prefs.ChromeCustomPos = false
 	app.prefs.ChromeAnchor = chromeAnchorLeftCenter
 	app.prefs.ChromeLayout = chromeLayoutVertical
 	leftZone := app.chromeRevealZone(1280, 720, session.Snapshot{Phase: session.PhaseConnected})

@@ -73,6 +73,7 @@ func (a *App) syncLauncherInput() {
 		if a.launcherMode == launcherModePassword {
 			a.connectFromLauncher(a.pendingTarget)
 		} else {
+			a.saveAsRecent = true
 			a.connectFromLauncher(a.launcherInput)
 		}
 		return
@@ -104,6 +105,11 @@ func (launcherScreenElement) Measure(_ *ui.Context, constraints ui.Constraints) 
 
 func (e launcherScreenElement) Draw(ctx *ui.Context, bounds ui.Rect) {
 	validInput := strings.TrimSpace(e.app.launcherInput) != "" && isValidConnectHost(strings.TrimSpace(e.app.launcherInput))
+	hasRecent := len(e.app.prefs.RecentConnections) > 0
+	discoveryMaxH := 520.0
+	if hasRecent {
+		discoveryMaxH = 280
+	}
 	children := []ui.Child{
 		ui.Fixed(ui.Label{Text: "JetKVM", Size: 30, Color: ctx.Theme.Title}),
 		ui.Fixed(ui.Spacer{H: 12}),
@@ -111,7 +117,7 @@ func (e launcherScreenElement) Draw(ctx *ui.Context, bounds ui.Rect) {
 		ui.Fixed(ui.Spacer{H: 28}),
 		ui.Flex(ui.Constrained{
 			MinH: 120,
-			MaxH: 520,
+			MaxH: discoveryMaxH,
 			Child: ui.Panel{
 				Fill:   ctx.Theme.PanelFill,
 				Stroke: ctx.Theme.PanelStroke,
@@ -119,6 +125,16 @@ func (e launcherScreenElement) Draw(ctx *ui.Context, bounds ui.Rect) {
 				Child:  launcherListElement(e),
 			},
 		}, 1),
+	}
+	if hasRecent {
+		children = append(children,
+			ui.Fixed(ui.Spacer{H: 18}),
+			ui.Fixed(ui.Label{Text: "Recently connected", Size: 15, Color: ctx.Theme.Muted}),
+			ui.Fixed(ui.Spacer{H: 10}),
+			ui.Fixed(launcherRecentListElement{app: e.app}),
+		)
+	}
+	children = append(children,
 		ui.Fixed(ui.Spacer{H: 18}),
 		ui.Fixed(ui.Column{
 			Children: []ui.Child{
@@ -128,14 +144,14 @@ func (e launcherScreenElement) Draw(ctx *ui.Context, bounds ui.Rect) {
 					Children: []ui.Child{
 						ui.Flex(launcherInputElement(e), 1),
 						ui.Fixed(ui.Button{Label: "Connect", Enabled: validInput, OnClick: func() {
+							e.app.saveAsRecent = true
 							e.app.connectFromLauncher(e.app.launcherInput)
 						}}),
 					},
 					Spacing: 12,
 				}),
 			},
-		}),
-	}
+		}))
 	if e.app.launcherError != "" {
 		children = append(children,
 			ui.Fixed(ui.Spacer{H: 12}),
@@ -414,6 +430,109 @@ func (e launcherPasswordFieldElement) Draw(ctx *ui.Context, bounds ui.Rect) {
 		PlaceholderColor: ctx.Theme.DisabledText,
 		CaretColor:       ctx.Theme.Error,
 	}).Draw(ctx, bounds)
+}
+
+const maxVisibleRecentConnections = 3
+const recentRowHeight = 36.0
+const recentRowSpacing = 4.0
+
+type launcherRecentListElement struct {
+	app *App
+}
+
+func (e launcherRecentListElement) visibleCount() int {
+	n := len(e.app.prefs.RecentConnections)
+	if n > maxVisibleRecentConnections {
+		n = maxVisibleRecentConnections
+	}
+	return n
+}
+
+func (e launcherRecentListElement) Measure(_ *ui.Context, constraints ui.Constraints) ui.Size {
+	n := e.visibleCount()
+	h := float64(n)*recentRowHeight + float64(n-1)*recentRowSpacing
+	return constraints.Clamp(ui.Size{W: constraints.MaxW, H: h})
+}
+
+func (e launcherRecentListElement) Draw(ctx *ui.Context, bounds ui.Rect) {
+	n := e.visibleCount()
+	y := bounds.Y
+	for i := 0; i < n; i++ {
+		rc := e.app.prefs.RecentConnections[i]
+		rowBounds := ui.Rect{X: bounds.X, Y: y, W: bounds.W, H: recentRowHeight}
+
+		ui.Panel{
+			Fill:   ctx.Theme.SectionFill,
+			Stroke: ctx.Theme.PanelStroke,
+			Insets: ui.SymmetricInsets(12, 0),
+			Child:  launcherRecentRowContentElement{rc: rc},
+		}.Draw(ctx, rowBounds)
+
+		removeW := 28.0
+		connectRect := ui.Rect{X: rowBounds.X, Y: rowBounds.Y, W: rowBounds.W - removeW, H: rowBounds.H}
+		removeRect := ui.Rect{X: rowBounds.X + rowBounds.W - removeW, Y: rowBounds.Y, W: removeW, H: rowBounds.H}
+
+		url := rc.URL
+		if ctx.Runtime != nil {
+			ctx.Runtime.Register(ui.Control{
+				ID: "recent:" + url, Rect: connectRect, Enabled: true,
+				OnClick: func(ui.PointerEvent) { e.app.connectFromLauncher(url) },
+			})
+			ctx.Runtime.Register(ui.Control{
+				ID: "recent_remove:" + url, Rect: removeRect, Enabled: true,
+				OnClick: func(ui.PointerEvent) {
+					e.app.prefs.removeRecentConnection(url)
+					_ = savePreferences(e.app.prefs)
+				},
+			})
+		} else {
+			ctx.AddHit("recent:"+url, connectRect, true)
+			ctx.AddHit("recent_remove:"+url, removeRect, true)
+		}
+
+		y += recentRowHeight + recentRowSpacing
+	}
+}
+
+type launcherRecentRowContentElement struct {
+	rc RecentConnection
+}
+
+func (launcherRecentRowContentElement) Measure(_ *ui.Context, constraints ui.Constraints) ui.Size {
+	return constraints.Clamp(ui.Size{W: constraints.MaxW, H: recentRowHeight})
+}
+
+func (e launcherRecentRowContentElement) Draw(ctx *ui.Context, bounds ui.Rect) {
+	label := e.rc.URL
+	if e.rc.Name != "" {
+		label = e.rc.Name
+	}
+	ui.Row{
+		AlignY: ui.AlignCenter,
+		Children: []ui.Child{
+			ui.Flex(ui.Label{Text: label, Size: 14, Color: ctx.Theme.Title}, 1),
+			ui.Fixed(ui.Label{Text: humanRecentAge(e.rc.ConnectedAt), Size: 11, Color: ctx.Theme.DisabledText}),
+			ui.Fixed(ui.Spacer{W: 10}),
+			ui.Fixed(ui.Label{Text: "\u00d7", Size: 16, Color: ctx.Theme.Muted}),
+		},
+	}.Draw(ctx, bounds)
+}
+
+func humanRecentAge(at time.Time) string {
+	if at.IsZero() {
+		return ""
+	}
+	age := time.Since(at)
+	switch {
+	case age < time.Minute:
+		return "just now"
+	case age < time.Hour:
+		return fmt.Sprintf("%dm ago", int(age.Minutes()))
+	case age < 24*time.Hour:
+		return fmt.Sprintf("%dh ago", int(age.Hours()))
+	default:
+		return fmt.Sprintf("%dd ago", int(age.Hours()/24))
+	}
 }
 
 func humanDiscoveryAge(at time.Time) string {

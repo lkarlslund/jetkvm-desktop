@@ -18,6 +18,7 @@ import (
 	"github.com/hajimehoshi/ebiten/v2/inpututil"
 	"github.com/pion/webrtc/v4"
 
+	"github.com/lkarlslund/jetkvm-desktop/pkg/capture"
 	"github.com/lkarlslund/jetkvm-desktop/pkg/client"
 	"github.com/lkarlslund/jetkvm-desktop/pkg/discovery"
 	"github.com/lkarlslund/jetkvm-desktop/pkg/hotkeys"
@@ -63,6 +64,8 @@ type App struct {
 	lastUIX                int
 	lastUIY                int
 	uiVisibleUntil         time.Time
+	settingsHintUntil      time.Time
+	settingsHintRuntime    ui.Runtime
 	settingsOpen           bool
 	pasteOpen              bool
 	statsOpen              bool
@@ -86,6 +89,8 @@ type App struct {
 	lastWheelAt            time.Time
 	suppressKeysUntilClear bool
 	suppressMouseUntilUp   bool
+	totalCapture           bool
+	grabber                capture.Grabber
 	sectionData            sectionData
 	pasteText              string
 	pasteDelay             uint16
@@ -100,6 +105,7 @@ type App struct {
 	launcherPassword       string
 	launcherError          string
 	pendingTarget          string
+	saveAsRecent           bool
 	discovery              *discovery.Scanner
 	discovered             []discovery.Device
 	settingsActions        map[settingsActionGroup]settingsActionState
@@ -160,8 +166,28 @@ type App struct {
 	factoryResetMessage    string
 	factoryResetSuccess    bool
 	hardwareConn           hardwareConnectionState
+	chromeDragging         bool
+	chromeDragMoved        bool
+	chromeDragStartX       float64
+	chromeDragStartY       float64
+	chromeDragOriginX      float64
+	chromeDragOriginY      float64
+
+	wolOpen            bool
+	wolDevices         []wolDevice
+	wolLabel           string
+	wolMAC             string
+	wolLabelFocused    bool
+	wolMACFocused      bool
+	wolError           string
+	wolSuccess         string
+	wolDeleteConfirm   string
+	wolLoading         bool
+	wolRuntime         ui.Runtime
+
 	launcherRuntime        ui.Runtime
 	overlayRuntime         ui.Runtime
+	pasteBannerRuntime     ui.Runtime
 	settingsRuntime        ui.Runtime
 	pasteRuntime           ui.Runtime
 	mediaRuntime           ui.Runtime
@@ -422,6 +448,7 @@ func New(cfg Config) (*App, error) {
 		sectionLoadSeq:      make(map[settingsSection]uint64),
 		mediaView:           mediaViewHome,
 		mediaMode:           virtualmedia.ModeCDROM,
+		grabber:             capture.New(),
 	}, nil
 }
 
@@ -451,6 +478,10 @@ func (a *App) shouldRunDiscovery() bool {
 func (a *App) Update() error {
 	a.syncDiscoveryLifecycle()
 	if inpututil.IsKeyJustPressed(ebiten.KeyEscape) {
+		if a.wolOpen {
+			a.closeWoLOverlay()
+			return nil
+		}
 		if a.serialConsoleOpen {
 			a.closeSerialConsoleOverlay()
 			a.revealUIFor(1200 * time.Millisecond)
@@ -472,6 +503,12 @@ func (a *App) Update() error {
 			return nil
 		}
 	}
+	if a.wolOpen {
+		a.syncWoLInput()
+		a.syncUIPointer()
+		a.updateTextSelectionDrag()
+		return nil
+	}
 	if a.launcherOpen {
 		a.syncDiscovery()
 		a.syncLauncherInput()
@@ -490,6 +527,7 @@ func (a *App) Update() error {
 	nowFocused := ebiten.IsFocused()
 	if a.focused && !nowFocused {
 		a.releaseAllKeys(true)
+		a.releaseTotalCapture()
 		if a.relative {
 			a.relative = false
 			a.applyCursorMode()
@@ -498,6 +536,21 @@ func (a *App) Update() error {
 	a.focused = nowFocused
 	a.syncUIPointer()
 	a.updateTextSelectionDrag()
+
+	if inpututil.IsKeyJustPressed(a.captureToggleKey()) {
+		if ebiten.IsFullscreen() {
+			a.releaseTotalCapture()
+			ebiten.SetFullscreen(false)
+		} else {
+			ebiten.SetFullscreen(true)
+			if a.grabber.IsSupported() && a.ctrl != nil && a.ctrl.Snapshot().Phase == session.PhaseConnected && !a.totalCapture {
+				_ = a.grabber.Grab()
+				a.totalCapture = a.grabber.IsGrabbed()
+			}
+		}
+		a.releaseAllKeys(true)
+		a.suppressKeysUntilClear = true
+	}
 
 	a.syncPasteInput()
 	a.syncMediaInput()
@@ -515,6 +568,10 @@ func (a *App) syncUIPointer() {
 	justPressed := inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft)
 	justReleased := inpututil.IsMouseButtonJustReleased(ebiten.MouseButtonLeft)
 	if !pressed && !justPressed && !justReleased {
+		return
+	}
+	if a.wolOpen {
+		a.wolRuntime.HandlePointer(point, pressed, justPressed, justReleased)
 		return
 	}
 	if a.launcherOpen {
@@ -549,10 +606,21 @@ func (a *App) syncUIPointer() {
 			return
 		}
 	}
-	if a.overlayRuntime.HandlePointer(point, pressed, justPressed, justReleased) {
+	if a.pasteBannerRuntime.HandlePointer(point, pressed, justPressed, justReleased) {
+		a.suppressMouseUntilUp = true
 		return
 	}
-	a.chromeRuntime.HandlePointer(point, pressed, justPressed, justReleased)
+	if a.settingsHintRuntime.HandlePointer(point, pressed, justPressed, justReleased) {
+		a.suppressMouseUntilUp = true
+		return
+	}
+	if a.overlayRuntime.HandlePointer(point, pressed, justPressed, justReleased) {
+		a.suppressMouseUntilUp = true
+		return
+	}
+	if a.chromeRuntime.HandlePointer(point, pressed, justPressed, justReleased) {
+		a.suppressMouseUntilUp = true
+	}
 }
 
 func shouldDismissOverlayOnOutsidePress(kind string) bool {
@@ -598,6 +666,11 @@ func frameToRGBA(src image.Image) *image.RGBA {
 }
 
 func (a *App) Draw(screen *ebiten.Image) {
+	if a.wolOpen {
+		screen.Fill(a.currentTheme().Background)
+		a.drawWoLOverlay(screen)
+		return
+	}
 	if a.launcherOpen {
 		a.drawLauncher(screen)
 		return
@@ -635,8 +708,10 @@ func (a *App) Draw(screen *ebiten.Image) {
 	}
 	a.drawTopBar(screen, snap)
 	a.drawStatusFooter(screen, snap)
+	a.drawSettingsHint(screen)
 	a.drawPressedKeysOverlay(screen)
 	a.drawOverlay(screen, snap, img != nil)
+	a.drawPasteBanner(screen, snap)
 	a.drawStatsOverlay(screen)
 	a.drawHint(screen)
 	a.drawMediaOverlay(screen, snap)
@@ -655,7 +730,8 @@ func (a *App) Layout(outsideWidth, outsideHeight int) (int, int) {
 }
 
 func (a *App) syncKeyboard() {
-	if !a.focused || a.settingsOpen || a.pasteOpen || a.mediaOpen || a.serialConsoleOpen || a.ctrl.Snapshot().Phase != session.PhaseConnected {
+	snap := a.ctrl.Snapshot()
+	if !a.focused || a.settingsOpen || a.pasteOpen || a.mediaOpen || a.serialConsoleOpen || snap.PasteInProgress || snap.Phase != session.PhaseConnected {
 		if a.hotkeys != nil {
 			a.hotkeys.Reset()
 		}
@@ -673,6 +749,9 @@ func (a *App) syncKeyboard() {
 	}
 	keys := make([]input.Key, 0, len(rawKeys))
 	for _, rawKey := range rawKeys {
+		if a.totalCapture && rawKey == a.captureToggleKey() {
+			continue
+		}
 		if key, ok := toInputKey(rawKey); ok {
 			keys = append(keys, key)
 		}
@@ -707,6 +786,66 @@ func (a *App) handleExperimentalHotkeys(keys []input.Key) bool {
 	return true
 }
 
+func captureToggleEbitenKey(name string) ebiten.Key {
+	switch name {
+	case "F1":
+		return ebiten.KeyF1
+	case "F2":
+		return ebiten.KeyF2
+	case "F3":
+		return ebiten.KeyF3
+	case "F4":
+		return ebiten.KeyF4
+	case "F5":
+		return ebiten.KeyF5
+	case "F6":
+		return ebiten.KeyF6
+	case "F7":
+		return ebiten.KeyF7
+	case "F8":
+		return ebiten.KeyF8
+	case "F9":
+		return ebiten.KeyF9
+	case "F10":
+		return ebiten.KeyF10
+	case "F11":
+		return ebiten.KeyF11
+	case "F12":
+		return ebiten.KeyF12
+	case "Pause":
+		return ebiten.KeyPause
+	case "ScrollLock":
+		return ebiten.KeyScrollLock
+	default:
+		return ebiten.KeyF9
+	}
+}
+
+func (a *App) captureToggleKey() ebiten.Key {
+	return captureToggleEbitenKey(a.prefs.CaptureToggleKey)
+}
+
+func (a *App) toggleTotalCapture() {
+	if a.totalCapture {
+		a.releaseTotalCapture()
+		return
+	}
+	if err := a.grabber.Grab(); err != nil {
+		log := logging.Subsystem("app")
+		log.Warn().Err(err).Msg("total capture grab failed")
+		return
+	}
+	a.totalCapture = true
+}
+
+func (a *App) releaseTotalCapture() {
+	if !a.totalCapture {
+		return
+	}
+	_ = a.grabber.Release()
+	a.totalCapture = false
+}
+
 func (a *App) syncMouse() {
 	log := logging.Subsystem("app")
 	snapshot := a.ctrl.Snapshot()
@@ -714,7 +853,7 @@ func (a *App) syncMouse() {
 	x, y := ebiten.CursorPosition()
 	windowX, windowY, windowPositionKnown := currentWindowPosition()
 	buttons := currentMouseButtons(ebiten.IsMouseButtonPressed)
-	if a.settingsOpen || a.pasteOpen || a.mediaOpen || a.serialConsoleOpen || snapshot.Phase != session.PhaseConnected {
+	if a.settingsOpen || a.pasteOpen || a.mediaOpen || a.serialConsoleOpen || snapshot.PasteInProgress || snapshot.Phase != session.PhaseConnected {
 		if buttons != a.lastButtons {
 			log.Trace().
 				Int("x", x).
@@ -724,6 +863,7 @@ func (a *App) syncMouse() {
 				Bool("paste_open", a.pasteOpen).
 				Bool("media_open", a.mediaOpen).
 				Bool("serial_console_open", a.serialConsoleOpen).
+				Bool("paste_in_progress", snapshot.PasteInProgress).
 				Str("phase", snapshot.Phase.String()).
 				Msg("mouse input suppressed")
 		}
@@ -2188,6 +2328,9 @@ func (a *App) invokeAction(id string) {
 	case "media_close":
 		a.closeMediaOverlay()
 	default:
+		if a.invokeWoLAction(id) {
+			return
+		}
 		if a.invokeMediaAction(id) {
 			return
 		}
@@ -2746,6 +2889,15 @@ func (a *App) invokeAction(id string) {
 		}
 		if strings.HasPrefix(id, "discover:") {
 			a.connectFromLauncher(strings.TrimPrefix(id, "discover:"))
+			return
+		}
+		if url, ok := strings.CutPrefix(id, "recent:"); ok {
+			a.connectFromLauncher(url)
+			return
+		}
+		if url, ok := strings.CutPrefix(id, "recent_remove:"); ok {
+			a.prefs.removeRecentConnection(url)
+			_ = savePreferences(a.prefs)
 			return
 		}
 		if macroID, ok := strings.CutPrefix(id, "macro_edit:"); ok {
@@ -3592,6 +3744,7 @@ func (a *App) syncSessionState() {
 	}
 	if a.lastPhase == session.PhaseConnected && phase != session.PhaseConnected {
 		a.resetConnectionHardwareState()
+		a.releaseTotalCapture()
 		if a.pasteOpen {
 			a.pasteOpen = false
 		}
@@ -3611,7 +3764,9 @@ func (a *App) syncSessionState() {
 	}
 	if phase == session.PhaseConnected && a.lastPhase != session.PhaseConnected {
 		a.resetConnectionHardwareState()
+		a.saveConnectedRecent()
 		a.maybeExpandBrowseWindow()
+		a.applyConnectWindowMode()
 		a.launcherOpen = false
 		a.launcherMode = launcherModeBrowse
 		a.launcherError = ""
@@ -3619,6 +3774,7 @@ func (a *App) syncSessionState() {
 		a.lastX, a.lastY = ebiten.CursorPosition()
 		a.lastButtons = 0
 		a.revealUIFor(2 * time.Second)
+		a.settingsHintUntil = time.Now().Add(10 * time.Second)
 		if a.prefs.AbsoluteSideButtonsViaRel {
 			a.ensureConnectionUSBDevicesLoaded()
 		}
@@ -3626,9 +3782,20 @@ func (a *App) syncSessionState() {
 	a.lastPhase = phase
 }
 
+func parseHostPort(baseURL string) (string, error) {
+	baseURL = strings.TrimPrefix(baseURL, "http://")
+	baseURL = strings.TrimPrefix(baseURL, "https://")
+	host := strings.Split(baseURL, "/")[0]
+	host = strings.Split(host, ":")[0]
+	if host == "" {
+		return "", fmt.Errorf("empty host")
+	}
+	return host, nil
+}
+
 func (a *App) syncWindowTitle() {
 	if a.launcherOpen {
-		title := "jetkvm-desktop"
+		title := "JetKVM Desktop"
 		if title != a.lastTitle {
 			ebiten.SetWindowTitle(title)
 			a.lastTitle = title
@@ -3639,13 +3806,18 @@ func (a *App) syncWindowTitle() {
 		return
 	}
 	snap := a.ctrl.Snapshot()
-	title := "jetkvm-desktop"
-	if snap.DeviceID != "" {
-		title = snap.DeviceID
-	} else if snap.Hostname != "" {
-		title = snap.Hostname
+	host := a.cfg.BaseURL
+	if h, err := parseHostPort(host); err == nil {
+		host = h
 	}
-	title = fmt.Sprintf("%s [%s]", title, snap.Phase.String())
+	label := host
+	if snap.Hostname != "" {
+		label = snap.Hostname
+	} else if snap.DeviceID != "" {
+		label = snap.DeviceID
+	}
+	phase := snap.Phase.String()
+	title := fmt.Sprintf("JetKVM Desktop [%s - %s]", label, phase)
 	if title == a.lastTitle {
 		return
 	}
@@ -3783,6 +3955,52 @@ func (a *App) drawOverlay(screen *ebiten.Image, snap session.Snapshot, hasVideo 
 	})
 }
 
+func (a *App) drawSettingsHint(screen *ebiten.Image) {
+	a.settingsHintRuntime.BeginFrame()
+	if a.settingsOpen || a.launcherOpen || a.ctrl == nil || a.ctrl.Snapshot().Phase != session.PhaseConnected {
+		return
+	}
+	remaining := time.Until(a.settingsHintUntil)
+	if remaining <= 0 {
+		return
+	}
+	alpha := 1.0
+	if remaining < 2*time.Second {
+		alpha = float64(remaining) / float64(2*time.Second)
+	}
+	w := float64(screen.Bounds().Dx())
+	h := float64(screen.Bounds().Dy())
+	a.drawUIRoot(screen, &a.settingsHintRuntime, func(chromeButton) {}, settingsHintElement{
+		x:     w - 52,
+		y:     h - 52,
+		alpha: alpha,
+		onClick: func() {
+			a.settingsOpen = true
+			a.pasteOpen = false
+			a.mediaOpen = false
+			a.serialConsoleOpen = false
+			a.releaseTotalCapture()
+			a.refreshSettingsSection(a.settingsSection)
+			a.applyCursorMode()
+			a.settingsHintUntil = time.Time{}
+		},
+	})
+}
+
+func (a *App) drawPasteBanner(screen *ebiten.Image, snap session.Snapshot) {
+	a.pasteBannerRuntime.BeginFrame()
+	if !snap.PasteInProgress || a.pasteOpen {
+		return
+	}
+	width := min(360.0, float64(screen.Bounds().Dx()-52))
+	a.drawUIRoot(screen, &a.pasteBannerRuntime, func(chromeButton) {}, pasteBannerRootElement{
+		width: width,
+		onCancel: func() {
+			_ = a.ctrl.CancelPaste()
+		},
+	})
+}
+
 func (a *App) drawPressedKeysOverlay(screen *ebiten.Image) {
 	if !a.showPressedKeys || a.settingsOpen || a.mediaOpen || a.serialConsoleOpen {
 		return
@@ -3873,6 +4091,70 @@ func (e overlayBannerRootElement) Draw(ctx *ui.Context, bounds ui.Rect) {
 				takeover:   e.takeover,
 				withButton: e.withButton,
 				onClick:    e.onClick,
+			},
+		},
+	}.Draw(ctx, bounds)
+}
+
+type settingsHintElement struct {
+	x       float64
+	y       float64
+	alpha   float64
+	onClick func()
+}
+
+func (settingsHintElement) Measure(_ *ui.Context, constraints ui.Constraints) ui.Size {
+	return constraints.Clamp(ui.Size{W: constraints.MaxW, H: constraints.MaxH})
+}
+
+func (e settingsHintElement) Draw(ctx *ui.Context, bounds ui.Rect) {
+	if ctx.Runtime != nil {
+		ctx.Runtime.Register(ui.Control{
+			ID:      "settings_hint",
+			Rect:    ui.Rect{X: e.x, Y: e.y, W: 34, H: 34},
+			Enabled: true,
+			OnClick: func(ui.PointerEvent) {
+				if e.onClick != nil {
+					e.onClick()
+				}
+			},
+		})
+	}
+	ui.Positioned{
+		X:     e.x,
+		Y:     e.y,
+		W:     34,
+		H:     34,
+		Child: ui.IconButton{Kind: ui.IconSettings, Active: false, Enabled: true, Alpha: e.alpha},
+	}.Draw(ctx, bounds)
+}
+
+type pasteBannerRootElement struct {
+	width    float64
+	onCancel func()
+}
+
+func (pasteBannerRootElement) Measure(_ *ui.Context, constraints ui.Constraints) ui.Size {
+	return constraints.Clamp(ui.Size{W: constraints.MaxW, H: constraints.MaxH})
+}
+
+func (e pasteBannerRootElement) Draw(ctx *ui.Context, bounds ui.Rect) {
+	x := (bounds.W - e.width) / 2
+	ui.Positioned{
+		X: x,
+		Y: 48,
+		W: e.width,
+		H: 56,
+		Child: ui.Panel{
+			Fill:   ctx.Theme.ModalFill,
+			Stroke: ctx.Theme.ModalStroke,
+			Insets: ui.Insets{Top: 12, Right: 16, Bottom: 12, Left: 16},
+			Child: ui.Row{
+				Children: []ui.Child{
+					ui.Flex(ui.Label{Text: "Pasting — input is disabled until complete", Size: 13, Color: ctx.Theme.AccentText}, 1),
+					ui.Fixed(ui.Spacer{W: 12}),
+					ui.Fixed(ui.Button{Label: "Cancel", Enabled: true, OnClick: e.onCancel}),
+				},
 			},
 		},
 	}.Draw(ctx, bounds)
@@ -4027,6 +4309,26 @@ func isValidHostname(host string) bool {
 	return true
 }
 
+func (a *App) saveConnectedRecent() {
+	if !a.saveAsRecent {
+		return
+	}
+	a.saveAsRecent = false
+	url := a.cfg.BaseURL
+	if url == "" {
+		return
+	}
+	name := ""
+	for _, d := range a.discovered {
+		if d.BaseURL == url {
+			name = d.Name
+			break
+		}
+	}
+	a.prefs.addRecentConnection(url, name)
+	_ = savePreferences(a.prefs)
+}
+
 func (a *App) connectFromLauncher(target string) {
 	baseURL, err := normalizeBaseURL(target)
 	if err != nil {
@@ -4063,6 +4365,7 @@ func (a *App) effectivePassword() string {
 }
 
 func (a *App) connectTo(target string) {
+	a.releaseTotalCapture()
 	baseURL, err := normalizeBaseURL(target)
 	if err != nil {
 		a.launcherError = err.Error()

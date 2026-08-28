@@ -91,3 +91,20 @@ func (a *App) maybeExpandBrowseWindow() {
 	width, height := InitialWindowSize(false)
 	ebiten.SetWindowSize(width, height)
 }
+
+func (a *App) applyConnectWindowMode() {
+	switch a.prefs.ConnectWindowMode {
+	case connectWindowFullscreen:
+		if !ebiten.IsFullscreen() {
+			ebiten.SetFullscreen(true)
+		}
+	case connectWindowPixelRatio:
+		ebiten.SetWindowSize(targetWindowWidth, targetWindowHeight)
+	case connectWindowMaximize:
+		if !ebiten.IsFullscreen() && !ebiten.IsWindowMaximized() {
+			ebiten.MaximizeWindow()
+		}
+	case connectWindowUnchanged:
+		// leave the window as-is
+	}
+}

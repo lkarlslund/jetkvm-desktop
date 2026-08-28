@@ -100,6 +100,7 @@ func (a *App) openSerialConsoleOverlay() {
 	a.serialConsoleOpen = true
 	a.serialConsoleScroll = 0
 	a.settingsInputFocus = settingsInputNone
+	a.releaseTotalCapture()
 	a.applyCursorMode()
 }
 

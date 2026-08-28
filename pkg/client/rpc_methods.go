@@ -377,3 +377,22 @@ func (c *Client) GetKeysDownState(ctx context.Context) (KeysDownState, error) {
 func (c *Client) sendWheelReport(ctx context.Context, wheelY, wheelX int8) error {
 	return c.Call(ctx, "wheelReport", WheelReportRequest{WheelY: int(wheelY), WheelX: int(wheelX)}, nil)
 }
+
+func (c *Client) GetWakeOnLanDevices(ctx context.Context) ([]WakeOnLanDevice, error) {
+	var devices []WakeOnLanDevice
+	err := c.Call(ctx, "getWakeOnLanDevices", nil, &devices)
+	return devices, err
+}
+
+func (c *Client) SetWakeOnLanDevices(ctx context.Context, devices []WakeOnLanDevice) error {
+	return c.Call(ctx, "setWakeOnLanDevices", WakeOnLanDevicesRequest{
+		Params: WakeOnLanDevicesParams{Devices: devices},
+	}, nil)
+}
+
+func (c *Client) SendWOLMagicPacket(ctx context.Context, macAddress, broadcastIP string) error {
+	return c.Call(ctx, "sendWOLMagicPacket", SendWOLMagicPacketRequest{
+		MacAddress:  macAddress,
+		BroadcastIP: broadcastIP,
+	}, nil)
+}
