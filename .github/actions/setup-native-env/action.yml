@@ -10,6 +10,14 @@ inputs:
 runs:
   using: composite
   steps:
+    # Ubuntu mirrors are occasionally very slow, so keep downloaded .debs between runs.
+    - name: Cache Linux packages
+      if: runner.os == 'Linux'
+      uses: actions/cache@v4
+      with:
+        path: ~/apt-archives
+        key: apt-${{ runner.os }}-${{ runner.arch }}-xvfb-${{ inputs.install-xvfb }}-${{ hashFiles('.github/actions/setup-native-env/action.yml') }}
+
     - name: Install Linux GUI build dependencies
       if: runner.os == 'Linux'
       shell: bash
@@ -27,8 +35,12 @@ runs:
         if [[ "${{ inputs.install-xvfb }}" == "true" ]]; then
           packages=(xvfb "${packages[@]}")
         fi
+        archives="$HOME/apt-archives"
+        mkdir -p "$archives/partial"
         sudo apt-get update
-        sudo apt-get install -y --no-install-recommends "${packages[@]}"
+        sudo apt-get install -y --no-install-recommends -o Dir::Cache::Archives="$archives" "${packages[@]}"
+        sudo rm -f "$archives/lock"
+        sudo chown -R "$(id -u):$(id -g)" "$archives"
 
     - name: Set up Windows MinGW toolchain
       if: runner.os == 'Windows'

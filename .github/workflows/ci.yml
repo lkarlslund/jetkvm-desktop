@@ -40,12 +40,15 @@ jobs:
             client_bin: jetkvm-desktop
             goos: linux
             goarch: arm64
-          - os: macos-15-intel
+          # Intel macOS runners queue for a long time; cross-compile on Apple Silicon.
+          - os: macos-15
             name: macos-amd64
             archive_ext: tar.gz
             client_bin: jetkvm-desktop
             goos: darwin
             goarch: amd64
+            cc: clang -arch x86_64
+            cxx: clang++ -arch x86_64
           - os: macos-15
             name: macos-aarch64
             archive_ext: tar.gz
@@ -83,9 +86,20 @@ jobs:
         env:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: "1"
+          CC: ${{ matrix.cc }}
+          CXX: ${{ matrix.cxx }}
         run: |
           mkdir -p dist/pkg
           go build -trimpath -ldflags="-s -w" -o "dist/pkg/${{ matrix.client_bin }}" ./cmd/jetkvm-desktop
+          if [[ "${GOOS}" == "darwin" ]]; then
+            expected_arch="$([[ "${GOARCH}" == "amd64" ]] && echo x86_64 || echo arm64)"
+            actual_arch="$(lipo -archs "dist/pkg/${{ matrix.client_bin }}")"
+            if [[ "${actual_arch}" != "${expected_arch}" ]]; then
+              echo "Expected ${expected_arch} binary, got ${actual_arch}" >&2
+              exit 1
+            fi
+          fi
           cp README.md dist/pkg/
           tar -C dist/pkg -czf "dist/jetkvm-desktop-${{ steps.version.outputs.version }}-${{ matrix.name }}.tar.gz" .
 
