@@ -97,6 +97,10 @@ func main() {
 	rootCmd.Flags().StringVar(&logLevel, "log-level", "", fmt.Sprintf("Log level: error, warn, info, debug, trace (default: error; env: JETKVM_DESKTOP_LOG_LEVEL; experimental USB network UI env: %s)", experimentalUSBNetworkEnv))
 	rootCmd.Flags().DurationVar(&cfg.RPCTimeout, "rpc-timeout", 5*time.Second, "Timeout for JSON-RPC requests")
 
+	// Cobra refuses to run Windows binaries launched from Explorer, and Ebiten
+	// hides the console that would explain why, so double-clicking silently exits.
+	cobra.MousetrapHelpText = ""
+
 	if err := rootCmd.Execute(); err != nil {
 		log.Fatal(err)
 	}
