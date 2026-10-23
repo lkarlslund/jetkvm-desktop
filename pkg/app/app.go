@@ -66,6 +66,11 @@ type App struct {
 	settingsOpen           bool
 	pasteOpen              bool
 	statsOpen              bool
+	statsPanel             rect // user-placed stats panel; zero keeps it in the lower-right corner
+	statsPanelRect         rect // where the stats panel was last drawn
+	statsDrag              statsPanelDrag
+	statsDragging          bool
+	cursorShape            ebiten.CursorShapeType
 	mediaOpen              bool
 	serialConsoleOpen      bool
 	settingsSection        settingsSection
@@ -167,6 +172,7 @@ type App struct {
 	mediaRuntime           ui.Runtime
 	serialConsoleRuntime   ui.Runtime
 	chromeRuntime          ui.Runtime
+	statsRuntime           ui.Runtime
 }
 
 type hardwareConnectionState struct {
@@ -476,6 +482,7 @@ func (a *App) Update() error {
 		a.syncDiscovery()
 		a.syncLauncherInput()
 		a.syncUIPointer()
+		a.syncStatsPanelCursor()
 		a.updateTextSelectionDrag()
 		return nil
 	}
@@ -497,6 +504,7 @@ func (a *App) Update() error {
 	}
 	a.focused = nowFocused
 	a.syncUIPointer()
+	a.syncStatsPanelCursor()
 	a.updateTextSelectionDrag()
 
 	a.syncPasteInput()
@@ -550,6 +558,13 @@ func (a *App) syncUIPointer() {
 		}
 	}
 	if a.overlayRuntime.HandlePointer(point, pressed, justPressed, justReleased) {
+		return
+	}
+	if a.statsOpen && !a.relative && a.statsRuntime.HandlePointer(point, pressed, justPressed, justReleased) {
+		if justPressed {
+			// Keep panel drags from also clicking on the remote host.
+			a.suppressMouseUntilUp = true
+		}
 		return
 	}
 	a.chromeRuntime.HandlePointer(point, pressed, justPressed, justReleased)

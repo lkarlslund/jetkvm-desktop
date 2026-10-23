@@ -191,7 +191,10 @@ func (a *App) submitPaste() {
 }
 
 func (a *App) drawStatsOverlay(screen *ebiten.Image) {
+	a.statsRuntime.BeginFrame()
 	if !a.statsOpen {
+		a.statsPanelRect = rect{}
+		a.statsDragging = false
 		return
 	}
 	stats := a.stats
@@ -246,7 +249,7 @@ func (a *App) drawStatsOverlay(screen *ebiten.Image) {
 			Series: statsSeries(a.statsHistory, func(p statsPoint) float64 { return p.FramesPerSecond }),
 		},
 	}
-	a.drawUIRoot(screen, nil, func(chromeButton) {}, statsOverlayRootElement{
+	a.drawUIRoot(screen, &a.statsRuntime, func(chromeButton) {}, statsOverlayRootElement{
 		app: a,
 		child: statsOverlayElement{
 			app:    a,
@@ -432,15 +435,17 @@ type statsOverlayElement struct {
 	graphs []graphMetric
 }
 
+// Measure reports the natural size, with every graph at its preferred height.
 func (e statsOverlayElement) Measure(ctx *ui.Context, constraints ui.Constraints) ui.Size {
-	return ui.Column{Children: e.children()}.Measure(ctx, constraints)
+	return ui.Column{Children: e.children(false)}.Measure(ctx, constraints)
 }
 
+// Draw lets the graphs share whatever height the panel has been resized to.
 func (e statsOverlayElement) Draw(ctx *ui.Context, bounds ui.Rect) {
-	ui.Column{Children: e.children()}.Draw(ctx, bounds)
+	ui.Column{Children: e.children(true)}.Draw(ctx, bounds)
 }
 
-func (e statsOverlayElement) children() []ui.Child {
+func (e statsOverlayElement) children(flexGraphs bool) []ui.Child {
 	theme := e.app.currentTheme()
 	children := []ui.Child{
 		ui.Fixed(ui.Label{Text: "Connection Stats", Size: 14, Color: theme.Title}),
@@ -457,7 +462,12 @@ func (e statsOverlayElement) children() []ui.Child {
 		if i > 0 {
 			children = append(children, ui.Fixed(ui.Spacer{H: 14}))
 		}
-		children = append(children, ui.Fixed(statsGraphElement{app: e.app, metric: graph}))
+		graphElement := statsGraphElement{app: e.app, metric: graph}
+		if flexGraphs {
+			children = append(children, ui.Flex(graphElement, 1))
+		} else {
+			children = append(children, ui.Fixed(graphElement))
+		}
 	}
 	return children
 }
@@ -468,7 +478,7 @@ type statsGraphElement struct {
 }
 
 func (statsGraphElement) Measure(_ *ui.Context, constraints ui.Constraints) ui.Size {
-	return constraints.Clamp(ui.Size{W: constraints.MaxW, H: 58})
+	return constraints.Clamp(ui.Size{W: constraints.MaxW, H: statsGraphNaturalH})
 }
 
 func (e statsGraphElement) Draw(ctx *ui.Context, bounds ui.Rect) {
@@ -553,7 +563,7 @@ func (e pasteOverlayElement) Draw(ctx *ui.Context, bounds ui.Rect) {
 
 type statsOverlayRootElement struct {
 	app   *App
-	child ui.Element
+	child statsOverlayElement
 }
 
 func (statsOverlayRootElement) Measure(_ *ui.Context, constraints ui.Constraints) ui.Size {
@@ -561,19 +571,24 @@ func (statsOverlayRootElement) Measure(_ *ui.Context, constraints ui.Constraints
 }
 
 func (e statsOverlayRootElement) Draw(ctx *ui.Context, bounds ui.Rect) {
-	ui.Inset{
-		Insets: ui.Insets{Top: 58, Right: 16, Bottom: 16, Left: 16},
-		Child: ui.Align{
-			Horizontal: ui.AlignEnd,
-			Vertical:   ui.AlignStart,
-			Child: ui.Panel{
-				Fill:   ctx.Theme.ModalFill,
-				Stroke: ctx.Theme.ModalStroke,
-				Insets: ui.UniformInsets(16),
-				Child:  e.child,
-			},
-		},
-	}.Draw(ctx, bounds)
+	a := e.app
+	naturalH := e.child.Measure(ctx, ui.Constraints{MaxW: statsPanelDefaultW - 2*statsPanelInset}).H + 2*statsPanelInset
+	minH := naturalH - float64(len(e.child.graphs))*(statsGraphNaturalH-statsGraphMinH)
+
+	panel := a.statsPanel
+	if !panel.valid() {
+		panel = statsPanelDefaultRect(bounds.W, bounds.H, statsPanelDefaultW, naturalH)
+	}
+	panel = clampStatsPanel(panel, bounds.W, bounds.H, statsPanelMinW, minH)
+	a.statsPanelRect = panel
+	a.registerStatsPanelControls(ctx.Runtime, panel, statsPanelMinW, minH)
+
+	ui.Panel{
+		Fill:   ctx.Theme.ModalFill,
+		Stroke: ctx.Theme.ModalStroke,
+		Insets: ui.UniformInsets(statsPanelInset),
+		Child:  e.child,
+	}.Draw(ctx, ui.Rect{X: panel.x, Y: panel.y, W: panel.w, H: panel.h})
 }
 
 type pasteOverlayRootElement struct {
