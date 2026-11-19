@@ -51,6 +51,7 @@ type FaultConfig struct {
 	DisconnectAfter       time.Duration
 	HIDHandshakeDelay     time.Duration
 	InitialVideoState     string
+	CloseSerialChannel    bool
 }
 
 type DeviceState struct {
@@ -833,6 +834,10 @@ func (s *Server) exchangeOffer(encoded string) (string, error) {
 			dc.OnMessage(func(msg webrtc.DataChannelMessage) {
 				_ = sess.handleHID("hidrpc-unreliable-nonordered", msg.Data)
 			})
+		case "serial":
+			if s.cfg.Faults.CloseSerialChannel {
+				dc.OnOpen(func() { _ = dc.Close() })
+			}
 		}
 	})
 

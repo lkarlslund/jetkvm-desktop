@@ -98,6 +98,7 @@ func TestClientConnectsAndRPCWorks(t *testing.T) {
 		ListenAddr: "127.0.0.1:0",
 		AuthMode:   AuthModePassword,
 		Password:   "secret",
+		Faults:     FaultConfig{CloseSerialChannel: true},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -146,6 +147,12 @@ func TestClientConnectsAndRPCWorks(t *testing.T) {
 	defer waitCancel()
 	if err := c.WaitForHID(waitCtx); err != nil {
 		t.Fatal(err)
+	}
+	// The emulator immediately closes the optional serial channel.
+	// The main KVM session and RPC must survive that closure.
+	time.Sleep(200 * time.Millisecond)
+	if state := c.Stats().RTCState; state != webrtc.PeerConnectionStateConnected {
+		t.Fatalf("serial closure disconnected the peer: %s", state)
 	}
 	if c.SignalingMode() != client.SignalingModeWebSocket {
 		t.Fatalf("expected websocket signaling mode, got %q", c.SignalingMode())

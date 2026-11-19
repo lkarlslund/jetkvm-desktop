@@ -620,7 +620,8 @@ func (c *Client) openDataChannels() error {
 	if err != nil {
 		return err
 	}
-	c.watchControlChannel(c.serialDC)
+	// The serial console is optional; unsupported devices may close it.
+	// Do not treat its closure as a failure of video, HID, or RPC.
 	c.serialDC.OnOpen(func() {
 		c.emitLifecycle(LifecycleEvent{Type: "serial_ready"})
 	})
