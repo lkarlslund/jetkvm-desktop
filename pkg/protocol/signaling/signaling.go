@@ -92,12 +92,16 @@ func DialWebsocket(ctx context.Context, client *http.Client, baseURL string) (*w
 		return nil, nil, err
 	}
 
+	httpURL, err := url.Parse(strings.TrimRight(baseURL, "/"))
+	if err != nil {
+		return nil, nil, err
+	}
+
 	header := http.Header{}
+	// The device checks the browser-style Origin header before upgrading the
+	// signaling connection. A native client must supply it explicitly.
+	header.Set("Origin", httpURL.Scheme+"://"+httpURL.Host)
 	if client != nil && client.Jar != nil {
-		httpURL, err := url.Parse(strings.TrimRight(baseURL, "/"))
-		if err != nil {
-			return nil, nil, err
-		}
 		for _, cookie := range client.Jar.Cookies(httpURL) {
 			header.Add("Cookie", cookie.String())
 		}
